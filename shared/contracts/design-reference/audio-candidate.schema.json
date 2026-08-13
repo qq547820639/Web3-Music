@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AudioCandidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "jobId",
+    "ordinal",
+    "providerClipId",
+    "status",
+    "source",
+    "media",
+    "recipe",
+    "createdAt"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "jobId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "ordinal": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "providerClipId": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "discovered",
+        "downloading",
+        "quarantined",
+        "ready",
+        "failed",
+        "deleted"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "url",
+        "expiresAt"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "expiresAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "media": {
+      "type": "object",
+      "required": [
+        "objectKey",
+        "sha256",
+        "durationMs",
+        "mimeType"
+      ],
+      "properties": {
+        "objectKey": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "loudnessLufs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "waveformKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "required": [
+        "specHash",
+        "providerSnapshotId",
+        "model",
+        "requestHash"
+      ],
+      "properties": {
+        "specHash": {
+          "type": "string"
+        },
+        "providerSnapshotId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "model": {
+          "type": "string"
+        },
+        "requestHash": {
+          "type": "string"
+        },
+        "seed": {
+          "type": [
+            "string",
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.local/license-v1.schema.json",
+  "title": "Commercial License",
+  "type": "object",
+  "required": [
+    "id",
+    "seller_workspace_id",
+    "buyer_workspace_id",
+    "asset_snapshot_id",
+    "rights_manifest_id",
+    "status",
+    "license_hash"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "seller_workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "buyer_workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "asset_snapshot_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rights_manifest_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "active",
+        "suspended",
+        "expired",
+        "revoked",
+        "refunded"
+      ]
+    },
+    "license_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "terms_snapshot": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

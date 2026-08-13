@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.local/order-v1.schema.json",
+  "title": "Order",
+  "type": "object",
+  "required": [
+    "id",
+    "workspace_id",
+    "order_number",
+    "order_type",
+    "status",
+    "currency",
+    "total"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_number": {
+      "type": "string"
+    },
+    "order_type": {
+      "enum": [
+        "credit_purchase",
+        "subscription",
+        "license",
+        "brand_task"
+      ]
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "payment_pending",
+        "paid",
+        "fulfilled",
+        "cancelled",
+        "refunded",
+        "disputed"
+      ]
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "total": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

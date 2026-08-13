@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.local/product-event-v1.schema.json",
+  "title": "Product Event",
+  "type": "object",
+  "required": [
+    "event_name",
+    "properties"
+  ],
+  "properties": {
+    "event_name": {
+      "enum": [
+        "candidate_played",
+        "candidate_completed",
+        "ab_choice",
+        "master_selected",
+        "asset_downloaded",
+        "generation_feedback",
+        "quality_viewed",
+        "license_viewed",
+        "license_purchased",
+        "project_shared"
+      ]
+    },
+    "project_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "asset_snapshot_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "properties": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

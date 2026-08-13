@@ -1,0 +1,228 @@
+name: ai-music-platform-v13
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: music
+      POSTGRES_USER: music_admin
+      POSTGRES_PASSWORD: music_admin
+    ports: ["54329:5432"]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/bootstrap:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U music_admin -d music"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["63799:6379"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio_data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live >/dev/null"]
+      interval: 4s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build: ./services/migrate
+    environment:
+      DATABASE_URL: postgresql://music_admin:music_admin@postgres:5432/music
+      MIGRATIONS_DIR: /migrations
+    volumes: ["./db/migrations:/migrations:ro"]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  provider-emulator:
+    build: ./services/provider-emulator
+    environment:
+      PORT: 8010
+      MEDIA_ROOT: /data/provider-media
+      SQLITE_PATH: /data/provider/provider.db
+      WEBHOOK_SECRET: ${PROVIDER_WEBHOOK_SECRET:-dev-provider-webhook-secret}
+    ports: ["8010:8010"]
+    volumes:
+      - provider_media:/data/provider-media
+      - provider_state:/data/provider
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  payment-emulator:
+    build: ./services/payment-emulator
+    environment:
+      SQLITE_PATH: /data/payment/payment.db
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev-payment-webhook-secret}
+    ports: ["8020:8020"]
+    volumes: ["payment_state:/data/payment"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8020/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: ./services/api
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://music_app:music_app@postgres:5432/music
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: music-assets
+      PROVIDER_BASE_URL: http://provider-emulator:8010
+      JWT_SECRET: ${JWT_SECRET:-local-development-jwt-secret-change-before-production-0123456789abcdef}
+      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:-local-development-media-secret-change-before-production-0123456789}
+      PROVIDER_WEBHOOK_SECRET: ${PROVIDER_WEBHOOK_SECRET:-dev-provider-webhook-secret}
+      PAYMENT_PROVIDER: emulator
+      PAYMENT_BASE_URL: http://payment-emulator:8020
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev-payment-webhook-secret}
+      PUBLIC_API_BASE_URL: http://api:8000
+      CORS_ORIGINS: http://localhost:4173,http://localhost:4174,http://localhost:8080
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      REFRESH_TTL_DAYS: ${REFRESH_TTL_DAYS:-14}
+      PROVIDER_CONTRACT_VERSION: ${PROVIDER_CONTRACT_VERSION:-local-emulator-v1}
+      MODERATION_POLICY_VERSION: ${MODERATION_POLICY_VERSION:-policy-v1}
+    ports: ["8000:8000"]
+    volumes: ["./shared/contracts:/app/contracts:ro"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      provider-emulator: {condition: service_healthy}
+      payment-emulator: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready')"]
+      interval: 4s
+      timeout: 3s
+      retries: 40
+
+  worker:
+    build: ./services/worker
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://music_worker:music_worker@postgres:5432/music
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: music-assets
+      PROVIDER_BASE_URL: http://provider-emulator:8010
+      MUSIC_PROVIDER: ${MUSIC_PROVIDER:-emulator}
+      SUNO_API_BASE_URL: ${SUNO_API_BASE_URL:-}
+      SUNO_MODEL: ${SUNO_MODEL:-chirp-v3-0}
+      GENERIC_PROVIDER_BASE_URL: ${GENERIC_PROVIDER_BASE_URL:-}
+      GENERIC_PROVIDER_API_KEY: ${GENERIC_PROVIDER_API_KEY:-}
+      GENERIC_PROVIDER_MODEL: ${GENERIC_PROVIDER_MODEL:-}
+      GENERIC_PROVIDER_SUBMIT_PATH: ${GENERIC_PROVIDER_SUBMIT_PATH:-/v1/jobs}
+      GENERIC_PROVIDER_STATUS_PATH: ${GENERIC_PROVIDER_STATUS_PATH:-/v1/jobs/{job_id}}
+      GENERIC_PROVIDER_CANCEL_PATH: ${GENERIC_PROVIDER_CANCEL_PATH:-/v1/jobs/{job_id}/cancel}
+      LEASE_SECONDS: 30
+      METRICS_PORT: 9101
+      TRUSTED_INTERNAL_MEDIA_HOSTS: provider-emulator
+      MAX_MEDIA_BYTES: 52428800
+    expose: ["9101"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      provider-emulator: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9101/health')"]
+      interval: 4s
+      timeout: 3s
+      retries: 40
+
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+    ports: ["9090:9090"]
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      api: {condition: service_healthy}
+      worker: {condition: service_healthy}
+
+  web:
+    build: ./services/web
+    ports: ["4173:80"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  admin:
+    build: ./services/admin
+    ports: ["4174:80"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  gateway:
+    build: ./services/gateway
+    ports: ["8080:80"]
+    depends_on:
+      api: {condition: service_healthy}
+      web: {condition: service_healthy}
+      admin: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/gateway-health"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  acceptance:
+    profiles: ["test"]
+    build: ./services/acceptance
+    environment:
+      API_BASE_URL: http://api:8000
+      PROVIDER_BASE_URL: http://provider-emulator:8010
+      PAYMENT_BASE_URL: http://payment-emulator:8020
+      WEB_BASE_URL: http://web
+      ADMIN_BASE_URL: http://admin
+      WORKER_METRICS_BASE_URL: http://worker:9101
+    depends_on:
+      api: {condition: service_healthy}
+      worker: {condition: service_healthy}
+      web: {condition: service_healthy}
+      admin: {condition: service_healthy}
+
+volumes:
+  pg_data:
+  redis_data:
+  minio_data:
+  provider_media:
+  provider_state:
+  payment_state:
+  prometheus_data:

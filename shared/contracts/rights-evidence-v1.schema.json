@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.local/rights-evidence-v1.schema.json",
+  "title": "Rights Evidence",
+  "type": "object",
+  "required": [
+    "evidence_type",
+    "evidence"
+  ],
+  "properties": {
+    "evidence_type": {
+      "enum": [
+        "user_declaration",
+        "license",
+        "consent",
+        "provider_contract",
+        "source_file",
+        "identity",
+        "other"
+      ]
+    },
+    "status": {
+      "enum": [
+        "submitted",
+        "verified",
+        "rejected",
+        "expired"
+      ]
+    },
+    "evidence": {
+      "type": "object"
+    },
+    "expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": true
+}

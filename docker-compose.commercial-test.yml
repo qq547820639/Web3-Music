@@ -1,0 +1,21 @@
+services:
+  api:
+    environment:
+      MUSIC_PROVIDER: synthetic_licensed
+      PROVIDER_APPROVAL_STATUS: approved_commercial
+  worker:
+    environment:
+      MUSIC_PROVIDER: synthetic_licensed
+      PROVIDER_APPROVAL_STATUS: approved_commercial
+  acceptance-commercial:
+    profiles: ["commercial-test"]
+    build: ./services/acceptance
+    command: ["pytest", "-q", "test_commercial.py"]
+    environment:
+      API_BASE_URL: http://api:8000
+    volumes:
+      - ./services/acceptance:/tests:ro
+    working_dir: /tests
+    depends_on:
+      api: {condition: service_healthy}
+      worker: {condition: service_healthy}

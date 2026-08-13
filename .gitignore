@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+coverage.xml
+htmlcov/
+.env.generated
+backups/
+release-evidence/*/
+
+# WorkBuddy agent data (not part of source)
+.workbuddy/

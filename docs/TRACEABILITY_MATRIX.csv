@@ -1,0 +1,19 @@
+requirement_id,product_layer,requirement,implementation,contract_or_constraint,automated_evidence,release_gate
+CR-01,Creation OS,不可变歌曲版本,services/api/app/main.py;db/migrations/001_production_candidate.sql,immutable revision trigger,tests/unit/test_domain.py;services/acceptance/test_acceptance.py,G9
+CR-02,Creation OS,锁定字段不可被AI或手动修改,services/api/app/domain/patches.py,parent-child JSON Pointer lock,tests/unit/test_security_and_rights.py;services/acceptance/test_acceptance.py,G9
+CR-03,Intelligence,28维确定性质量评估,services/api/app/domain/quality.py,engine/ruleset version,tests/unit/test_domain.py,G11
+CR-04,Creation OS,报价绑定Revision和Provider Snapshot,services/api/app/main.py;db/migrations/001_production_candidate.sql,quote hash and foreign keys,services/acceptance/test_acceptance.py,G9
+TR-01,Trust,任务崩溃后恢复,services/worker/worker.py,lease heartbeat retry dead-letter,scripts/chaos-worker-recovery.sh,G9
+TR-02,Trust,跨租户隔离,services/api/app/auth.py;db/migrations/001_production_candidate.sql,RBAC and FORCE RLS,services/acceptance/test_acceptance.py,G9
+FI-01,Trust,独立Credit Hold和双分录,services/api/app/domain/ledger.py;db/migrations/001_production_candidate.sql,balanced deferred trigger,services/acceptance/test_acceptance.py,G9
+ME-01,Asset OS,私有媒体和SHA-256,services/worker/worker.py;services/api/app/storage.py,SSRF/decode/hash/private bucket,services/acceptance/test_acceptance.py,G9
+RI-01,Asset OS,分项权利能力,services/api/app/domain/rights.py;services/api/app/routers/assets.py,Rights Manifest version and immutable asset,tests/unit/test_security_and_rights.py,G12
+RI-02,Asset OS,未批准Provider不可商业授权,services/api/app/routers/assets.py,provider approval hard block,services/acceptance/test_acceptance.py,G10
+MK-01,Market OS,支付和退款幂等,services/api/app/routers/market.py;services/payment-emulator/main.py,request hash and idempotency keys,tests/unit/test_payment_emulator.py;services/acceptance/test_payment_contract.py,G10
+MK-02,Market OS,独家Offer预留,db/migrations/002_creation_asset_market_os.sql,reserve_marketplace_offer lock,services/acceptance/test_commercial.py,G12
+MK-03,Market OS,License和Delivery绑定权利快照,services/api/app/routers/market.py;db/migrations/002_creation_asset_market_os.sql,license hash and licensed_delivery_package,services/acceptance/test_commercial.py,G12
+MK-04,Market OS,收入拆分和Payout逆转,db/migrations/002_creation_asset_market_os.sql;db/migrations/003_final_hardening.sql,10000bp trigger and payout transitions,services/acceptance/test_commercial.py,G12
+MK-05,Market OS,品牌任务付费Award与退款逆转,services/api/app/routers/market.py;db/migrations/004_brand_award_commercial_flow.sql,唯一活跃Award订单与权利快照校验,services/acceptance/test_commercial.py,G12
+OP-01,Trust,发布证据室和总闸,services/api/app/routers/admin_v12.py;services/api/app/main.py,platform-admin only,services/acceptance/test_acceptance.py,G9-G12
+OP-02,Trust,备份恢复, scripts/backup.sh;scripts/restore.sh,SHA256 manifest and quiesced writers,.github/workflows/ci.yml,G10
+OB-01,Trust,API和Worker指标,services/api/app/metrics.py;services/worker/metrics.py;infrastructure/prometheus/prometheus.yml,Prometheus exposition,tests/unit/test_metrics.py;services/acceptance/test_acceptance.py,G9

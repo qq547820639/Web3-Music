@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GenerationJobV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "projectId",
+    "specRevision",
+    "quoteId",
+    "providerSnapshotId",
+    "status",
+    "idempotencyKey",
+    "requestedCandidates",
+    "createdAt",
+    "attempts"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "projectId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "specRevision": {
+      "type": "integer"
+    },
+    "quoteId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "providerSnapshotId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "status": {
+      "enum": [
+        "quoted",
+        "credit_reserved",
+        "admitted",
+        "submitted",
+        "provider_processing",
+        "ingesting",
+        "partially_completed",
+        "completed",
+        "failed",
+        "cancelled",
+        "expired",
+        "settlement_pending",
+        "settled",
+        "refunded"
+      ]
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 128
+    },
+    "requestedCandidates": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    },
+    "providerJobId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "attempt",
+          "startedAt",
+          "outcome"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "outcome": {
+            "enum": [
+              "running",
+              "success",
+              "retryable_failure",
+              "permanent_failure",
+              "unknown"
+            ]
+          },
+          "errorClass": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "reservedCredits": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "actualProviderCost": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "settledCredits": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "error": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  }
+}

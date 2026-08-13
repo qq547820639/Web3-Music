@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PolicyDecision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "subjectType",
+    "subjectId",
+    "policyVersion",
+    "decision",
+    "categories",
+    "reasons",
+    "createdAt"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "subjectType": {
+      "enum": [
+        "prompt",
+        "song_spec",
+        "upload",
+        "generation_job",
+        "candidate",
+        "asset",
+        "license"
+      ]
+    },
+    "subjectId": {
+      "type": "string"
+    },
+    "policyVersion": {
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "allow",
+        "allow_with_warning",
+        "require_attestation",
+        "manual_review",
+        "block"
+      ]
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "living_artist_imitation",
+          "voice_consent",
+          "copyrighted_lyrics",
+          "trademark",
+          "minor_safety",
+          "sexual_content",
+          "hate",
+          "violence",
+          "fraud",
+          "provider_terms",
+          "rights_unknown",
+          "other"
+        ]
+      }
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

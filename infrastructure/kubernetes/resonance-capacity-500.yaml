@@ -1,0 +1,146 @@
+# Cost-optimized capacity profile for ~500 concurrently online users.
+# Apply after running the release migration Job and creating resonance-config/resonance-secrets.
+# This capacity target is not a promise of 500 simultaneous music-provider generations.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: resonance
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector: {matchLabels: {app: resonance-api}}
+  template:
+    metadata: {labels: {app: resonance-api}}
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: api
+          image: registry.example.com/resonance/api:13.0.0-cost500
+          envFrom:
+            - configMapRef: {name: resonance-config}
+            - secretRef: {name: resonance-secrets}
+          env:
+            - {name: API_WORKERS, value: "1"}
+            - {name: API_LIMIT_CONCURRENCY, value: "512"}
+            - {name: DB_POOL_MIN, value: "2"}
+            - {name: DB_POOL_MAX, value: "16"}
+            - {name: DB_POOL_ACQUIRE_TIMEOUT_SECONDS, value: "5"}
+            - {name: DB_STATEMENT_TIMEOUT_MS, value: "15000"}
+            - {name: MEDIA_DELIVERY_MODE, value: "presigned"}
+          ports: [{containerPort: 8000}]
+          readinessProbe: {httpGet: {path: /ready, port: 8000}, initialDelaySeconds: 10, periodSeconds: 5, timeoutSeconds: 3}
+          livenessProbe: {httpGet: {path: /health, port: 8000}, initialDelaySeconds: 20, periodSeconds: 10, timeoutSeconds: 3}
+          resources:
+            requests: {cpu: 300m, memory: 384Mi}
+            limits: {cpu: "1", memory: 1Gi}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: resonance
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: api}
+  minReplicas: 2
+  maxReplicas: 8
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - {type: Percent, value: 100, periodSeconds: 60}
+        - {type: Pods, value: 2, periodSeconds: 60}
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - {type: Percent, value: 25, periodSeconds: 60}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 65}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+  namespace: resonance
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: resonance-api}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: resonance
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 1, maxSurge: 1}
+  selector: {matchLabels: {app: resonance-worker}}
+  template:
+    metadata: {labels: {app: resonance-worker}}
+    spec:
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: worker
+          image: registry.example.com/resonance/worker:13.0.0-cost500
+          envFrom:
+            - configMapRef: {name: resonance-config}
+            - secretRef: {name: resonance-secrets}
+          env:
+            - {name: WORKER_CONCURRENCY, value: "8"}
+            - {name: WORKER_DB_POOL_MIN, value: "2"}
+            - {name: WORKER_DB_POOL_MAX, value: "16"}
+            - {name: POLL_WINDOW_SECONDS, value: "600"}
+            - {name: PROVIDER_POLL_INTERVAL_SECONDS, value: "3"}
+            - {name: PROVIDER_POLL_MAX_INTERVAL_SECONDS, value: "10"}
+            - {name: DB_STATEMENT_TIMEOUT_MS, value: "15000"}
+          ports: [{containerPort: 9101}]
+          readinessProbe: {httpGet: {path: /health, port: 9101}, initialDelaySeconds: 10, periodSeconds: 5, timeoutSeconds: 3}
+          resources:
+            requests: {cpu: 300m, memory: 384Mi}
+            limits: {cpu: "2", memory: 2Gi}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker
+  namespace: resonance
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: worker}
+  minReplicas: 2
+  maxReplicas: 10
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+        - {type: Percent, value: 20, periodSeconds: 60}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 70}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker
+  namespace: resonance
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: resonance-worker}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+  namespace: resonance
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: resonance-gateway}}

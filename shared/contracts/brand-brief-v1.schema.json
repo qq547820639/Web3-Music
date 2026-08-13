@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.local/brand-brief-v1.schema.json",
+  "title": "Brand Brief",
+  "type": "object",
+  "required": [
+    "title",
+    "description",
+    "budget_amount",
+    "currency",
+    "requirements"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budget_amount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "requirements": {
+      "type": "object"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "open",
+        "review",
+        "awarded",
+        "closed",
+        "cancelled"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

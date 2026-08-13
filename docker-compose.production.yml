@@ -1,0 +1,57 @@
+# Production-oriented override. Databases, Redis and object storage should normally be managed services.
+services:
+  postgres:
+    ports: []
+    restart: unless-stopped
+  redis:
+    ports: []
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
+    restart: unless-stopped
+  minio:
+    ports: []
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    restart: unless-stopped
+  provider-emulator:
+    profiles: ["development"]
+    ports: []
+  payment-emulator:
+    profiles: ["development"]
+    ports: []
+  api:
+    ports: []
+    restart: unless-stopped
+    environment:
+      COOKIE_SECURE: "true"
+      CORS_ORIGINS: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN}
+      API_WORKERS: ${API_WORKERS:-1}
+      API_LIMIT_CONCURRENCY: ${API_LIMIT_CONCURRENCY:-512}
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_MAX: ${DB_POOL_MAX:-16}
+      DB_POOL_ACQUIRE_TIMEOUT_SECONDS: ${DB_POOL_ACQUIRE_TIMEOUT_SECONDS:-5}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+      MEDIA_DELIVERY_MODE: ${MEDIA_DELIVERY_MODE:-presigned}
+      S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-}
+  worker:
+    restart: unless-stopped
+    environment:
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-8}
+      WORKER_DB_POOL_MIN: ${WORKER_DB_POOL_MIN:-2}
+      WORKER_DB_POOL_MAX: ${WORKER_DB_POOL_MAX:-16}
+      POLL_WINDOW_SECONDS: ${POLL_WINDOW_SECONDS:-600}
+      PROVIDER_POLL_INTERVAL_SECONDS: ${PROVIDER_POLL_INTERVAL_SECONDS:-3}
+      PROVIDER_POLL_MAX_INTERVAL_SECONDS: ${PROVIDER_POLL_MAX_INTERVAL_SECONDS:-10}
+      PROVIDER_ADAPTER_VERSION: ${PROVIDER_ADAPTER_VERSION:-3.0.0}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+  web:
+    ports: []
+    restart: unless-stopped
+  admin:
+    ports: []
+    restart: unless-stopped
+  gateway:
+    ports: ["${GATEWAY_PORT:-8080}:80"]
+    restart: unless-stopped
+  prometheus:
+    profiles: ["observability"]

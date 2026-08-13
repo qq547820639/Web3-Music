@@ -1,0 +1,4 @@
+psycopg2-binary==2.9.10
+redis==6.4.0
+httpx==0.28.1
+boto3==1.40.4

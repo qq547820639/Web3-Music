@@ -1,0 +1,58 @@
+# Cost-optimized single-host capacity profile for load/staging verification.
+# This is not a substitute for managed HA production infrastructure.
+services:
+  api:
+    environment:
+      API_WORKERS: ${API_WORKERS:-4}
+      API_LIMIT_CONCURRENCY: ${API_LIMIT_CONCURRENCY:-512}
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_MAX: ${DB_POOL_MAX:-12}
+      DB_POOL_ACQUIRE_TIMEOUT_SECONDS: ${DB_POOL_ACQUIRE_TIMEOUT_SECONDS:-8}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+      MEDIA_DELIVERY_MODE: ${MEDIA_DELIVERY_MODE:-proxy}
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4G
+  worker:
+    environment:
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-12}
+      WORKER_DB_POOL_MIN: ${WORKER_DB_POOL_MIN:-2}
+      WORKER_DB_POOL_MAX: ${WORKER_DB_POOL_MAX:-20}
+      POLL_WINDOW_SECONDS: ${POLL_WINDOW_SECONDS:-600}
+      PROVIDER_POLL_INTERVAL_SECONDS: ${PROVIDER_POLL_INTERVAL_SECONDS:-3}
+      PROVIDER_POLL_MAX_INTERVAL_SECONDS: ${PROVIDER_POLL_MAX_INTERVAL_SECONDS:-10}
+      PROVIDER_ADAPTER_VERSION: ${PROVIDER_ADAPTER_VERSION:-3.0.0}
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4G
+  postgres:
+    command:
+      - postgres
+      - -c
+      - max_connections=160
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1536MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=128MB
+  gateway:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  loadtest:
+    profiles: ["capacity"]
+    build:
+      context: .
+      dockerfile: services/loadtest/Dockerfile
+    depends_on:
+      gateway: {condition: service_healthy}

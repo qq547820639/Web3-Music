@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="AI 音乐创作、资产管理与商业许可一体化平台">
+  <title>Resonance · AI 音乐资产平台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="toast" class="toast" hidden></div>
+<section id="login" class="login-shell">
+  <div class="login-art">
+    <div class="brand-mark">R</div>
+    <div>
+      <p class="eyebrow">CREATION OS · ASSET OS · MARKET OS</p>
+      <h1>把灵感变成<br>可管理的音乐资产</h1>
+      <p class="lead">对话创作、28 维质量评估、真实异步生成、不可变版本、权利能力与商业许可。</p>
+      <div class="feature-strip">
+        <span>版本可追溯</span><span>失败自动补偿</span><span>权利分项判断</span>
+      </div>
+    </div>
+  </div>
+  <form id="loginForm" class="login-card">
+    <p class="eyebrow">RESONANCE V13 FINAL</p>
+    <h2>进入工作室</h2>
+    <label>邮箱<input id="email" autocomplete="username" value="owner@example.local"></label>
+    <label>密码<input id="password" autocomplete="current-password" type="password" value="demo-owner"></label>
+    <button type="submit">登录</button>
+    <div id="loginError" class="error"></div>
+    <div class="demo-accounts"><b>本地演示账户</b><br>Owner：owner@example.local / demo-owner<br>Creator：creator@example.local / demo-creator</div>
+  </form>
+</section>
+
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark small">R</span><div><b>Resonance</b><small>AI Music Asset Platform</small></div></div>
+    <nav id="mainNav" aria-label="主导航">
+      <button data-view="creation" class="active">创作</button>
+      <button data-view="assets">资产</button>
+      <button data-view="market">市场</button>
+      <button data-view="account">数据与账户</button>
+    </nav>
+    <div class="top-actions"><span id="creditPill" class="credit-pill">— Credits</span><select id="workspace"></select><span id="identity"></span><button id="logout" class="ghost">退出</button></div>
+  </header>
+
+  <main>
+    <section id="view-creation" class="view active">
+      <div class="creation-layout">
+        <aside class="project-rail">
+          <div class="rail-head"><div><p class="eyebrow">PROJECTS</p><h2>歌曲项目</h2></div><button id="newProject" class="icon-btn" title="新建歌曲">＋</button></div>
+          <div id="projects" class="project-list"></div>
+          <div class="rail-section"><div class="row"><b>版本分支</b><button id="newBranch" class="text-btn">新建</button></div><div id="branches" class="branch-list muted">选择项目后显示</div></div>
+        </aside>
+
+        <section class="studio-shell">
+          <div id="creationEmpty" class="empty-state panel"><div class="empty-icon">♫</div><h2>开始一首新的作品</h2><p>创建项目后，通过对话、结构化编辑和质量评估逐步获得满意的 Master。</p><button id="emptyCreate">创建第一首歌</button></div>
+          <div id="studio" hidden>
+            <div class="studio-titlebar">
+              <div><p class="eyebrow">CURRENT SONG</p><h1 id="projectTitle">—</h1><div class="meta-line"><span id="revisionBadge" class="tag"></span><span id="projectStatus" class="tag neutral"></span><span id="saveState">已同步</span></div></div>
+              <div class="title-actions"><button id="showVersions" class="secondary">版本历史</button><button id="refresh" class="ghost">刷新</button></div>
+            </div>
+
+            <div class="studio-grid">
+              <section class="panel conversation-panel">
+                <div class="panel-head"><div><p class="eyebrow">AI CO-CREATOR</p><h3>对话与修改</h3></div><span id="aiSource" class="tag neutral">Local fallback</span></div>
+                <div id="conversation" class="conversation"><div class="assistant-message">告诉我你希望这首歌发生什么变化。系统只会提出受约束的 Patch，不会直接扣费、选定 Master 或授予权利。</div></div>
+                <textarea id="chatMessage" rows="4" placeholder="例如：保留歌词，让副歌更克制，减少鼓组密度，但最后一遍副歌要有抬升。"></textarea>
+                <div class="row"><button id="chatApply">生成并应用修改</button><button id="chatPreview" class="secondary">仅预览 Patch</button></div>
+                <details class="lock-box"><summary>字段锁定与创作边界</summary><label>锁定路径（逗号分隔 JSON Pointer）<input id="locks" placeholder="/lyrics,/hook"></label><button id="saveLocks" class="secondary">保存锁定</button></details>
+              </section>
+
+              <section class="panel editor-panel">
+                <div class="panel-head"><div><p class="eyebrow">SONG SPEC</p><h3>歌词与风格</h3></div><button id="manualSave" class="secondary">保存为新版本</button></div>
+                <div class="field-grid"><label>风格 Styles<textarea id="styles" rows="7"></textarea></label><label>歌词 Lyrics<textarea id="lyrics" class="lyrics" rows="20"></textarea></label></div>
+              </section>
+
+              <aside class="right-stack">
+                <section class="panel quality-panel"><div class="panel-head"><div><p class="eyebrow">QUALITY ENGINE</p><h3>28 维质量</h3></div><span id="qualityGrade" class="score-ring">—</span></div><p id="qualitySummary" class="muted">尚未评估</p><button id="quality">运行确定性评估</button><div id="dimensions" class="dimension-grid"></div><div id="risks" class="risk-list"></div></section>
+                <section class="panel generation-panel"><div class="panel-head"><div><p class="eyebrow">GENERATION QUOTE</p><h3>生成候选</h3></div></div><div class="compact-grid"><label>候选数<input id="candidateCount" type="number" min="1" max="8" value="2"></label><label>场景<select id="scenario"><option value="success">成功</option><option value="partial_success">部分成功</option><option value="failed">失败</option><option value="timeout">超时</option><option value="rate_limited">限流</option></select></label></div><button id="makeQuote">生成报价</button><div id="quoteBox" class="quote-box muted">报价会固定 Revision、Provider Snapshot、费用和部分成功政策。</div><button id="submitJob" disabled>确认并冻结 Credits</button></section>
+              </aside>
+            </div>
+
+            <section class="panel candidates-panel"><div class="panel-head"><div><p class="eyebrow">LISTEN & DECIDE</p><h3>任务、候选与 Master</h3></div><span class="muted">试听行为会进入可审计事件流</span></div><div id="jobs" class="job-list"></div><div id="candidates" class="candidate-grid"></div><div id="assetInfo" class="asset-banner muted">从 Ready Candidate 中选择 Master。</div></section>
+            <section class="panel collaboration-panel"><div class="panel-head"><div><p class="eyebrow">COLLABORATION</p><h3>时间点评论</h3></div><button id="addComment" class="secondary">添加评论</button></div><div id="comments" class="comment-list muted">暂无评论</div></section>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-assets" class="view">
+      <div class="page-head"><div><p class="eyebrow">ASSET OS</p><h1>音乐资产与权利证据</h1><p>每个资产都绑定固定 Revision、媒体哈希、生成 Recipe、贡献记录和版本化 Rights Manifest。</p></div><button id="reloadAssets" class="secondary">刷新资产</button></div>
+      <div class="asset-layout"><div id="assetCards" class="asset-card-grid"></div><aside id="assetDetail" class="panel detail-panel"><h3>选择一个资产</h3><p class="muted">查看权利能力、来源链和商业发布状态。</p></aside></div>
+    </section>
+
+    <section id="view-market" class="view">
+      <div class="page-head"><div><p class="eyebrow">MARKET OS</p><h1>额度、许可与品牌任务</h1><p>订单、支付、许可、交付、退款和争议保持独立对象并可对账。</p></div></div>
+      <div class="market-tabs"><button data-market="credits" class="active">额度与订阅</button><button data-market="offers">音乐许可</button><button data-market="briefs">品牌任务</button><button data-market="orders">订单与交付</button></div>
+      <div id="market-credits" class="market-pane active"><div id="catalog" class="catalog-grid"></div></div>
+      <div id="market-offers" class="market-pane"><div class="row section-title"><h2>可授权作品</h2><button id="reloadOffers" class="secondary">刷新</button></div><div id="marketOffers" class="offer-grid"></div></div>
+      <div id="market-briefs" class="market-pane"><div class="row section-title"><h2>公开品牌需求</h2><button id="createBrief" class="secondary">发布需求</button></div><div id="briefs" class="brief-grid"></div></div>
+      <div id="market-orders" class="market-pane"><div class="row section-title"><h2>订单与交付</h2><button id="reloadOrders" class="secondary">刷新</button></div><div id="orders" class="order-list"></div><h3>许可与交付</h3><div id="licenses" class="order-list"></div></div>
+    </section>
+
+    <section id="view-account" class="view">
+      <div class="page-head"><div><p class="eyebrow">INTELLIGENCE & TRUST</p><h1>指标、偏好与支持</h1><p>理论质量与真人选择、成本、权利可用性和留存共同校准。</p></div></div>
+      <div id="analyticsCards" class="metric-grid"></div>
+      <div class="account-grid"><section class="panel"><div class="panel-head"><h3>创作偏好</h3><button id="savePreferences" class="secondary">保存</button></div><label>偏好 JSON<textarea id="preferences" rows="12">{}</textarea></label><label class="check"><input id="learningEnabled" type="checkbox" checked>允许使用我的选择行为改善个人偏好模型</label></section><section class="panel"><div class="panel-head"><h3>支持与问题</h3><button id="newTicket" class="secondary">新建工单</button></div><div id="tickets" class="ticket-list"></div></section><section class="panel"><h3>账本</h3><div id="ledgerBalances" class="balance-grid"></div><div id="ledgerTransactions" class="ledger-list"></div></section></div>
+    </section>
+  </main>
+</div>
+
+<dialog id="dialog"><form method="dialog"><button class="dialog-close" value="cancel">×</button><div id="dialogContent"></div></form></dialog>
+<script src="app.js"></script>
+</body>
+</html>

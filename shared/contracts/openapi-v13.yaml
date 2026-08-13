@@ -1,0 +1,4179 @@
+openapi: 3.1.0
+info:
+  title: Resonance AI Music Asset Platform
+  version: 13.0.0
+paths:
+  /health:
+    get:
+      summary: Health
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+  /ready:
+    get:
+      summary: Ready
+      operationId: ready_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+  /api/auth/login:
+    post:
+      summary: Login
+      operationId: login_api_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+  /api/auth/refresh:
+    post:
+      summary: Refresh
+      operationId: refresh_api_auth_refresh_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+  /api/auth/logout:
+    post:
+      summary: Logout
+      operationId: logout_api_auth_logout_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/auth/me:
+    get:
+      summary: Me
+      operationId: me_api_auth_me_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/bootstrap:
+    get:
+      summary: Bootstrap
+      operationId: bootstrap_api_bootstrap_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects:
+    post:
+      summary: Create Project
+      operationId: create_project_api_projects_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: List Projects
+      operationId: list_projects_api_projects_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}:
+    get:
+      summary: Project Detail
+      operationId: project_detail_api_projects__project_id__get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/revisions:
+    get:
+      summary: Revisions
+      operationId: revisions_api_projects__project_id__revisions_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/locks:
+    put:
+      summary: Update Locks
+      operationId: update_locks_api_projects__project_id__locks_put
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LockUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/patch:
+    post:
+      summary: Patch Project
+      operationId: patch_project_api_projects__project_id__patch_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/chat:
+    post:
+      summary: Chat
+      operationId: chat_api_projects__project_id__chat_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/quality:
+    post:
+      summary: Quality
+      operationId: quality_api_projects__project_id__quality_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: revision
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Revision
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/quotes:
+    post:
+      summary: Create Quote
+      operationId: create_quote_api_projects__project_id__quotes_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/jobs:
+    post:
+      summary: Submit Job
+      operationId: submit_job_api_jobs_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobSubmit'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: List Jobs
+      operationId: list_jobs_api_jobs_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/jobs/{job_id}:
+    get:
+      summary: Job Detail
+      operationId: job_detail_api_jobs__job_id__get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/candidates/{candidate_id}/media-token:
+    post:
+      summary: Candidate Media Token
+      operationId: candidate_media_token_api_candidates__candidate_id__media_token_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Candidate Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /media/{media_id}:
+    get:
+      summary: Stream Media
+      operationId: stream_media_media__media_id__get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: media_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Media Id
+      - name: token
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/master:
+    post:
+      summary: Select Master
+      operationId: select_master_api_projects__project_id__master_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MasterRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/assets/{asset_id}:
+    get:
+      summary: Asset Detail
+      operationId: asset_detail_api_assets__asset_id__get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/assets/{asset_id}/export:
+    get:
+      summary: Export Asset
+      operationId: export_asset_api_assets__asset_id__export_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/ledger:
+    get:
+      summary: Ledger
+      operationId: ledger_api_ledger_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/provider-webhooks/{provider}:
+    post:
+      summary: Provider Webhook
+      operationId: provider_webhook_api_provider_webhooks__provider__post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      - name: X-Event-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Event-Id
+      - name: X-Signature
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Signature
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/dashboard:
+    get:
+      summary: Admin Dashboard
+      operationId: admin_dashboard_api_admin_dashboard_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/switches/{key}:
+    put:
+      summary: Update Switch
+      operationId: update_switch_api_admin_switches__key__put
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Key
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwitchBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/jobs/{job_id}/cancel:
+    post:
+      summary: Cancel Job
+      operationId: cancel_job_api_admin_jobs__job_id__cancel_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/branches:
+    get:
+      tags:
+      - Creation OS
+      summary: List Branches
+      operationId: list_branches_api_projects__project_id__branches_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Creation OS
+      summary: Create Branch
+      operationId: create_branch_api_projects__project_id__branches_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BranchCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/branches/{branch_id}:
+    put:
+      tags:
+      - Creation OS
+      summary: Advance Branch
+      operationId: advance_branch_api_projects__project_id__branches__branch_id__put
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: branch_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Branch Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BranchAdvance'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/comments:
+    get:
+      tags:
+      - Creation OS
+      summary: List Comments
+      operationId: list_comments_api_projects__project_id__comments_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Creation OS
+      summary: Create Comment
+      operationId: create_comment_api_projects__project_id__comments_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/projects/{project_id}/comments/{comment_id}/resolve:
+    post:
+      tags:
+      - Creation OS
+      summary: Resolve Comment
+      operationId: resolve_comment_api_projects__project_id__comments__comment_id__resolve_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: comment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Comment Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/preferences:
+    get:
+      tags:
+      - Creation OS
+      summary: Get Preferences
+      operationId: get_preferences_api_preferences_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Creation OS
+      summary: Update Preferences
+      operationId: update_preferences_api_preferences_put
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreferenceUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/events:
+    post:
+      tags:
+      - Creation OS
+      summary: Capture Event
+      operationId: capture_event_api_events_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductEventCreate'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/analytics/overview:
+    get:
+      tags:
+      - Creation OS
+      summary: Analytics Overview
+      operationId: analytics_overview_api_analytics_overview_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/assets:
+    get:
+      tags:
+      - Asset OS
+      summary: List Assets
+      operationId: list_assets_api_assets_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/assets/{asset_id}/provenance:
+    get:
+      tags:
+      - Asset OS
+      summary: Asset Provenance
+      operationId: asset_provenance_api_assets__asset_id__provenance_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/assets/{asset_id}/rights-evidence:
+    get:
+      tags:
+      - Asset OS
+      summary: List Evidence
+      operationId: list_evidence_api_assets__asset_id__rights_evidence_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Asset OS
+      summary: Add Evidence
+      operationId: add_evidence_api_assets__asset_id__rights_evidence_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvidenceCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/assets/{asset_id}/rights-review:
+    post:
+      tags:
+      - Asset OS
+      summary: Issue Reviewed Manifest
+      operationId: issue_reviewed_manifest_api_assets__asset_id__rights_review_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Asset Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RightsReview'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/moderation/cases:
+    get:
+      tags:
+      - Asset OS
+      summary: List Cases
+      operationId: list_cases_api_moderation_cases_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Asset OS
+      summary: Create Case
+      operationId: create_case_api_moderation_cases_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaseCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/moderation/cases/{case_id}:
+    put:
+      tags:
+      - Asset OS
+      summary: Update Case
+      operationId: update_case_api_moderation_cases__case_id__put
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaseUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/catalog:
+    get:
+      tags:
+      - Market OS
+      summary: Catalog
+      operationId: catalog_api_catalog_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/orders/credits:
+    post:
+      tags:
+      - Market OS
+      summary: Create Credit Order
+      operationId: create_credit_order_api_orders_credits_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreditOrderCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/orders:
+    get:
+      tags:
+      - Market OS
+      summary: List Orders
+      operationId: list_orders_api_orders_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/orders/{order_id}/pay:
+    post:
+      tags:
+      - Market OS
+      summary: Pay Order
+      operationId: pay_order_api_orders__order_id__pay_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Order Id
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentStart'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/payment-webhooks/{provider}:
+    post:
+      tags:
+      - Market OS
+      summary: Payment Webhook
+      operationId: payment_webhook_api_payment_webhooks__provider__post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      - name: X-Payment-Signature
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Payment-Signature
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/orders/{order_id}/refunds:
+    post:
+      tags:
+      - Market OS
+      summary: Refund Order
+      operationId: refund_order_api_orders__order_id__refunds_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Order Id
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundCreate'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/marketplace/offers:
+    get:
+      tags:
+      - Market OS
+      summary: Marketplace Offers
+      operationId: marketplace_offers_api_marketplace_offers_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/offers:
+    get:
+      tags:
+      - Market OS
+      summary: Own Offers
+      operationId: own_offers_api_offers_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Market OS
+      summary: Create Offer
+      operationId: create_offer_api_offers_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfferCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/marketplace/offers/{offer_id}/purchase:
+    post:
+      tags:
+      - Market OS
+      summary: Purchase Offer
+      operationId: purchase_offer_api_marketplace_offers__offer_id__purchase_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: offer_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Offer Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LicensePurchase'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/licenses:
+    get:
+      tags:
+      - Market OS
+      summary: List Licenses
+      operationId: list_licenses_api_licenses_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/deliveries:
+    get:
+      tags:
+      - Market OS
+      summary: List Deliveries
+      operationId: list_deliveries_api_deliveries_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/deliveries/{delivery_id}/export:
+    get:
+      tags:
+      - Market OS
+      summary: Export Delivery
+      operationId: export_delivery_api_deliveries__delivery_id__export_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: delivery_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Delivery Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/payouts:
+    get:
+      tags:
+      - Market OS
+      summary: List Payouts
+      operationId: list_payouts_api_payouts_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/brand-briefs/public:
+    get:
+      tags:
+      - Market OS
+      summary: Public Briefs
+      operationId: public_briefs_api_brand_briefs_public_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/brand-briefs:
+    get:
+      tags:
+      - Market OS
+      summary: Own Briefs
+      operationId: own_briefs_api_brand_briefs_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Market OS
+      summary: Create Brief
+      operationId: create_brief_api_brand_briefs_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BriefCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/brand-briefs/{brief_id}/submissions:
+    post:
+      tags:
+      - Market OS
+      summary: Submit To Brief
+      operationId: submit_to_brief_api_brand_briefs__brief_id__submissions_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: brief_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Brief Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Market OS
+      summary: Review Submissions
+      operationId: review_submissions_api_brand_briefs__brief_id__submissions_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: brief_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Brief Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/brand-submissions/{submission_id}/award:
+    post:
+      tags:
+      - Market OS
+      summary: Award Submission
+      operationId: award_submission_api_brand_submissions__submission_id__award_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: submission_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Submission Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrandAwardCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/brand-submissions/{submission_id}:
+    put:
+      tags:
+      - Market OS
+      summary: Update Submission
+      operationId: update_submission_api_brand_submissions__submission_id__put
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: submission_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Submission Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionReview'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/support/tickets:
+    get:
+      tags:
+      - Market OS
+      summary: List Tickets
+      operationId: list_tickets_api_support_tickets_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Market OS
+      summary: Create Ticket
+      operationId: create_ticket_api_support_tickets_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/dashboard:
+    get:
+      tags:
+      - Operations Control Plane
+      summary: Dashboard
+      operationId: dashboard_api_admin_v12_dashboard_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/reconciliation:
+    get:
+      tags:
+      - Operations Control Plane
+      summary: Reconciliation
+      operationId: reconciliation_api_admin_v12_reconciliation_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/payments:
+    get:
+      tags:
+      - Operations Control Plane
+      summary: Payments
+      operationId: payments_api_admin_v12_payments_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/moderation:
+    get:
+      tags:
+      - Operations Control Plane
+      summary: Moderation
+      operationId: moderation_api_admin_v12_moderation_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/tickets/{ticket_id}:
+    put:
+      tags:
+      - Operations Control Plane
+      summary: Update Ticket
+      operationId: update_ticket_api_admin_v12_tickets__ticket_id__put
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: ticket_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Ticket Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/release-evidence:
+    get:
+      tags:
+      - Operations Control Plane
+      summary: Release Evidence
+      operationId: release_evidence_api_admin_v12_release_evidence_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/release-evidence/{gate}/{evidence_key}:
+    put:
+      tags:
+      - Operations Control Plane
+      summary: Update Release Evidence
+      operationId: update_release_evidence_api_admin_v12_release_evidence__gate___evidence_key__put
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: gate
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Gate
+      - name: evidence_key
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Evidence Key
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvidenceUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/release-gate/{gate}:
+    get:
+      tags:
+      - Operations Control Plane
+      summary: Release Gate
+      operationId: release_gate_api_admin_v12_release_gate__gate__get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: gate
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Gate
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/payouts:
+    get:
+      tags:
+      - Operations Control Plane
+      summary: Payout Queue
+      operationId: payout_queue_api_admin_v12_payouts_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/payouts/{payout_id}:
+    put:
+      tags:
+      - Operations Control Plane
+      summary: Update Payout
+      operationId: update_payout_api_admin_v12_payouts__payout_id__put
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: payout_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Payout Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    BranchAdvance:
+      properties:
+        head_revision:
+          type: integer
+          title: Head Revision
+      type: object
+      required:
+      - head_revision
+      title: BranchAdvance
+    BranchCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Name
+        base_revision:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Base Revision
+      type: object
+      required:
+      - name
+      title: BranchCreate
+    BrandAwardCreate:
+      properties:
+        licensee_name:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Licensee Name
+        territory:
+          type: string
+          maxLength: 200
+          minLength: 2
+          title: Territory
+          default: worldwide
+        duration_days:
+          anyOf:
+          - type: integer
+            maximum: 36500.0
+            minimum: 1.0
+          - type: 'null'
+          title: Duration Days
+          default: 365
+      type: object
+      required:
+      - licensee_name
+      title: BrandAwardCreate
+    BriefCreate:
+      properties:
+        title:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Title
+        description:
+          type: string
+          maxLength: 10000
+          minLength: 1
+          title: Description
+        budget_amount:
+          type: integer
+          minimum: 0.0
+          title: Budget Amount
+        currency:
+          type: string
+          maxLength: 3
+          minLength: 3
+          title: Currency
+          default: USD
+        deadline:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deadline
+        requirements:
+          additionalProperties: true
+          type: object
+          title: Requirements
+        status:
+          type: string
+          pattern: ^(draft|open)$
+          title: Status
+          default: draft
+      type: object
+      required:
+      - title
+      - description
+      - budget_amount
+      title: BriefCreate
+    CaseCreate:
+      properties:
+        subject_type:
+          type: string
+          pattern: ^(project|candidate|asset|user|brand_brief)$
+          title: Subject Type
+        subject_id:
+          type: string
+          title: Subject Id
+        case_type:
+          type: string
+          pattern: ^(copyright|voice_likeness|trademark|harassment|minor_safety|malware|other)$
+          title: Case Type
+        severity:
+          type: string
+          pattern: ^(low|medium|high|critical)$
+          title: Severity
+          default: medium
+        evidence:
+          additionalProperties: true
+          type: object
+          title: Evidence
+        legal_hold:
+          type: boolean
+          title: Legal Hold
+          default: false
+      type: object
+      required:
+      - subject_type
+      - subject_id
+      - case_type
+      title: CaseCreate
+    CaseUpdate:
+      properties:
+        status:
+          type: string
+          pattern: ^(open|triage|restricted|appealed|resolved|dismissed)$
+          title: Status
+        restrictions:
+          additionalProperties: true
+          type: object
+          title: Restrictions
+        legal_hold:
+          type: boolean
+          title: Legal Hold
+          default: false
+      type: object
+      required:
+      - status
+      title: CaseUpdate
+    ChatRequest:
+      properties:
+        message:
+          type: string
+          maxLength: 4000
+          minLength: 1
+          title: Message
+        base_revision:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Base Revision
+        apply:
+          type: boolean
+          title: Apply
+          default: true
+      type: object
+      required:
+      - message
+      title: ChatRequest
+    CommentCreate:
+      properties:
+        body:
+          type: string
+          maxLength: 4000
+          minLength: 1
+          title: Body
+        spec_revision:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Spec Revision
+        candidate_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate Id
+        timecode_ms:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Timecode Ms
+      type: object
+      required:
+      - body
+      title: CommentCreate
+    CreditOrderCreate:
+      properties:
+        sku:
+          type: string
+          title: Sku
+        quantity:
+          type: integer
+          maximum: 20.0
+          minimum: 1.0
+          title: Quantity
+          default: 1
+      type: object
+      required:
+      - sku
+      title: CreditOrderCreate
+    EvidenceCreate:
+      properties:
+        evidence_type:
+          type: string
+          pattern: ^(user_declaration|license|consent|provider_contract|source_file|identity|other)$
+          title: Evidence Type
+        project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+        evidence:
+          additionalProperties: true
+          type: object
+          title: Evidence
+        expires_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Expires At
+      type: object
+      required:
+      - evidence_type
+      - evidence
+      title: EvidenceCreate
+    EvidenceUpdate:
+      properties:
+        status:
+          type: string
+          pattern: ^(missing|in_progress|passed|waived|failed)$
+          title: Status
+        evidence:
+          additionalProperties: true
+          type: object
+          title: Evidence
+        owner:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Owner
+      type: object
+      required:
+      - status
+      - owner
+      title: EvidenceUpdate
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    JobSubmit:
+      properties:
+        quote_id:
+          type: string
+          title: Quote Id
+        quote_hash:
+          type: string
+          title: Quote Hash
+        user_confirmation:
+          type: boolean
+          title: User Confirmation
+      type: object
+      required:
+      - quote_id
+      - quote_hash
+      - user_confirmation
+      title: JobSubmit
+    LicensePurchase:
+      properties:
+        licensee_name:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Licensee Name
+      type: object
+      required:
+      - licensee_name
+      title: LicensePurchase
+    LockUpdate:
+      properties:
+        locked_paths:
+          items:
+            type: string
+          type: array
+          title: Locked Paths
+      type: object
+      required:
+      - locked_paths
+      title: LockUpdate
+    LoginBody:
+      properties:
+        email:
+          type: string
+          title: Email
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - email
+      - password
+      title: LoginBody
+    MasterRequest:
+      properties:
+        candidate_id:
+          type: string
+          title: Candidate Id
+        expected_spec_revision:
+          type: integer
+          title: Expected Spec Revision
+        confirmation:
+          type: boolean
+          title: Confirmation
+      type: object
+      required:
+      - candidate_id
+      - expected_spec_revision
+      - confirmation
+      title: MasterRequest
+    OfferCreate:
+      properties:
+        asset_snapshot_id:
+          type: string
+          title: Asset Snapshot Id
+        license_template_id:
+          type: string
+          title: License Template Id
+          default: 12121212-1212-1212-1212-121212121212
+        title:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Title
+        description:
+          type: string
+          maxLength: 4000
+          title: Description
+          default: ''
+        price_amount:
+          type: integer
+          minimum: 0.0
+          title: Price Amount
+        currency:
+          type: string
+          maxLength: 3
+          minLength: 3
+          title: Currency
+          default: USD
+        territory:
+          type: string
+          title: Territory
+          default: worldwide
+        duration_days:
+          anyOf:
+          - type: integer
+            maximum: 36500.0
+            minimum: 1.0
+          - type: 'null'
+          title: Duration Days
+          default: 365
+        exclusive:
+          type: boolean
+          title: Exclusive
+          default: false
+        status:
+          type: string
+          pattern: ^(draft|active)$
+          title: Status
+          default: draft
+      type: object
+      required:
+      - asset_snapshot_id
+      - title
+      - price_amount
+      title: OfferCreate
+    PatchRequest:
+      properties:
+        base_revision:
+          type: integer
+          title: Base Revision
+        operations:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Operations
+        reason:
+          type: string
+          title: Reason
+          default: patch
+      type: object
+      required:
+      - base_revision
+      - operations
+      title: PatchRequest
+    PaymentStart:
+      properties:
+        scenario:
+          type: string
+          pattern: ^(success|failed|requires_action|processing)$
+          title: Scenario
+          default: success
+      type: object
+      title: PaymentStart
+    PayoutUpdate:
+      properties:
+        status:
+          type: string
+          pattern: ^(pending|processing|paid|failed|reversed)$
+          title: Status
+        provider_payout_id:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Provider Payout Id
+      type: object
+      required:
+      - status
+      title: PayoutUpdate
+    PreferenceUpdate:
+      properties:
+        scope:
+          type: string
+          pattern: ^(global|workspace|project)$
+          title: Scope
+        project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+        preferences:
+          additionalProperties: true
+          type: object
+          title: Preferences
+        learning_enabled:
+          type: boolean
+          title: Learning Enabled
+          default: true
+      type: object
+      required:
+      - scope
+      title: PreferenceUpdate
+    ProductEventCreate:
+      properties:
+        event_name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Event Name
+        project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+        asset_snapshot_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Asset Snapshot Id
+        properties:
+          additionalProperties: true
+          type: object
+          title: Properties
+      type: object
+      required:
+      - event_name
+      title: ProductEventCreate
+    ProjectCreate:
+      properties:
+        title:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Title
+        spec:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Spec
+      type: object
+      required:
+      - title
+      title: ProjectCreate
+    QuoteRequest:
+      properties:
+        spec_revision:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Spec Revision
+        candidate_count:
+          type: integer
+          maximum: 8.0
+          minimum: 1.0
+          title: Candidate Count
+          default: 2
+        scenario:
+          type: string
+          title: Scenario
+          default: success
+      type: object
+      title: QuoteRequest
+    RefundCreate:
+      properties:
+        amount:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Amount
+        reason:
+          type: string
+          maxLength: 1000
+          minLength: 3
+          title: Reason
+      type: object
+      required:
+      - reason
+      title: RefundCreate
+    RightsReview:
+      properties:
+        status:
+          type: string
+          pattern: ^(verified|restricted|disputed|development_only|unverified)$
+          title: Status
+        capabilities:
+          additionalProperties:
+            additionalProperties:
+              type: string
+            type: object
+          type: object
+          title: Capabilities
+        legal_hold:
+          type: boolean
+          title: Legal Hold
+          default: false
+        review_note:
+          type: string
+          maxLength: 2000
+          minLength: 3
+          title: Review Note
+        evidence_ids:
+          items:
+            type: string
+          type: array
+          title: Evidence Ids
+      type: object
+      required:
+      - status
+      - capabilities
+      - review_note
+      title: RightsReview
+    SubmissionCreate:
+      properties:
+        asset_snapshot_id:
+          type: string
+          title: Asset Snapshot Id
+        notes:
+          type: string
+          maxLength: 4000
+          title: Notes
+          default: ''
+      type: object
+      required:
+      - asset_snapshot_id
+      title: SubmissionCreate
+    SubmissionReview:
+      properties:
+        status:
+          type: string
+          pattern: ^(shortlisted|rejected)$
+          title: Status
+      type: object
+      required:
+      - status
+      title: SubmissionReview
+    SwitchBody:
+      properties:
+        value:
+          type: boolean
+          title: Value
+      type: object
+      required:
+      - value
+      title: SwitchBody
+    TicketCreate:
+      properties:
+        category:
+          type: string
+          pattern: ^(generation|billing|rights|account|marketplace|other)$
+          title: Category
+        priority:
+          type: string
+          pattern: ^(low|normal|high|urgent)$
+          title: Priority
+          default: normal
+        subject:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Subject
+        description:
+          type: string
+          maxLength: 10000
+          minLength: 1
+          title: Description
+        related_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Related Type
+        related_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Related Id
+      type: object
+      required:
+      - category
+      - subject
+      - description
+      title: TicketCreate
+    TicketUpdate:
+      properties:
+        status:
+          type: string
+          pattern: ^(open|waiting_customer|waiting_internal|resolved|closed)$
+          title: Status
+        assigned_to:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Assigned To
+      type: object
+      required:
+      - status
+      title: TicketUpdate
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    JWTBearer:
+      type: http
+      description: 'JWT access token via Authorization: Bearer <token>'
+      scheme: bearer
+    SessionCookie:
+      type: apiKey
+      description: HttpOnly browser session cookie (plus X-CSRF-Token on writes)
+      in: cookie
+      name: resonance_access

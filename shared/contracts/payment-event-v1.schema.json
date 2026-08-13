@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.local/payment-event-v1.schema.json",
+  "title": "Payment Event",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "data"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "payment_intent.succeeded",
+        "payment_intent.failed",
+        "refund.succeeded"
+      ]
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "object"
+      ],
+      "properties": {
+        "object": {
+          "type": "object",
+          "required": [
+            "id",
+            "metadata"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "metadata": {
+              "type": "object",
+              "required": [
+                "payment_id",
+                "order_id",
+                "workspace_id"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

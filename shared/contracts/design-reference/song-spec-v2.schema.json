@@ -1,0 +1,491 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/contracts/song-spec-v2.schema.json",
+  "title": "SongSpecV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "revision",
+    "brief",
+    "music",
+    "lyrics",
+    "preservation",
+    "generationIntent",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "2.0"
+    },
+    "projectId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "language": {
+      "type": "string",
+      "enum": [
+        "zh-CN",
+        "zh-HK",
+        "en",
+        "ja",
+        "ko",
+        "instrumental",
+        "other"
+      ]
+    },
+    "brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "goal",
+        "audience",
+        "usage",
+        "emotionArc",
+        "referencesPolicy"
+      ],
+      "properties": {
+        "goal": {
+          "type": "string",
+          "maxLength": 800
+        },
+        "audience": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "usage": {
+          "enum": [
+            "personal",
+            "social",
+            "commercial_content",
+            "brand",
+            "game",
+            "film",
+            "podcast",
+            "marketplace",
+            "other"
+          ]
+        },
+        "durationTargetSec": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 5,
+          "maximum": 900
+        },
+        "emotionArc": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 8
+        },
+        "mustInclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20
+        },
+        "mustAvoid": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20
+        },
+        "referencesPolicy": {
+          "enum": [
+            "no_artist_names",
+            "descriptive_only",
+            "licensed_reference_attached"
+          ]
+        },
+        "referenceAssetIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "maxItems": 20
+        }
+      }
+    },
+    "music": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "styles",
+        "tempo",
+        "vocal",
+        "structure",
+        "arrangement",
+        "negativeTags"
+      ],
+      "properties": {
+        "styles": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "tempo": {
+          "type": "object",
+          "required": [
+            "bpm",
+            "feel"
+          ],
+          "properties": {
+            "bpm": {
+              "type": "integer",
+              "minimum": 40,
+              "maximum": 220
+            },
+            "feel": {
+              "type": "string"
+            }
+          }
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vocal": {
+          "type": "object",
+          "required": [
+            "presence",
+            "type",
+            "timbre",
+            "delivery"
+          ],
+          "properties": {
+            "presence": {
+              "enum": [
+                "lead",
+                "duet",
+                "choir",
+                "instrumental"
+              ]
+            },
+            "type": {
+              "type": "string"
+            },
+            "timbre": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 12
+            },
+            "delivery": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 12
+            },
+            "consentEvidenceId": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          }
+        },
+        "structure": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "type",
+              "intent"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "intent": {
+                "type": "string"
+              },
+              "targetBars": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              }
+            }
+          },
+          "minItems": 1
+        },
+        "arrangement": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "instrument",
+              "role"
+            ],
+            "properties": {
+              "instrument": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "entrySectionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "mix": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20
+        },
+        "negativeTags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 30
+        }
+      }
+    },
+    "lyrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "hook",
+        "sections"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "full",
+            "partial",
+            "instrumental"
+          ]
+        },
+        "hook": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 300
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "type",
+              "text",
+              "authoring"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "performanceNotes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
+              },
+              "authoring": {
+                "enum": [
+                  "user",
+                  "ai",
+                  "mixed",
+                  "uploaded"
+                ]
+              }
+            }
+          },
+          "maxItems": 50
+        }
+      }
+    },
+    "preservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lockedPaths",
+        "preserveIntent",
+        "changeIntent",
+        "avoidIntent"
+      ],
+      "properties": {
+        "lockedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "uniqueItems": true
+        },
+        "preserveIntent": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 30
+        },
+        "changeIntent": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 30
+        },
+        "avoidIntent": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 30
+        }
+      }
+    },
+    "generationIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "candidateCount",
+        "varianceAxes"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "text_only",
+            "preview",
+            "production",
+            "batch",
+            "extend",
+            "remix"
+          ]
+        },
+        "candidateCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "varianceAxes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "vocal",
+              "arrangement",
+              "tempo",
+              "emotion",
+              "structure",
+              "provider_seed"
+            ]
+          },
+          "maxItems": 6
+        },
+        "qualityTarget": {
+          "type": "object",
+          "properties": {
+            "grade": {
+              "enum": [
+                "S+",
+                "S",
+                "A",
+                "B"
+              ]
+            },
+            "minScore": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "createdBy",
+        "sourceRevision",
+        "uploadedAssetIds",
+        "humanContributionEventIds"
+      ],
+      "properties": {
+        "createdBy": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sourceRevision": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "uploadedAssetIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "humanContributionEventIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "promptBundleVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "qualityEngineVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

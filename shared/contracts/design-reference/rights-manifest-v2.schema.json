@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RightsManifestV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifestVersion",
+    "id",
+    "assetSnapshotId",
+    "jurisdictionProfile",
+    "providerEvidence",
+    "inputEvidence",
+    "humanContribution",
+    "capabilities",
+    "status",
+    "createdAt"
+  ],
+  "properties": {
+    "manifestVersion": {
+      "const": "2.0"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "assetSnapshotId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "jurisdictionProfile": {
+      "type": "string"
+    },
+    "providerEvidence": {
+      "type": "object",
+      "required": [
+        "provider",
+        "plan",
+        "termsVersion",
+        "providerSnapshotId",
+        "generationJobId"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "termsVersion": {
+          "type": "string"
+        },
+        "contractId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "providerSnapshotId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "generationJobId": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "inputEvidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "assetId",
+          "kind",
+          "ownershipAssertion",
+          "sha256"
+        ],
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "enum": [
+              "lyrics",
+              "audio",
+              "voice",
+              "image",
+              "reference",
+              "other"
+            ]
+          },
+          "ownershipAssertion": {
+            "enum": [
+              "user_owned",
+              "licensed",
+              "public_domain",
+              "unknown",
+              "disputed"
+            ]
+          },
+          "consentEvidenceId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "humanContribution": {
+      "type": "object",
+      "required": [
+        "eventCount",
+        "reportHash",
+        "assessment"
+      ],
+      "properties": {
+        "eventCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reportHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "assessment": {
+          "enum": [
+            "documented",
+            "insufficient",
+            "not_assessed"
+          ]
+        }
+      }
+    },
+    "aiDisclosure": {
+      "enum": [
+        "fully_gen_ai",
+        "partly_gen_ai",
+        "no_gen_ai",
+        "unknown"
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stream",
+        "download",
+        "share",
+        "commercial_use",
+        "license",
+        "sublicense",
+        "distribute",
+        "mint",
+        "content_id"
+      ],
+      "properties": {
+        "stream": {
+          "$ref": "#/$defs/cap"
+        },
+        "download": {
+          "$ref": "#/$defs/cap"
+        },
+        "share": {
+          "$ref": "#/$defs/cap"
+        },
+        "commercial_use": {
+          "$ref": "#/$defs/cap"
+        },
+        "license": {
+          "$ref": "#/$defs/cap"
+        },
+        "sublicense": {
+          "$ref": "#/$defs/cap"
+        },
+        "distribute": {
+          "$ref": "#/$defs/cap"
+        },
+        "mint": {
+          "$ref": "#/$defs/cap"
+        },
+        "content_id": {
+          "$ref": "#/$defs/cap"
+        }
+      }
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "evidence_pending",
+        "verified",
+        "restricted",
+        "disputed",
+        "legal_hold",
+        "revoked"
+      ]
+    },
+    "restrictions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "verifiedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "cap": {
+      "type": "object",
+      "required": [
+        "decision",
+        "basis"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "allowed",
+            "blocked",
+            "manual_review",
+            "unknown"
+          ]
+        },
+        "basis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expiresAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GenerationQuote",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "quoteId",
+    "projectId",
+    "specRevision",
+    "providerSnapshotId",
+    "candidateCount",
+    "creditReserve",
+    "moneyEstimate",
+    "rightsSummary",
+    "expiresAt",
+    "quoteHash"
+  ],
+  "properties": {
+    "quoteId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "projectId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "specRevision": {
+      "type": "integer"
+    },
+    "providerSnapshotId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "candidateCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    },
+    "creditReserve": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "moneyEstimate": {
+      "type": "object",
+      "required": [
+        "currency",
+        "min",
+        "max"
+      ],
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "min": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "rightsSummary": {
+      "type": "object",
+      "required": [
+        "commercialUse",
+        "assetization",
+        "licenseEligibility"
+      ],
+      "properties": {
+        "commercialUse": {
+          "type": "string"
+        },
+        "assetization": {
+          "type": "string"
+        },
+        "licenseEligibility": {
+          "type": "string"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "quoteHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

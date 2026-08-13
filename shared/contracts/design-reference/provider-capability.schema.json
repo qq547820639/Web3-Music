@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProviderCapabilitySnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshotId",
+    "provider",
+    "capturedAt",
+    "environment",
+    "approvalStatus",
+    "features",
+    "limits",
+    "rightsProfile",
+    "costProfile"
+  ],
+  "properties": {
+    "snapshotId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "adapterVersion": {
+      "type": "string"
+    },
+    "capturedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "environment": {
+      "enum": [
+        "development",
+        "staging",
+        "production"
+      ]
+    },
+    "approvalStatus": {
+      "enum": [
+        "unreviewed",
+        "development_only",
+        "approved",
+        "suspended",
+        "revoked"
+      ]
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "maxStyleChars": {
+          "type": "integer"
+        },
+        "maxLyricsChars": {
+          "type": "integer"
+        },
+        "maxCandidates": {
+          "type": "integer"
+        },
+        "timeoutSec": {
+          "type": "integer"
+        }
+      }
+    },
+    "rightsProfile": {
+      "type": "object",
+      "required": [
+        "commercialUse",
+        "redistribution",
+        "sublicense",
+        "minting",
+        "trainingUse",
+        "termsVersion"
+      ],
+      "properties": {
+        "commercialUse": {
+          "enum": [
+            "allowed",
+            "restricted",
+            "unknown"
+          ]
+        },
+        "redistribution": {
+          "enum": [
+            "allowed",
+            "restricted",
+            "unknown"
+          ]
+        },
+        "sublicense": {
+          "enum": [
+            "allowed",
+            "restricted",
+            "unknown"
+          ]
+        },
+        "minting": {
+          "enum": [
+            "allowed",
+            "restricted",
+            "unknown"
+          ]
+        },
+        "trainingUse": {
+          "enum": [
+            "allowed",
+            "prohibited",
+            "unknown"
+          ]
+        },
+        "termsVersion": {
+          "type": "string"
+        },
+        "contractId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "costProfile": {
+      "type": "object",
+      "required": [
+        "currency",
+        "quoteMode"
+      ],
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "quoteMode": {
+          "enum": [
+            "fixed",
+            "per_candidate",
+            "provider_reported",
+            "unknown"
+          ]
+        },
+        "estimatedUnitCost": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SongPatchCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "commandId",
+    "projectId",
+    "baseRevision",
+    "actor",
+    "intent",
+    "operations",
+    "expectedEffects"
+  ],
+  "properties": {
+    "commandId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "projectId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "baseRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "actor": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "user",
+            "ai_agent",
+            "system"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "intent": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "required": [
+          "op",
+          "path"
+        ],
+        "properties": {
+          "op": {
+            "enum": [
+              "add",
+              "remove",
+              "replace",
+              "test"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "value": {}
+        }
+      }
+    },
+    "expectedEffects": {
+      "type": "object",
+      "required": [
+        "preserved",
+        "changed",
+        "risks"
+      ],
+      "properties": {
+        "preserved": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "risks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "requiresUserConfirmation": {
+      "type": "boolean"
+    }
+  }
+}

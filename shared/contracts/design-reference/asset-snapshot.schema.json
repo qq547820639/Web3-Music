@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AssetSnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "projectId",
+    "masterSelectionId",
+    "candidateId",
+    "specRevision",
+    "snapshotHash",
+    "mediaHash",
+    "rightsManifestId",
+    "createdAt"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "projectId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "masterSelectionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "candidateId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "specRevision": {
+      "type": "integer"
+    },
+    "snapshotHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "mediaHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "rightsManifestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "lineage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "relation",
+          "sourceId"
+        ],
+        "properties": {
+          "relation": {
+            "enum": [
+              "generated_from",
+              "branched_from",
+              "extended_from",
+              "remixed_from",
+              "replaced_master"
+            ]
+          },
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
