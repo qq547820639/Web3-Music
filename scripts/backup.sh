@@ -18,7 +18,7 @@ docker compose stop api worker >/dev/null 2>&1 || true
 writers_stopped=1
 
 echo "[1/4] PostgreSQL consistent dump"
-docker compose exec -T postgres pg_dump -U music_admin -d music --format=custom --no-owner --no-privileges > "$DEST/postgres.dump"
+docker compose exec -T postgres pg_dump -U music_admin -d music --format=custom --no-owner > "$DEST/postgres.dump"
 
 echo "[2/4] Private object storage snapshot"
 # Copy the contents of MinIO's local persistent data directory. This is suitable for

@@ -11,9 +11,9 @@ docker compose stop api worker web admin prometheus >/dev/null 2>&1 || true
 docker compose up -d postgres minio
 
 echo "Restoring PostgreSQL"
-docker compose exec -T postgres dropdb -U music_admin --if-exists music
+docker compose exec -T postgres dropdb -U music_admin --if-exists --force music
 docker compose exec -T postgres createdb -U music_admin music
-cat "$DIR/postgres.dump" | docker compose exec -T postgres pg_restore -U music_admin -d music --no-owner --no-privileges
+cat "$DIR/postgres.dump" | docker compose exec -T postgres pg_restore -U music_admin -d music --no-owner
 
 echo "Restoring local MinIO data"
 docker compose stop minio
