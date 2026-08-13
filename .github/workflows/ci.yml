@@ -15,8 +15,21 @@ jobs:
         with: {node-version: '22'}
       - run: pip install -r services/api/requirements.txt -r services/worker/requirements.txt -r services/payment-emulator/requirements.txt -r services/acceptance/requirements.txt pytest pyyaml jsonschema
       - run: ./scripts/static-verify.sh
-      - run: docker compose config --quiet
-      - run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml config --quiet
+      - name: Validate compose config (with diagnostics)
+        shell: bash
+        run: |
+          cp .env.example .env
+          set -o pipefail
+          docker compose config 2>&1 | tee /tmp/cfg.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then tail -40 /tmp/cfg.log | sed 's/^/::error::/'; exit "$rc"; fi
+      - name: Validate commercial override
+        shell: bash
+        run: |
+          set -o pipefail
+          docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml config 2>&1 | tee /tmp/cfg2.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then tail -40 /tmp/cfg2.log | sed 's/^/::error::/'; exit "$rc"; fi
       - run: ./scripts/release-evidence.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -33,7 +46,13 @@ jobs:
         with: {python-version: '3.12'}
       - run: pip install httpx
       - run: cp .env.example .env
-      - run: docker compose up --build -d
+      - name: Start stack (with diagnostics)
+        shell: bash
+        run: |
+          set -o pipefail
+          docker compose up --build -d 2>&1 | tee /tmp/up.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then tail -60 /tmp/up.log | sed 's/^/::error::/'; exit "$rc"; fi
       - run: docker compose ps
       - run: docker compose --profile test run --rm acceptance
       - run: ./scripts/contract-test.sh
@@ -55,7 +74,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cp .env.example .env
-      - run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d
+      - name: Start commercial stack (with diagnostics)
+        shell: bash
+        run: |
+          set -o pipefail
+          docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d 2>&1 | tee /tmp/up-comm.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then tail -60 /tmp/up-comm.log | sed 's/^/::error::/'; exit "$rc"; fi
       - run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial
       - if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color > commercial-compose.log || true
