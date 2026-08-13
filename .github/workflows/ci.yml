@@ -50,8 +50,9 @@ jobs:
         shell: bash
         run: |
           if ! docker compose up --build -d > /tmp/up.log 2>&1; then
-            echo "::error title=compose-up::$(tail -50 /tmp/up.log | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
-            echo "::error title=migrate-logs::$(docker compose logs --no-color migrate 2>/dev/null | tail -30 | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
+            echo "::error title=compose-up::$(tail -50 /tmp/up.log | tr -d '\r' | tr '\n' ' ' | head -c 2500)"
+            echo "::error title=api-logs::$(docker compose logs --no-color api 2>/dev/null | tail -40 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
+            echo "::error title=worker-logs::$(docker compose logs --no-color worker 2>/dev/null | tail -40 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
       - run: docker compose ps
@@ -79,8 +80,9 @@ jobs:
         shell: bash
         run: |
           if ! docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d > /tmp/up-comm.log 2>&1; then
-            echo "::error title=compose-up::$(tail -50 /tmp/up-comm.log | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
-            echo "::error title=migrate-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color migrate 2>/dev/null | tail -30 | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
+            echo "::error title=compose-up::$(tail -50 /tmp/up-comm.log | tr -d '\r' | tr '\n' ' ' | head -c 2500)"
+            echo "::error title=api-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color api 2>/dev/null | tail -40 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
+            echo "::error title=worker-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color worker 2>/dev/null | tail -40 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
       - run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial
