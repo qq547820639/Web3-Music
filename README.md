@@ -1,157 +1,119 @@
-# Resonance v13 Final · AI 音乐创作、资产与商业许可平台
+# Resonance 🎵
 
-Resonance 是一套可通过 Docker Compose 一键启动的完整参考产品，覆盖 AI 音乐创作、质量评估、真实异步生成适配、媒体入库、双分录额度账本、资产证据、权利能力、订单支付、商业许可、品牌任务和运营控制面。
+**用日常对话，把脑海里的旋律变成一首歌。**
 
-默认配置完全自包含：音乐 Provider Emulator 生成测试 WAV，Payment Emulator 模拟支付与退款。它可以用于本地体验、产品验收、故障演练、Provider/Payment Contract Test 和工程交接。Emulator 输出不具有商业音乐权利，系统会强制将商业能力标记为 `blocked`。
+---
 
-## 一键启动
+## 产品简介
 
-```bash
-cp .env.example .env
-docker compose up --build
-```
+Resonance 是一个「AI 音乐创作、资产与商业许可」平台。它解决的是这样一件难事：**会写词、有灵感、想做歌的人很多，但懂编曲、会混音、能搞定版权的人很少。**
 
-统一入口：
+在 Resonance 里，你不需要学任何音乐软件，也不用会一门乐器。你只要像聊天一样，告诉它「帮我写一首关于夏夜的歌，中文，民谣风，女生演唱，带点怀旧的感觉」——系统就会把你的想法整理成一份结构化的创作稿，自动为它打分、给出改进建议，再调用音乐生成引擎，把几个真实可听的候选版本交给你。你试听、对比，挑出最喜欢的那一个，它就成了你的「定稿作品」。
 
-| 功能 | 地址 |
-|---|---|
-| Creator Studio | http://localhost:8080 |
-| Admin 控制台 | http://localhost:8080/admin/ |
-| API 文档 | http://localhost:8080/docs |
-| API 健康检查 | http://localhost:8080/health |
-| Provider Emulator | http://localhost:8010/docs |
-| Payment Emulator | http://localhost:8020/docs |
-| Prometheus | http://localhost:9090 |
-| MinIO Console | http://localhost:9001 |
+定稿之后，它还帮你解决创作之外最头疼的事：**这首歌归谁、谁能用、能不能商用、怎么卖出去。** 作品会升级成一份带权利记录的「平台资产」，你可以直接进行商业许可与交易，也可以去品牌方的任务市场接单赚分成。
 
-调试时也可直接访问 Studio `http://localhost:4173`、Admin `http://localhost:4174` 和 API `http://localhost:8000/docs`。
+一句话总结：**Resonance 让「有想法的人」也能做出「能商用、能赚钱」的音乐。**
 
-本地账户：
+> 目前交付的是一套**可一键启动的完整参考产品**，内置了「音乐生成模拟器」和「支付模拟器」，本地就能完整体验「创作 → 定稿 → 许可 → 交易」的全流程。接上真实供应商与支付通道后，即可对外商用。
 
-| 身份 | 邮箱 | 密码 |
-|---|---|---|
-| 平台管理员 / Workspace Owner | `owner@example.local` | `demo-owner` |
-| Creator | `creator@example.local` | `demo-creator` |
-| 另一租户 Owner | `viewer@other.local` | `demo-viewer` |
+---
 
-## 产品闭环
+## 核心功能亮点
 
-```text
-登录与 Workspace Membership
-→ SongProject / 不可变 SongSpecRevision
-→ 对话 Patch、手动编辑、字段锁定、分支与评论
-→ 28 维质量评估与 v2.1-Final TEE 模型
-→ 确定性内容与权利预检
-→ 固定 Revision、Provider Snapshot、费用与权利摘要的 Quote
-→ 独立 Credit Hold
-→ PostgreSQL Lease Worker、Heartbeat、Retry、Dead Letter
-→ Provider Emulator / Generic REST Provider Adapter
-→ SSRF 防护、媒体解码、SHA-256、MinIO 私有入库
-→ 成功、部分成功、失败结算与额度释放
-→ A/B 试听与 Master Selection
-→ Asset Snapshot、Rights Manifest、证据与 Legal Hold
-→ Offer、Order、Payment、License、Delivery
-→ Brand Brief、Submission、Award、Revenue Split、Payout
-→ Refund 时撤销交付、释放独家预留并逆转分账
-```
+**1. 🗣️ 对话式创作 —— 像聊天，不是填表**
+不用面对一堆看不懂的参数。你想表达什么主题、什么语言、什么风格、要男声女声、结构怎么走、情绪是什么，直接说出来就行，系统帮你翻译成一首歌的「创作稿」。
 
-## v13 最终强化
+**2. 🎯 28 维质量评估 —— 你身边的音乐编辑**
+创作稿写好后，系统会像一位懂行的音乐编辑，从 28 个维度给它打分，并指出「哪里还可以更好」。你照着改，作品质量自然往上走。
 
-- 浏览器默认使用 HttpOnly Access/Refresh Cookie，不再把令牌保存到 `localStorage`。
-- Refresh Token 服务器端哈希存储、轮换与即时撤销。
-- 所有 Cookie 写操作需要双提交 CSRF Token；Bearer API 客户端保持兼容。
-- 统一 Nginx Gateway 提供同源 Studio、Admin、API 和媒体访问，并加入限流与安全响应头。
-- 生成报价前执行版本化、可解释的确定性 Policy Preflight；高风险声音克隆请求被阻断，艺人风格和第三方素材引用进入人工复核。
-- 新增 `generic_rest` Contract-first Provider Adapter，支持正式供应商的能力、提交、轮询、取消、幂等和成本回传。
-- Provider 合同版本、审批状态和能力快照写入历史任务，不使用当前配置解释过去资产。
-- G13 发布证据室跟踪会话撤销、Policy Preflight、统一 Gateway、Provider Contract、Docker E2E 与恢复证据。
+**3. 🎧 候选试听 + A/B 盲听对比 —— 听着选，不靠猜**
+系统一次给你多个版本，你可以来回切换盲听对比，选一个最顺耳的，而不是凭运气。
 
-## 自动验证
+**4. 🌳 版本树与「定稿」资产 —— 每一步都有留痕**
+每一次修改都像一棵树一样长出分支、留下记录。一旦定稿，就像「已经出版的小说章节」——不能偷偷改动，想改只能出新版本。你的作品历史，清清楚楚。
 
-```bash
-./scripts/static-verify.sh
-./scripts/test.sh
-./scripts/contract-test.sh
-```
+**5. 📜 权利清单（Rights Manifest）—— 把「谁能用、怎么用」说清楚**
+这首歌能不能商用、谁有版权、授权范围是什么，一页清单讲明白，不再是一笔糊涂账。
 
-商业许可合成测试：
+**6. 💰 商业许可与交易 —— 让作品变成生意**
+可以购买、授权、交付作品。背后的账本用「复式记账」，就像会计记账「每笔钱都有进有出、必须对得上」，保证你的余额和额度分毫不差。
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d
-docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml \
-  --profile commercial-test run --rm acceptance-commercial
-```
+**7. 🏷️ 品牌任务市场 —— 接单赚分成**
+品牌方在平台发需求（比如「要一首 30 秒的广告配乐」），创作者投稿，被选中就按约定分成。灵感直接变成收入。
 
-Worker 恢复演练：
+**8. 👥 团队协作 —— 多人共管一个作品空间**
+一个作品空间里，可以有多人一起创作、评论、管理，做专辑、做项目都能分工协作。
 
-```bash
-./scripts/chaos-worker-recovery.sh
-```
+---
 
-发布证据包：
+## 快速上手 🚀
 
-```bash
-./scripts/release-evidence.sh
-```
+想先玩玩看？跟着这几步走就行：
 
-## 正式 Provider
+1. **一键启动**：在项目目录里执行下面这一行（电脑需已装 Docker）：
 
-生产接入使用 `generic_rest`：
+   ```bash
+   docker compose up --build
+   ```
 
-```env
-MUSIC_PROVIDER=generic_rest
-PROVIDER_APPROVAL_STATUS=approved_commercial
-PROVIDER_CONTRACT_VERSION=contract-2026-001
-GENERIC_PROVIDER_BASE_URL=https://provider.example.com
-GENERIC_PROVIDER_API_KEY=...
-GENERIC_PROVIDER_MODEL=...
-```
+2. **打开网址**：浏览器访问 👉 **http://localhost:8080**（这就是你的「创作工作室」）。
 
-外部服务需实现 `docs/PROVIDER_ADAPTER_CONTRACT.md` 定义的异步任务合同。正式上线前必须通过 `services/acceptance/test_provider_contract.py`，并提供书面合同、输出权利、成本和数据处理证据。
+3. **登录体验账户**，随便挑一个：
 
-`SunoCommunityAdapter` 仅保留为开发兼容层，系统不会让它获得商业能力。
+   | 身份 | 邮箱 | 密码 |
+   |---|---|---|
+   | 平台管理员 | `owner@example.local` | `demo-owner` |
+   | 创作者 | `creator@example.local` | `demo-creator` |
+   | 访客（另一空间） | `viewer@other.local` | `demo-viewer` |
 
-## 安全边界
+4. **点几下，做一首歌**：描述你的想法（主题 / 语言 / 风格 / 人声 / 情绪）→ 让它优化创作稿 → 试听几个候选版本 → 选最喜欢的定为「定稿」，就拥有第一首作品啦。
 
-- JWT 只证明用户身份；每个请求仍从数据库解析 Workspace Membership。
-- PostgreSQL RLS 为多租户隔离提供第二层保护。
-- AI 只能提出 Patch，不能扣费、调用 Provider、选定 Master、修改 Rights Manifest 或签发 License。
-- Ledger Transaction 与 Entry 追加保存，余额只能由分录聚合。
-- 每个 Job 只能结算自己的 Credit Hold。
-- Provider URL、状态、MIME、文件名、成本和回调均不可信。
-- `unknown`、`blocked` 或 `manual_review` 不能在 UI 中被当作商业许可。
-- 媒体只存入私有对象存储，播放使用短期签名 Token。
+> 💡 小提示：现在生成的是「模拟器」产出的**演示音频**——就像排练时请来的**替身演员**，帮你走完整个流程，但**不具备商业版权**。正式商用需要接入获得授权的**真实供应商**（相当于「正式签约演员」）。
 
-## 生产部署前的外部条件
+---
 
-代码包不能替代真实经营主体、供应商合同或合规审批。对外收费前仍需完成：正式 OIDC/SSO 与 MFA、KMS/Secret Manager、TLS/WAF、托管高可用 PostgreSQL/Redis/对象存储、集中日志与 Trace、病毒扫描与专业内容审核、真实支付机构、税务与发票、正式音乐 Provider 合同、至少 100 次真实生成回归、独立渗透测试和灾难恢复演练。
+## 常见使用场景
 
-## 目录
+- **🎬 短视频创作者**：几十秒就能做出一段专属背景音乐，不再到处找免费素材、担心版权纠纷。
+- **🏢 品牌方 / 广告主**：在任务市场发布定制歌曲需求，坐等创作者投稿，选中后按约定分成。
+- **🎤 音乐爱好者**：有灵感但不懂编曲？把想法说给它听，让灵感真正落成一首作品。
+- **👥 内容团队 / 音乐工作室**：多人共管一个作品空间，协作做一张专辑或一个项目。
+- **🛒 有商用需求的人**：需要为商品、门店、视频购买可商用的音乐授权，直接在平台完成许可与交易。
 
-```text
-services/api                 FastAPI、身份会话、领域 API、质量、权利、账本与市场
-services/worker              Lease Worker、Provider、媒体入库、结算与 Outbox
-services/provider-emulator   持久化音乐供应商故障实验室
-services/payment-emulator    支付、回调与退款模拟器
-services/web                 Creator Studio
-services/admin               运营、财务、信任与发布控制面
-services/gateway             统一同源入口、限流与安全响应头
-services/migrate             带 SHA-256 的版本化迁移器
-services/acceptance          默认、商业、Provider 与 Payment 验收
-shared/contracts             OpenAPI v13 与 JSON Schema 事实源
-db/migrations                领域状态、RLS、约束和不可变规则
-infrastructure               Prometheus 与生产部署参考
-scripts                      启动、验证、Chaos、备份恢复和发布证据
-```
+---
 
-## 500 并发低成本生产化包
+## 常见问题（FAQ）
 
-本交付增加了面向约 500 名同时在线用户的低成本容量强化：PostgreSQL 连接池与背压、Worker 单进程并行、Provider/媒体 HTTP 连接复用、对象存储直出、容量索引、Kubernetes HPA/PDB 和一键容量 Gate。
+**Q1：我不会音乐、不会作词，能用吗？**
+当然能。这正是 Resonance 想解决的问题——你只要用日常语言描述「想要什么感觉的歌」，剩下的交给它。不懂乐理、不会乐器都完全没关系。
 
-在有 Docker 的预发布主机上运行：
+**Q2：生成的歌，版权归谁？**
+这是大家最关心的问题。Resonance 用一份「权利清单（Rights Manifest）」把每一首歌的归属、使用范围、是否可商用都写得明明白白。你的作品、你的权利，一清二楚。
 
-```bash
-./scripts/capacity-gate-500.sh
-```
+**Q3：AI 生成的歌，和真人创作有什么区别？**
+AI 更像一个「超快、随叫随到的作曲搭档」，能迅速把你的想法变成可听的版本。但最终选哪一版、定稿什么风格，始终由你决定——你才是这首歌的「作者」。
 
-详细参数与生产规格见 `docs/COST_OPTIMIZED_500_CONCURRENCY.md`。该 Gate 验证 500 个并发用户访问平台 API；500 个音乐生成任务同时执行属于 Provider 容量/合同测试，不能用用户并发测试替代。
+**Q4：能商用吗？**
+能。平台支持商业许可与交易，你可以购买、授权、交付作品。不过要提醒一句：本地「模拟器」生成的演示音频**不具商业版权**（就像替身演员不能拿来正式签约），正式商用需接入获得授权的真实音乐供应商。
+
+**Q5：免费吗？**
+本地体验这套参考产品是完全免费的，可以完整走通全流程。真实商用时，会产生音乐生成和交易的成本，具体取决于你接入的供应商和授权方案。
+
+**Q6：我的作品会被别人看到吗？**
+不会随便公开。每个用户都有独立的工作空间，你的作品和草稿只属于你的空间，别人无法随意查看或使用。
+
+**Q7：定稿后还能改吗？**
+可以改，但不会「偷偷改」。定稿就像已出版的书，想调整只能出新版本，历史版本都保留、可追溯，清清楚楚。
+
+**Q8：现在能直接对外收费运营吗？**
+目前交付的是「参考产品」，接入了模拟的音乐供应商和支付通道，适合体验、验证和二次开发。正式对外收费前，还需要接入真实的供应商、支付机构，并完成相应的合规与安全准备。
+
+---
+
+## 获取帮助与支持 💬
+
+- **反馈问题 / 提建议**：欢迎到 [GitHub Issues](https://github.com/qq547820639/Web3-Music/issues) 提交，我们会尽量及时响应。
+- **项目文档**：更多说明见 `docs/` 目录。
+- **开发者 / 运维看这里**：部署命令、安全边界、目录结构、500 并发说明等技术内容已迁移至 👉 [`docs/README_FOR_DEVELOPERS.md`](docs/README_FOR_DEVELOPERS.md)。
+
+有任何想法或遇到问题，随时来聊，我们很乐意听到你的声音 🎶
