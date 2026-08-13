@@ -49,7 +49,9 @@
       <div class="creation-layout">
         <aside class="project-rail">
           <div class="rail-head"><div><p class="eyebrow">PROJECTS</p><h2>歌曲项目</h2></div><button id="newProject" class="icon-btn" title="新建歌曲">＋</button></div>
+          <div id="projectTools" class="list-tools"></div>
           <div id="projects" class="project-list"></div>
+          <div id="projectPager"></div>
           <div class="rail-section"><div class="row"><b>版本分支</b><button id="newBranch" class="text-btn">新建</button></div><div id="branches" class="branch-list muted">选择项目后显示</div></div>
         </aside>
 
@@ -76,12 +78,12 @@
               </section>
 
               <aside class="right-stack">
-                <section class="panel quality-panel"><div class="panel-head"><div><p class="eyebrow">QUALITY ENGINE</p><h3>28 维质量</h3></div><span id="qualityGrade" class="score-ring">—</span></div><p id="qualitySummary" class="muted">尚未评估</p><button id="quality">运行确定性评估</button><div id="dimensions" class="dimension-grid"></div><div id="risks" class="risk-list"></div></section>
+                <section class="panel quality-panel"><div class="panel-head"><div><p class="eyebrow">QUALITY ENGINE</p><h3>28 维质量</h3></div><span id="qualityGrade" class="score-ring">—</span></div><p id="qualitySummary" class="muted">尚未评估</p><button id="quality">运行确定性评估</button><div id="radarGrid" class="radar-grid"></div><div id="risks" class="risk-list"></div></section>
                 <section class="panel generation-panel"><div class="panel-head"><div><p class="eyebrow">GENERATION QUOTE</p><h3>生成候选</h3></div></div><div class="compact-grid"><label>候选数<input id="candidateCount" type="number" min="1" max="8" value="2"></label><label>场景<select id="scenario"><option value="success">成功</option><option value="partial_success">部分成功</option><option value="failed">失败</option><option value="timeout">超时</option><option value="rate_limited">限流</option></select></label></div><button id="makeQuote">生成报价</button><div id="quoteBox" class="quote-box muted">报价会固定 Revision、Provider Snapshot、费用和部分成功政策。</div><button id="submitJob" disabled>确认并冻结 Credits</button></section>
               </aside>
             </div>
 
-            <section class="panel candidates-panel"><div class="panel-head"><div><p class="eyebrow">LISTEN & DECIDE</p><h3>任务、候选与 Master</h3></div><span class="muted">试听行为会进入可审计事件流</span></div><div id="jobs" class="job-list"></div><div id="candidates" class="candidate-grid"></div><div id="assetInfo" class="asset-banner muted">从 Ready Candidate 中选择 Master。</div></section>
+            <section class="panel candidates-panel"><div class="panel-head"><div><p class="eyebrow">LISTEN & DECIDE</p><h3>任务、候选与 Master</h3></div><div class="row panel-tools"><span class="muted">试听行为会进入可审计事件流</span><label class="check blind-toggle"><input id="blindToggle" type="checkbox">盲听 A/B</label></div></div><div id="jobSteps"></div><div id="jobs" class="job-list"></div><div id="candidates" class="candidate-grid"></div><div id="assetInfo" class="asset-banner muted">从 Ready Candidate 中选择 Master。</div></section>
             <section class="panel collaboration-panel"><div class="panel-head"><div><p class="eyebrow">COLLABORATION</p><h3>时间点评论</h3></div><button id="addComment" class="secondary">添加评论</button></div><div id="comments" class="comment-list muted">暂无评论</div></section>
           </div>
         </section>
@@ -90,7 +92,7 @@
 
     <section id="view-assets" class="view">
       <div class="page-head"><div><p class="eyebrow">ASSET OS</p><h1>音乐资产与权利证据</h1><p>每个资产都绑定固定 Revision、媒体哈希、生成 Recipe、贡献记录和版本化 Rights Manifest。</p></div><button id="reloadAssets" class="secondary">刷新资产</button></div>
-      <div class="asset-layout"><div id="assetCards" class="asset-card-grid"></div><aside id="assetDetail" class="panel detail-panel"><h3>选择一个资产</h3><p class="muted">查看权利能力、来源链和商业发布状态。</p></aside></div>
+      <div class="asset-layout"><div class="asset-main"><div id="assetTools" class="list-tools"></div><div id="assetCards" class="asset-card-grid"></div><div id="assetPager"></div></div><aside id="assetDetail" class="panel detail-panel"><h3>选择一个资产</h3><p class="muted">查看权利能力、来源链和商业发布状态。</p></aside></div>
     </section>
 
     <section id="view-market" class="view">
@@ -99,18 +101,19 @@
       <div id="market-credits" class="market-pane active"><div id="catalog" class="catalog-grid"></div></div>
       <div id="market-offers" class="market-pane"><div class="row section-title"><h2>可授权作品</h2><button id="reloadOffers" class="secondary">刷新</button></div><div id="marketOffers" class="offer-grid"></div></div>
       <div id="market-briefs" class="market-pane"><div class="row section-title"><h2>公开品牌需求</h2><button id="createBrief" class="secondary">发布需求</button></div><div id="briefs" class="brief-grid"></div></div>
-      <div id="market-orders" class="market-pane"><div class="row section-title"><h2>订单与交付</h2><button id="reloadOrders" class="secondary">刷新</button></div><div id="orders" class="order-list"></div><h3>许可与交付</h3><div id="licenses" class="order-list"></div></div>
+      <div id="market-orders" class="market-pane"><div class="row section-title"><h2>订单与交付</h2><button id="reloadOrders" class="secondary">刷新</button></div><div id="ordersTools" class="list-tools"></div><div id="orders" class="order-list"></div><div id="ordersPager"></div><h3>许可与交付</h3><div id="licensesTools" class="list-tools"></div><div id="licenses" class="order-list"></div><div id="licensesPager"></div></div>
     </section>
 
     <section id="view-account" class="view">
       <div class="page-head"><div><p class="eyebrow">INTELLIGENCE & TRUST</p><h1>指标、偏好与支持</h1><p>理论质量与真人选择、成本、权利可用性和留存共同校准。</p></div></div>
       <div id="analyticsCards" class="metric-grid"></div>
-      <div class="account-grid"><section class="panel"><div class="panel-head"><h3>创作偏好</h3><button id="savePreferences" class="secondary">保存</button></div><label>偏好 JSON<textarea id="preferences" rows="12">{}</textarea></label><label class="check"><input id="learningEnabled" type="checkbox" checked>允许使用我的选择行为改善个人偏好模型</label></section><section class="panel"><div class="panel-head"><h3>支持与问题</h3><button id="newTicket" class="secondary">新建工单</button></div><div id="tickets" class="ticket-list"></div></section><section class="panel"><h3>账本</h3><div id="ledgerBalances" class="balance-grid"></div><div id="ledgerTransactions" class="ledger-list"></div></section></div>
+      <div class="account-grid"><section class="panel"><div class="panel-head"><h3>创作偏好</h3><button id="savePreferences" class="secondary">保存</button></div><label>偏好 JSON<textarea id="preferences" rows="12">{}</textarea></label><label class="check"><input id="learningEnabled" type="checkbox" checked>允许使用我的选择行为改善个人偏好模型</label></section><section class="panel"><div class="panel-head"><h3>支持与问题</h3><button id="newTicket" class="secondary">新建工单</button></div><div id="ticketTools" class="list-tools"></div><div id="tickets" class="ticket-list"></div><div id="ticketPager"></div></section><section class="panel"><h3>账本</h3><div id="ledgerBalances" class="balance-grid"></div><div id="ledgerTransactions" class="ledger-list"></div></section></div>
     </section>
   </main>
 </div>
 
 <dialog id="dialog"><form method="dialog"><button class="dialog-close" value="cancel">×</button><div id="dialogContent"></div></form></dialog>
+<div id="radarTip" class="radar-tip" hidden></div>
 <script src="app.js"></script>
 </body>
 </html>

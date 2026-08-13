@@ -944,3 +944,244 @@ button.loading::after {
     padding-right: 18px;
   }
 }
+
+/* ---- Phase 2: list tools (B4) ---- */
+.list-tools {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.list-search {
+  width: 100%;
+}
+.status-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tab-btn {
+  background: var(--surface3);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  padding: 6px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.tab-btn.active {
+  color: #111;
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+.pager-btn {
+  padding: 7px 11px;
+  font-size: 12px;
+}
+.asset-main {
+  display: grid;
+  gap: 0;
+  align-content: start;
+}
+
+/* ---- Phase 2: generation stepper (B1) ---- */
+.stepper {
+  display: grid;
+  gap: 0;
+  margin-bottom: 14px;
+  padding: 6px 0;
+}
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 10px;
+  padding-bottom: 14px;
+}
+.step:not(:last-child):before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 18px;
+  bottom: 0;
+  width: 2px;
+  background: var(--line);
+}
+.step-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  background: var(--surface2);
+  position: relative;
+  z-index: 1;
+}
+.step.completed .step-dot {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+.step.failed .step-dot {
+  border-color: var(--danger);
+  background: var(--danger);
+}
+.step.compensated .step-dot {
+  border-color: var(--warn);
+  background: var(--warn);
+}
+.step.started .step-dot {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgba(120,166,255,.18);
+}
+.step-body {
+  display: grid;
+  gap: 4px;
+}
+.step-body .row {
+  justify-content: flex-start;
+}
+.step-error {
+  font-size: 11px;
+  color: var(--danger);
+  background: rgba(255,107,107,.08);
+  border: 1px solid rgba(255,107,107,.2);
+  padding: 6px 8px;
+  border-radius: 7px;
+  word-break: break-all;
+}
+
+/* ---- Phase 2: blind A/B + playback (B2) ---- */
+.panel-tools {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.blind-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.blind-toggle input {
+  width: auto;
+}
+.blind-label {
+  font-size: 24px;
+  letter-spacing: .05em;
+  color: var(--primary);
+}
+.play-progress {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--surface3);
+  overflow: hidden;
+  margin: 2px 0 8px;
+}
+.play-progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--primary);
+  transition: width .15s linear;
+}
+.candidate-meta {
+  justify-content: flex-start;
+  margin-bottom: 4px;
+}
+
+/* ---- Phase 2: radar (B3) ---- */
+.radar-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.radar-chart {
+  background: var(--surface2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+}
+.radar-chart-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.radar-chart-head b {
+  font-size: 13px;
+}
+.radar-chart svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+.radar-ring {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.radar-axis {
+  stroke: #333a46;
+  stroke-width: 1;
+}
+.radar-data {
+  fill-opacity: .22;
+  stroke-width: 1.5;
+  stroke: #fff;
+  stroke-opacity: .4;
+}
+.radar-point {
+  fill: var(--text);
+  stroke: var(--surface2);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+.radar-point.critical {
+  fill: var(--danger);
+  stroke: #fff;
+  stroke-width: 2;
+}
+.radar-label {
+  fill: var(--muted);
+  font-size: 9px;
+}
+.radar-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.radar-legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 11px;
+}
+.radar-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.radar-critical {
+  color: var(--danger);
+}
+.radar-tip {
+  position: fixed;
+  z-index: 200;
+  max-width: 240px;
+  padding: 9px 11px;
+  background: #20242d;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}

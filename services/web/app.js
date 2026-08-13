@@ -11,7 +11,16 @@ const state = {
   quote: null,
   assets: [],
   activeAsset: null,
-  view: 'creation'
+  candidates: [],
+  blindMode: false,
+  view: 'creation',
+  lists: {
+    projects: { offset: 0, limit: 20, q: '', status: '', total: 0 },
+    assets: { offset: 0, limit: 20, q: '', status: '', total: 0 },
+    orders: { offset: 0, limit: 20, q: '', status: '', total: 0 },
+    licenses: { offset: 0, limit: 20, q: '', status: '', total: 0 },
+    tickets: { offset: 0, limit: 20, q: '', status: '', total: 0 }
+  }
 };
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -326,6 +335,11 @@ async function init() {
     await refreshBootstrap();
     await loadProjects();
     bindNavigation();
+    bindListControls();
+    $('#blindToggle').onchange = () => {
+      state.blindMode = $('#blindToggle').checked;
+      renderCandidates(state.candidates);
+    };
     await navigate('creation');
   } catch (err) {
     console.error(err);
@@ -361,17 +375,231 @@ async function navigate(view) {
   }
 }
 
+function fmtDuration(ms) {
+  if (ms === null || ms === undefined || isNaN(Number(ms))) return '--:--';
+  const total = Math.round(Number(ms) / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+function debounce(fn, wait) {
+  let timer = null;
+  return function(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), wait);
+  };
+}
+
+// ---- List pagination / search / status filter (B4) ----
+function listQuery(name) {
+  const s = state.lists[name];
+  const p = new URLSearchParams({ limit: String(s.limit), offset: String(s.offset) });
+  if (s.q) p.set('q', s.q);
+  if (s.status) p.set('status', s.status);
+  return '?' + p.toString();
+}
+function searchHtml(name, placeholder) {
+  return `<input class="list-search" data-list-search="${name}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(state.lists[name].q)}">`;
+}
+function statusTabsHtml(name, options) {
+  const cur = state.lists[name].status;
+  const tabs = [['', '全部'], ...options].map(([v, label]) => `<button class="tab-btn${cur === v ? ' active' : ''}" data-list-status="${name}" data-status="${v}">${escapeHtml(label)}</button>`).join('');
+  return `<div class="status-tabs">${tabs}</div>`;
+}
+function pagerHtml(name) {
+  const s = state.lists[name];
+  const page = Math.floor(s.offset / s.limit) + 1;
+  const pages = Math.max(1, Math.ceil(s.total / s.limit));
+  return `<div class="pager"><button class="secondary pager-btn" data-pager="${name}" data-dir="-1"${page <= 1 ? ' disabled' : ''}>上一页</button><span class="muted">${page} / ${pages} · 共 ${s.total} 条</span><button class="secondary pager-btn" data-pager="${name}" data-dir="1"${page >= pages ? ' disabled' : ''}>下一页</button></div>`;
+}
+function pageList(name, dir) {
+  const s = state.lists[name];
+  const page = Math.floor(s.offset / s.limit) + 1;
+  const pages = Math.max(1, Math.ceil(s.total / s.limit));
+  const next = page + dir;
+  if (next < 1 || next > pages) return;
+  s.offset = (next - 1) * s.limit;
+  reloadList(name);
+}
+function reloadList(name) {
+  if (name === 'projects') return loadProjects(true);
+  if (name === 'assets') return loadAssets();
+  if (name === 'orders' || name === 'licenses') return loadOrders();
+  if (name === 'tickets') return loadTickets();
+}
+function bindListControls() {
+  document.addEventListener('click', e => {
+    const pager = e.target.closest && e.target.closest('[data-pager]');
+    if (pager) {
+      pageList(pager.dataset.pager, Number(pager.dataset.dir));
+      return;
+    }
+    const tab = e.target.closest && e.target.closest('[data-list-status]');
+    if (tab) {
+      const name = tab.dataset.listStatus;
+      const s = state.lists[name];
+      s.status = tab.dataset.status;
+      s.offset = 0;
+      reloadList(name);
+    }
+  });
+  document.addEventListener('input', debounce(e => {
+    const search = e.target.closest && e.target.closest('[data-list-search]');
+    if (!search) return;
+    const name = search.dataset.listSearch;
+    const s = state.lists[name];
+    s.q = search.value.trim();
+    s.offset = 0;
+    reloadList(name);
+  }, 300));
+}
+
+// ---- Generation step timeline (B1) ----
+const STEP_NAMES = {
+  provider_submit: '提交供应商',
+  media_ingest: '媒体入库',
+  submit: '已提交',
+  provider: '生成中',
+  ingest: '入库',
+  settle: '结算'
+};
+const STEP_STATUS = {
+  started: ['进行中', 'processing'],
+  completed: ['成功', 'completed'],
+  failed: ['失败', 'failed'],
+  compensated: ['补偿', 'compensated']
+};
+function stepLabel(name) {
+  return STEP_NAMES[name] || name;
+}
+function stepDuration(s) {
+  if (!s.ended_at || !s.started_at) return '';
+  const ms = Date.parse(s.ended_at) - Date.parse(s.started_at);
+  if (isNaN(ms)) return '';
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+function renderJobSteps(steps) {
+  const box = $('#jobSteps');
+  if (!box) return;
+  if (!steps || !steps.length) {
+    box.innerHTML = '';
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = `<div class="stepper">${steps.map(s => {
+    const meta = STEP_STATUS[s.status] || [s.status, s.status];
+    const err = s.error ? (typeof s.error === 'string' ? s.error : (s.error.message || s.error.type || JSON.stringify(s.error))) : '';
+    return `<div class="step ${s.status}"><div class="step-dot"></div><div class="step-body"><div class="row"><b>${escapeHtml(stepLabel(s.step_name))}</b><span class="status ${meta[1]}">${escapeHtml(meta[0])}</span></div><small class="muted">第 ${s.attempt} 次${s.started_at ? ' · ' + fmtDate(s.started_at) : ''}${stepDuration(s) ? ' · ' + stepDuration(s) : ''}</small>${err ? `<div class="step-error">${escapeHtml(err)}</div>` : ''}</div></div>`;
+  }).join('')}</div>`;
+}
+
+// ---- 28-dimension radar (B3, native SVG, zero deps) ----
+const RADAR_GROUP_META = {
+  Core: { label: '核心维度', color: 'var(--primary)' },
+  Important: { label: '重要维度', color: 'var(--blue)' },
+  Auxiliary: { label: '辅助维度', color: 'var(--warn)' }
+};
+const CRITICAL_DIM = {
+  CriticalPenalty_TSMI: 'V27',
+  CriticalPenalty_PAC: 'V16',
+  CriticalPenalty_C3AC: 'V21'
+};
+function radarChart(group, dims, criticalCodes) {
+  const size = 240;
+  const levels = 5;
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = size / 2 - 42;
+  const n = dims.length;
+  const angle = i => -Math.PI / 2 + (2 * Math.PI * i) / n;
+  const pt = (i, r) => [cx + r * Math.cos(angle(i)), cy + r * Math.sin(angle(i))];
+  const parts = [];
+  for (let l = 1; l <= levels; l++) {
+    const r = radius * l / levels;
+    const pts = dims.map((_, i) => pt(i, r).map(v => v.toFixed(1)).join(',')).join(' ');
+    parts.push(`<polygon points="${pts}" class="radar-ring"></polygon>`);
+  }
+  for (let i = 0; i < n; i++) {
+    const [x, y] = pt(i, radius);
+    parts.push(`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="radar-axis"></line>`);
+  }
+  const dataPts = dims.map((d, i) => {
+    const r = Math.max(0, Math.min(1, (Number(d.raw) || 0) / 5)) * radius;
+    return pt(i, r).map(v => v.toFixed(1)).join(',');
+  }).join(' ');
+  const color = RADAR_GROUP_META[group].color;
+  parts.push(`<polygon points="${dataPts}" class="radar-data" style="fill:${color}"></polygon>`);
+  dims.forEach((d, i) => {
+    const [x, y] = pt(i, radius);
+    const lx = cx + (radius + 16) * Math.cos(angle(i));
+    const ly = cy + (radius + 16) * Math.sin(angle(i));
+    const crit = criticalCodes.has(d.code);
+    const raw = Number(d.raw) || 0;
+    parts.push(`<circle class="radar-point${crit ? ' critical' : ''}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" data-radar-point data-code="${escapeHtml(d.code)}" data-name="${escapeHtml(d.name)}" data-group="${group}" data-val="${raw}" data-max="${d.max || 5}" data-note="${escapeHtml(d.note || '')}"></circle>`);
+    parts.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" class="radar-label" text-anchor="middle" dominant-baseline="middle">${escapeHtml(d.code)}</text>`);
+  });
+  return `<div class="radar-chart"><div class="radar-chart-head"><span class="radar-dot" style="background:${color}"></span><b>${RADAR_GROUP_META[group].label}</b><span class="muted">${n} 维</span></div><svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${parts.join('')}</svg></div>`;
+}
+function asObj(v) {
+  if (v === null || v === undefined) return v;
+  if (typeof v === 'string') {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return v;
+    }
+  }
+  return v;
+}
+function renderRadar(dims, vars) {
+  const box = $('#radarGrid');
+  if (!box) return;
+  dims = dims || [];
+  vars = vars || {};
+  const criticalCodes = new Set(Object.entries(CRITICAL_DIM).filter(([k]) => Number(vars[k]) > 0).map(([, v]) => v));
+  const groups = ['Core', 'Important', 'Auxiliary'];
+  const charts = groups.map(g => {
+    const gd = dims.filter(d => d.priority === g);
+    return gd.length ? radarChart(g, gd, criticalCodes) : '';
+  }).join('');
+  box.innerHTML = `${charts}<div class="radar-legend muted">${groups.map(g => `<span><i class="radar-dot" style="background:${RADAR_GROUP_META[g].color}"></i>${RADAR_GROUP_META[g].label}</span>`).join('')}${criticalCodes.size ? '<span class="radar-critical">红点 = CriticalPenalty 命中</span>' : ''}</div>`;
+  $$('#radarGrid [data-radar-point]').forEach(el => {
+    el.addEventListener('mousemove', e => moveRadarTip(e, el));
+    el.addEventListener('mouseleave', hideRadarTip);
+  });
+}
+function moveRadarTip(e, el) {
+  const tip = $('#radarTip');
+  if (!tip) return;
+  tip.innerHTML = `<b>${el.dataset.code} ${el.dataset.name}</b><br><span class="muted">${el.dataset.group}</span> · 分值 <b>${el.dataset.val}</b> / ${el.dataset.max}${el.dataset.note ? `<br><span class="muted">${el.dataset.note}</span>` : ''}`;
+  tip.hidden = false;
+  tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 250) + 'px';
+  tip.style.top = (e.clientY + 14) + 'px';
+}
+function hideRadarTip() {
+  const tip = $('#radarTip');
+  if (tip) tip.hidden = true;
+}
+
 // Creation OS
-async function loadProjects() {
-  state.projects = await api('/api/projects');
+async function loadProjects(preserveSelection = false) {
+  const data = await api('/api/projects' + listQuery('projects'));
+  state.lists.projects.total = data.total || 0;
+  state.projects = data.items || [];
   renderProjects();
-  if (state.projectId && state.projects.some(p => p.id === state.projectId)) await selectProject(state.projectId);else {
-    $('#creationEmpty').hidden = false;
-    $('#studio').hidden = true;
-    $('#branches').innerHTML = '<span class="muted">选择项目后显示</span>';
+  if (!preserveSelection) {
+    if (state.projectId && state.projects.some(p => p.id === state.projectId)) await selectProject(state.projectId);
+    else {
+      $('#creationEmpty').hidden = false;
+      $('#studio').hidden = true;
+      $('#branches').innerHTML = '<span class="muted">选择项目后显示</span>';
+    }
   }
 }
 function renderProjects() {
+  $('#projectTools').innerHTML = searchHtml('projects', '搜索项目标题…') + statusTabsHtml('projects', [['active', '进行中'], ['legal_hold', '法务冻结']]);
+  $('#projectPager').innerHTML = pagerHtml('projects');
   $('#projects').innerHTML = state.projects.length ? state.projects.map(p => `<div class="project-item ${p.id === state.projectId ? 'active' : ''}" data-project="${p.id}"><b>${escapeHtml(p.title)}</b><small>R${p.current_revision} · ${p.candidate_count || 0} 候选${p.latest_asset_id ? ' · 已有 Master' : ''}</small></div>`).join('') : '<p class="muted">暂无项目</p>';
   $$('[data-project]').forEach(el => el.onclick = () => selectProject(el.dataset.project));
 }
@@ -426,6 +654,7 @@ async function refreshProject() {
 function renderProjectDetail() {
   const d = state.detail;
   const spec = d.revision.spec || {};
+  renderJobSteps([]);
   $('#projectTitle').textContent = d.project.title;
   $('#revisionBadge').textContent = `Revision ${d.project.current_revision}`;
   $('#projectStatus').textContent = d.project.status;
@@ -595,14 +824,17 @@ function renderQuality(q) {
   if (!q) {
     $('#qualityGrade').textContent = '—';
     $('#qualitySummary').textContent = '尚未评估';
-    $('#dimensions').innerHTML = '';
+    $('#radarGrid').innerHTML = '';
     $('#risks').innerHTML = '';
     return;
   }
+  const dimensions = asObj(q.dimensions) || [];
+  const variables = asObj(q.variables) || {};
+  const risks = asObj(q.risks) || [];
   $('#qualityGrade').textContent = `${q.grade}\n${q.score}`;
-  $('#qualitySummary').textContent = `Styles ${q.styles_score ?? '—'} · Lyrics ${q.lyrics_score ?? '—'} · TEE ${q.variables?.TEE_pct ?? '—'}`;
-  $('#dimensions').innerHTML = (q.dimensions || []).map(x => `<div class="dimension"><span>${x.code} ${escapeHtml(x.name)}</span><b>${x.raw}/${x.max}</b></div>`).join('');
-  $('#risks').innerHTML = (q.risks || []).slice(0, 5).map(x => `<div class="risk ${x.severity}">${escapeHtml(x.dimension)} · ${escapeHtml(x.message)}</div>`).join('');
+  $('#qualitySummary').textContent = `Styles ${q.styles_score ?? '—'} · Lyrics ${q.lyrics_score ?? '—'} · TEE ${variables.TEE_pct_final ?? '—'}`;
+  renderRadar(dimensions, variables);
+  $('#risks').innerHTML = risks.slice(0, 5).map(x => `<div class="risk ${x.severity}">${escapeHtml(x.dimension)} · ${escapeHtml(x.message)}</div>`).join('');
 }
 $('#makeQuote').onclick = async () => {
   const btn = $('#makeQuote');
@@ -656,45 +888,72 @@ async function waitJob(id) {
     await sleep(1200);
     const d = await api('/api/jobs/' + id);
     renderJobs([d.job, ...(state.detail.jobs || []).filter(x => x.id !== id)]);
+    renderJobSteps(d.steps);
     if (['completed', 'partial', 'failed', 'dead_letter', 'cancelled'].includes(d.job.status)) {
       await refreshProject();
       await refreshBootstrap();
-      toast(`任务结束：${d.job.status}`, d.job.status === 'completed' ? 'ok' : 'info');
+      await loadProjects();
+      renderJobSteps(d.steps);
+      toast(`任务结束：${d.job.status}${d.job.status === 'completed' ? '，候选已就绪' : '，可查看步骤详情'}`, d.job.status === 'completed' ? 'ok' : 'info');
       return;
     }
   }
-  toast('任务仍在后台运行，可稍后刷新');
+  toast('任务仍在后台运行，可稍后点击「刷新」查看最新进度');
 }
 function renderJobs(jobs) {
   $('#jobs').innerHTML = (jobs || []).length ? (jobs || []).map(j => `<div class="job-row"><span><b>${j.id.slice(0, 8)}</b> · ${j.attempt_count || 0} attempts</span><span class="status ${j.status}">${j.status}</span><span>${j.settled_credits || 0} cr</span></div>`).join('') : '<span class="muted">暂无生成任务</span>';
 }
 async function renderCandidates(candidates) {
+  state.candidates = candidates || [];
   const box = $('#candidates');
   box.innerHTML = '';
-  for (const c of candidates || []) {
+  const q = state.detail?.quality;
+  const qualityBadge = q && q.score != null ? `${q.grade} ${q.score}` : '';
+  let readyIndex = 0;
+  for (const c of state.candidates) {
     const card = document.createElement('article');
     card.className = 'candidate-card';
-    card.innerHTML = `<div class="row"><b>Candidate ${c.ordinal}</b><span class="status ${c.status}">${c.status}</span></div><p class="hash">${escapeHtml(c.sha256 || c.provider_clip_id || '')}</p>`;
-    if (c.status === 'ready') {
+    const isReady = c.status === 'ready';
+    const blind = state.blindMode && isReady;
+    const blindLabel = blind ? String.fromCharCode(65 + readyIndex) : null;
+    const head = blind
+      ? `<b class="blind-label">${blindLabel}</b><span class="status ${c.status}">${c.status}</span>`
+      : `<b>Candidate ${c.ordinal}</b><span class="status ${c.status}">${c.status}</span>`;
+    card.innerHTML = `<div class="row">${head}</div><p class="hash">${blind ? '· · · ·' : escapeHtml(c.sha256 || c.provider_clip_id || '')}</p>`;
+    if (isReady) {
+      readyIndex += 1;
       try {
         const token = await api(`/api/candidates/${c.id}/media-token`, {
           method: 'POST'
         });
-        card.innerHTML += `<audio controls preload="none" src="${token.url}"></audio><div class="row"><button class="master-btn" data-candidate="${c.id}" data-revision="${c.spec_revision}">设为 Master</button><button class="secondary comment-candidate" data-candidate="${c.id}">时间点评论</button></div>`;
+        card.innerHTML += `<audio controls preload="none" src="${token.url}"></audio><div class="play-progress"><div class="play-progress-fill"></div></div><div class="row candidate-meta"><span class="muted duration">${fmtDuration(c.duration_ms)}</span>${qualityBadge ? `<span class="tag neutral">${escapeHtml(qualityBadge)}</span>` : ''}</div><div class="row"><button class="master-btn" data-candidate="${c.id}" data-revision="${c.spec_revision}">设为 Master</button><button class="secondary comment-candidate" data-candidate="${c.id}">时间点评论</button></div>`;
         const audio = card.querySelector('audio');
+        const fill = card.querySelector('.play-progress-fill');
+        const dur = card.querySelector('.duration');
+        audio.addEventListener('timeupdate', () => {
+          const d = audio.duration || (c.duration_ms ? c.duration_ms / 1000 : 0);
+          const pct = d ? Math.min(100, (audio.currentTime / d) * 100) : 0;
+          if (fill) fill.style.width = pct + '%';
+        });
+        audio.addEventListener('loadedmetadata', () => {
+          if (dur) dur.textContent = fmtDuration(audio.duration ? audio.duration * 1000 : c.duration_ms);
+        });
         audio.onplay = () => api('/api/events', {
           method: 'POST',
           body: JSON.stringify({
             event_name: 'candidate_played',
             project_id: state.projectId,
             properties: {
-              candidate_id: c.id
+              candidate_id: c.id,
+              blind: state.blindMode
             }
           })
         }).catch(() => {});
       } catch (e) {
         card.innerHTML += `<p class="error">${escapeHtml(e.message)}</p>`;
       }
+    } else {
+      card.innerHTML += `<p class="muted">${escapeHtml(c.status)}</p>`;
     }
     box.appendChild(card);
   }
@@ -718,6 +977,20 @@ async function selectMaster(candidateId, revision) {
         confirmation: true
       })
     });
+    const chosen = (state.candidates || []).find(x => x.id === candidateId);
+    await api('/api/events', {
+      method: 'POST',
+      body: JSON.stringify({
+        event_name: 'ab_choice',
+        project_id: state.projectId,
+        properties: {
+          candidate_id: candidateId,
+          ordinal: chosen?.ordinal ?? null,
+          blind: !!state.blindMode,
+          alternatives: (state.candidates || []).filter(x => x.id !== candidateId && x.status === 'ready').map(x => x.id)
+        }
+      })
+    }).catch(() => {});
     await api('/api/events', {
       method: 'POST',
       body: JSON.stringify({
@@ -785,7 +1058,11 @@ $('#addComment').onclick = () => addComment();
 // Asset OS
 $('#reloadAssets').onclick = loadAssets;
 async function loadAssets() {
-  state.assets = await api('/api/assets');
+  const data = await api('/api/assets' + listQuery('assets'));
+  state.lists.assets.total = data.total || 0;
+  state.assets = data.items || [];
+  $('#assetTools').innerHTML = searchHtml('assets', '搜索资产标题 / ID…') + statusTabsHtml('assets', [['verified', '已复核'], ['unverified', '未复核'], ['restricted', '受限'], ['disputed', '争议'], ['development_only', '开发']]);
+  $('#assetPager').innerHTML = pagerHtml('assets');
   $('#assetCards').innerHTML = state.assets.length ? state.assets.map(a => {
     const caps = a.manifest?.capabilities || {};
     return `<article class="asset-card" data-asset="${a.id}"><p class="eyebrow">ASSET SNAPSHOT</p><h3>${escapeHtml(a.title || a.snapshot?.spec?.title || 'Untitled')}</h3><p>R${a.spec_revision} · ${fmtDate(a.created_at)}</p><p class="hash">${escapeHtml(a.media_hash)}</p><div class="capabilities">${Object.entries(caps).slice(0, 6).map(([k, v]) => `<span class="cap ${v.status}">${escapeHtml(k)} · ${escapeHtml(v.status)}</span>`).join('')}</div></article>`;
@@ -1160,14 +1437,30 @@ async function submitBrief(briefId) {
 }
 $('#reloadOrders').onclick = loadOrders;
 async function loadOrders() {
-  const [orders, licenses, deliveries] = await Promise.all([api('/api/orders'), api('/api/licenses'), api('/api/deliveries')]);
-  $('#orders').innerHTML = orders.length ? orders.map(o => `<div class="order-row"><span><b>${escapeHtml(o.order_number)}</b><br><small>${escapeHtml(o.order_type)}</small></span><span>${fmtMoney(o.total, o.currency)}</span><span class="status ${o.status}">${o.status}</span><span>${['pending', 'payment_pending'].includes(o.status) ? `<button class="text-btn pay-order" data-id="${o.id}">支付</button>` : ''}${o.status === 'fulfilled' ? `<button class="text-btn refund-order" data-id="${o.id}">退款</button>` : ''}</span></div>`).join('') : '<p class="muted">暂无订单</p>';
+  const [orders, licenses, deliveries] = await Promise.all([
+    api('/api/orders' + listQuery('orders')),
+    api('/api/licenses' + listQuery('licenses')),
+    api('/api/deliveries')
+  ]);
+  state.lists.orders.total = orders.total || 0;
+  state.lists.licenses.total = licenses.total || 0;
+  renderOrders(orders.items || []);
+  renderLicenses(licenses.items || [], deliveries || []);
+}
+function renderOrders(items) {
+  $('#ordersTools').innerHTML = searchHtml('orders', '搜索订单号 / 类型…') + statusTabsHtml('orders', [['pending', '待支付'], ['paid', '已支付'], ['fulfilled', '已完成'], ['refunded', '已退款']]);
+  $('#ordersPager').innerHTML = pagerHtml('orders');
+  $('#orders').innerHTML = items.length ? items.map(o => `<div class="order-row"><span><b>${escapeHtml(o.order_number)}</b><br><small>${escapeHtml(o.order_type)}</small></span><span>${fmtMoney(o.total, o.currency)}</span><span class="status ${o.status}">${o.status}</span><span>${['pending', 'payment_pending'].includes(o.status) ? `<button class="text-btn pay-order" data-id="${o.id}">支付</button>` : ''}${o.status === 'fulfilled' ? `<button class="text-btn refund-order" data-id="${o.id}">退款</button>` : ''}</span></div>`).join('') : '<p class="muted">暂无订单</p>';
   $$('.pay-order').forEach(b => b.onclick = async () => {
     await payOrder(b.dataset.id, b);
     setTimeout(loadOrders, 1500);
   });
   $$('.refund-order').forEach(b => b.onclick = () => refundOrder(b.dataset.id, b));
-  $('#licenses').innerHTML = [...licenses.map(l => `<div class="order-row"><span><b>License ${l.id.slice(0, 8)}</b><br><small>${escapeHtml(l.licensee_name)}</small></span><span>${escapeHtml(l.territory)}</span><span class="status ${l.status}">${l.status}</span><span class="hash">${l.license_hash.slice(0, 12)}</span></div>`), ...deliveries.map(d => `<div class="order-row"><span><b>Delivery ${d.id.slice(0, 8)}</b></span><span>${d.asset_snapshot_id ? d.asset_snapshot_id.slice(0, 8) : '—'}</span><span class="status ${d.status}">${d.status}</span><span>${['ready', 'downloaded'].includes(d.status) ? `<button class="text-btn download-delivery" data-id="${d.id}">下载</button>` : fmtDate(d.created_at)}</span></div>`)].join('') || '<p class="muted">暂无许可或交付</p>';
+}
+function renderLicenses(items, deliveries) {
+  $('#licensesTools').innerHTML = searchHtml('licenses', '搜索被许可人 / 区域…') + statusTabsHtml('licenses', [['active', '生效中'], ['refunded', '已退款']]);
+  $('#licensesPager').innerHTML = pagerHtml('licenses');
+  $('#licenses').innerHTML = [...items.map(l => `<div class="order-row"><span><b>License ${l.id.slice(0, 8)}</b><br><small>${escapeHtml(l.licensee_name)}</small></span><span>${escapeHtml(l.territory)}</span><span class="status ${l.status}">${l.status}</span><span class="hash">${l.license_hash.slice(0, 12)}</span></div>`), ...(deliveries || []).map(d => `<div class="order-row"><span><b>Delivery ${d.id.slice(0, 8)}</b></span><span>${d.asset_snapshot_id ? d.asset_snapshot_id.slice(0, 8) : '—'}</span><span class="status ${d.status}">${d.status}</span><span>${['ready', 'downloaded'].includes(d.status) ? `<button class="text-btn download-delivery" data-id="${d.id}">下载</button>` : fmtDate(d.created_at)}</span></div>`)].join('') || '<p class="muted">暂无许可或交付</p>';
   $$('.download-delivery').forEach(b => b.onclick = () => downloadDelivery(b.dataset.id));
 }
 async function downloadDelivery(id) {
@@ -1224,15 +1517,20 @@ async function refundOrder(id, btn) {
 
 // Intelligence / Account
 async function loadAccount() {
-  const [analytics, prefs, tickets, ledger] = await Promise.all([api('/api/analytics/overview'), api('/api/preferences'), api('/api/support/tickets'), api('/api/ledger')]);
+  const [analytics, prefs, ledger] = await Promise.all([api('/api/analytics/overview'), api('/api/preferences'), api('/api/ledger')]);
   const m = analytics.metrics;
   const cards = [['28 天生成', m.generations], ['成功任务', m.successful_jobs], ['Master', m.masters], ['Master 转化', `${(Number(m.master_conversion) * 100).toFixed(1)}%`], ['平均质量', Number(m.avg_quality || 0).toFixed(1)], ['许可', m.licenses]];
   $('#analyticsCards').innerHTML = cards.map(([k, v]) => `<div class="metric-card"><span class="muted">${escapeHtml(k)}</span><b>${escapeHtml(v)}</b></div>`).join('');
   const pref = prefs.find(x => x.scope === 'workspace') || prefs[0];
   $('#preferences').value = JSON.stringify(pref?.preferences || {}, null, 2);
   $('#learningEnabled').checked = pref?.learning_enabled !== false;
-  renderTickets(tickets);
   renderLedger(ledger);
+  await loadTickets();
+}
+async function loadTickets() {
+  const data = await api('/api/support/tickets' + listQuery('tickets'));
+  state.lists.tickets.total = data.total || 0;
+  renderTickets(data.items || []);
 }
 $('#savePreferences').onclick = async () => {
   let preferences;
@@ -1297,6 +1595,8 @@ $('#newTicket').onclick = async () => {
   }
 };
 function renderTickets(rows) {
+  $('#ticketTools').innerHTML = searchHtml('tickets', '搜索工单主题 / 类别…') + statusTabsHtml('tickets', [['open', '待处理'], ['resolved', '已解决']]);
+  $('#ticketPager').innerHTML = pagerHtml('tickets');
   $('#tickets').innerHTML = rows.length ? rows.map(t => `<div class="ticket-row"><span><b>${escapeHtml(t.subject)}</b><br><small>${escapeHtml(t.category)}</small></span><span>${escapeHtml(t.priority)}</span><span class="status ${t.status}">${t.status}</span><span>${fmtDate(t.created_at)}</span></div>`).join('') : '<p class="muted">暂无工单</p>';
 }
 function renderLedger(data) {

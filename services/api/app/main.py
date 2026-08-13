@@ -216,8 +216,18 @@ def create_project(body:ProjectCreate,request:Request,actor:Actor=Depends(requir
     return {"id":project_id,"current_revision":1,"spec":spec,"locked_paths":[]}
 
 @app.get("/api/projects")
-def list_projects(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), actor: Actor = Depends(get_actor)):
-    return serialize(fetch_all("""SELECT p.*,(SELECT count(*) FROM audio_candidates c JOIN generation_jobs j ON j.id=c.job_id WHERE j.project_id=p.id AND c.status='ready') candidate_count,(SELECT a.id FROM asset_snapshots a WHERE a.project_id=p.id ORDER BY a.created_at DESC LIMIT 1) latest_asset_id FROM song_projects p WHERE p.workspace_id=%s ORDER BY p.created_at DESC LIMIT %s OFFSET %s""",(actor.workspace_id,limit,offset),actor.workspace_id))
+def list_projects(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), q: str | None = Query(default=None), status: str | None = Query(default=None), actor: Actor = Depends(get_actor)):
+    where = "p.workspace_id=%s"
+    params: list[Any] = [actor.workspace_id]
+    if q:
+        where += " AND p.title ILIKE %s"
+        params.append(f"%{q}%")
+    if status:
+        where += " AND p.status=%s"
+        params.append(status)
+    params += [limit, offset]
+    rows = fetch_all(f"""SELECT p.*,(SELECT count(*) FROM audio_candidates c JOIN generation_jobs j ON j.id=c.job_id WHERE j.project_id=p.id AND c.status='ready') candidate_count,(SELECT a.id FROM asset_snapshots a WHERE a.project_id=p.id ORDER BY a.created_at DESC LIMIT 1) latest_asset_id,COUNT(*) OVER()::int AS total FROM song_projects p WHERE {where} ORDER BY p.created_at DESC LIMIT %s OFFSET %s""", tuple(params), actor.workspace_id)
+    return serialize({"items": rows, "total": rows[0]["total"] if rows else 0, "limit": limit, "offset": offset})
 
 @app.get("/api/projects/{project_id}")
 def project_detail(project_id:str,actor:Actor=Depends(get_actor)):

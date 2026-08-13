@@ -1,0 +1,84 @@
+"""Regression tests for list-endpoint search/status/total hardening (B4).
+
+Confirms that the new `q` (ILIKE search) and `status` filters are always bound
+as psycopg2 ``%s`` parameters (never interpolated into the SQL string, even for
+values containing quotes / wildcards), and that every list query exposes the
+``COUNT(*) OVER()::int AS total`` window so pagination can render page counts.
+"""
+
+import pathlib
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "services/api"))
+
+from app.auth import Actor  # noqa: E402
+import app.main as main  # noqa: E402
+import app.routers.assets as assets  # noqa: E402
+import app.routers.market as market  # noqa: E402
+
+
+def _actor():
+    return Actor("u1", "u@example.com", "User", False, None, "ws-1", "owner")
+
+
+def _patch_fetch_all(monkeypatch, module):
+    captured = {}
+
+    def fake_fetch_all(sql, params=(), workspace_id=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{"total": 5, "id": "r1"}]
+
+    monkeypatch.setattr(module, "fetch_all", fake_fetch_all)
+    return captured
+
+
+def test_list_projects_q_status_total_parameterized(monkeypatch):
+    captured = _patch_fetch_all(monkeypatch, main)
+    result = main.list_projects(limit=50, offset=10, q="O'Brien 100%", status="active", actor=_actor())
+
+    assert "ILIKE %s" in captured["sql"]
+    assert "O'Brien" not in captured["sql"]  # never string-interpolated
+    assert any(p == "%O'Brien 100%%" for p in captured["params"])
+    assert "active" in captured["params"]
+    assert "COUNT(*) OVER()::int AS total" in captured["sql"]
+    assert result == {"items": [{"total": 5, "id": "r1"}], "total": 5, "limit": 50, "offset": 10}
+
+
+def test_list_assets_q_status_total_parameterized(monkeypatch):
+    captured = _patch_fetch_all(monkeypatch, assets)
+    result = assets.list_assets(limit=20, offset=0, q="drop%;--", status="verified", actor=_actor())
+
+    assert "ILIKE %s" in captured["sql"]
+    assert "drop%;--" not in captured["sql"]
+    assert captured["params"].count("%drop%;--%") == 2  # title + id placeholders
+    assert "verified" in captured["params"]
+    assert "COUNT(*) OVER()::int AS total" in captured["sql"]
+    assert result["total"] == 5
+
+
+def test_list_orders_q_status_total_parameterized(monkeypatch):
+    captured = _patch_fetch_all(monkeypatch, market)
+    result = market.list_orders(limit=100, offset=0, q="refund' OR 1=1", status="paid", actor=_actor())
+
+    assert "ILIKE %s" in captured["sql"]
+    assert "refund' OR 1=1" not in captured["sql"]
+    assert captured["params"].count("%refund' OR 1=1%") == 2
+    assert "paid" in captured["params"]
+    assert "COUNT(*) OVER()::int AS total" in captured["sql"]
+    assert result["total"] == 5
+
+
+def test_empty_result_total_falls_back_to_zero(monkeypatch):
+    captured = {}
+
+    def fake_fetch_all(sql, params=(), workspace_id=None):
+        captured["sql"] = sql
+        return []
+
+    monkeypatch.setattr(main, "fetch_all", fake_fetch_all)
+    result = main.list_projects(limit=20, offset=0, q=None, status=None, actor=_actor())
+
+    assert result["total"] == 0
+    assert result["items"] == []

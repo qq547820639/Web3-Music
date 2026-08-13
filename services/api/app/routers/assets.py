@@ -60,22 +60,33 @@ def _asset(asset_id: str, actor: Actor):
 
 
 @router.get("/assets")
-def list_assets(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing", "legal"))):
-    return serialize(fetch_all(
-        """
+def list_assets(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), q: str | None = Query(default=None), status: str | None = Query(default=None), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing", "legal"))):
+    where = "a.workspace_id=%s"
+    params: list[Any] = [actor.workspace_id]
+    if q:
+        where += " AND (p.title ILIKE %s OR a.id::text ILIKE %s)"
+        params += [f"%{q}%", f"%{q}%"]
+    if status:
+        where += " AND m.status=%s"
+        params.append(status)
+    params += [limit, offset]
+    rows = fetch_all(
+        f"""
         SELECT a.id,a.project_id,a.spec_revision,a.snapshot,a.snapshot_hash,a.media_hash,a.created_at,
                p.title,m.id AS rights_manifest_id,m.version AS rights_version,m.status AS rights_status,m.manifest,
-               EXISTS(SELECT 1 FROM moderation_cases c WHERE c.workspace_id=a.workspace_id AND c.subject_type='asset' AND c.subject_id=a.id::text AND c.legal_hold) AS legal_hold
+               EXISTS(SELECT 1 FROM moderation_cases c WHERE c.workspace_id=a.workspace_id AND c.subject_type='asset' AND c.subject_id=a.id::text AND c.legal_hold) AS legal_hold,
+               COUNT(*) OVER()::int AS total
         FROM asset_snapshots a
         JOIN song_projects p ON p.id=a.project_id
         LEFT JOIN LATERAL (
           SELECT * FROM rights_manifests r WHERE r.asset_snapshot_id=a.id ORDER BY r.version DESC LIMIT 1
         ) m ON true
-        WHERE a.workspace_id=%s ORDER BY a.created_at DESC LIMIT %s OFFSET %s
+        WHERE {where} ORDER BY a.created_at DESC LIMIT %s OFFSET %s
         """,
-        (actor.workspace_id, limit, offset),
+        tuple(params),
         actor.workspace_id,
-    ))
+    )
+    return serialize({"items": rows, "total": rows[0]["total"] if rows else 0, "limit": limit, "offset": offset})
 
 
 @router.get("/assets/{asset_id}/provenance")

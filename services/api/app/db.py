@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 from contextlib import contextmanager
@@ -53,6 +54,11 @@ def connection():
         if conn.closed:
             broken = True
             raise psycopg2.InterfaceError("pooled database connection is closed")
+        # Ensure jsonb columns come back as dicts (not JSON strings) for every
+        # connection handed out by the pool. This keeps revision.spec,
+        # locked_paths, dimensions/variables/risks, manifests, snapshots, etc.
+        # usable without callers having to JSON.parse() each column.
+        psycopg2.extras.register_default_jsonb(conn, loads=json.loads)
         yield conn
     except Exception:
         try:

@@ -203,11 +203,21 @@ def create_credit_order(body: CreditOrderCreate, request: Request, actor: Actor 
 
 
 @router.get("/orders")
-def list_orders(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing"))):
-    return serialize(fetch_all(
-        "SELECT o.*,COALESCE(json_agg(i ORDER BY i.description) FILTER (WHERE i.id IS NOT NULL),'[]') items FROM orders o LEFT JOIN order_items i ON i.order_id=o.id WHERE o.workspace_id=%s GROUP BY o.id ORDER BY o.created_at DESC LIMIT %s OFFSET %s",
-        (actor.workspace_id, limit, offset), actor.workspace_id,
-    ))
+def list_orders(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), q: str | None = Query(default=None), status: str | None = Query(default=None), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing"))):
+    where = "o.workspace_id=%s"
+    params: list[Any] = [actor.workspace_id]
+    if q:
+        where += " AND (o.order_number ILIKE %s OR o.order_type ILIKE %s)"
+        params += [f"%{q}%", f"%{q}%"]
+    if status:
+        where += " AND o.status=%s"
+        params.append(status)
+    params += [limit, offset]
+    rows = fetch_all(
+        f"SELECT o.*,COALESCE(json_agg(i ORDER BY i.description) FILTER (WHERE i.id IS NOT NULL),'[]') items,COUNT(*) OVER()::int AS total FROM orders o LEFT JOIN order_items i ON i.order_id=o.id WHERE {where} GROUP BY o.id ORDER BY o.created_at DESC LIMIT %s OFFSET %s",
+        tuple(params), actor.workspace_id,
+    )
+    return serialize({"items": rows, "total": rows[0]["total"] if rows else 0, "limit": limit, "offset": offset})
 
 
 @router.post("/orders/{order_id}/pay", status_code=202)
@@ -494,8 +504,18 @@ def purchase_offer(offer_id: str, body: LicensePurchase, request: Request, actor
 
 
 @router.get("/licenses")
-def list_licenses(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing", "legal"))):
-    return serialize(fetch_all("SELECT * FROM licenses WHERE seller_workspace_id=%s OR buyer_workspace_id=%s ORDER BY created_at DESC LIMIT %s OFFSET %s", (actor.workspace_id, actor.workspace_id, limit, offset), actor.workspace_id))
+def list_licenses(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), q: str | None = Query(default=None), status: str | None = Query(default=None), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing", "legal"))):
+    where = "(l.seller_workspace_id=%s OR l.buyer_workspace_id=%s)"
+    params: list[Any] = [actor.workspace_id, actor.workspace_id]
+    if q:
+        where += " AND (l.licensee_name ILIKE %s OR l.territory ILIKE %s)"
+        params += [f"%{q}%", f"%{q}%"]
+    if status:
+        where += " AND l.status=%s"
+        params.append(status)
+    params += [limit, offset]
+    rows = fetch_all(f"SELECT l.*,COUNT(*) OVER()::int AS total FROM licenses l WHERE {where} ORDER BY l.created_at DESC LIMIT %s OFFSET %s", tuple(params), actor.workspace_id)
+    return serialize({"items": rows, "total": rows[0]["total"] if rows else 0, "limit": limit, "offset": offset})
 
 
 @router.get("/deliveries")
@@ -663,8 +683,18 @@ def update_submission(submission_id: str, body: SubmissionReview, request: Reque
 
 
 @router.get("/support/tickets")
-def list_tickets(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing", "legal", "support"))):
-    return serialize(fetch_all("SELECT * FROM support_tickets WHERE workspace_id=%s ORDER BY created_at DESC LIMIT %s OFFSET %s", (actor.workspace_id, limit, offset), actor.workspace_id))
+def list_tickets(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), q: str | None = Query(default=None), status: str | None = Query(default=None), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing", "legal", "support"))):
+    where = "t.workspace_id=%s"
+    params: list[Any] = [actor.workspace_id]
+    if q:
+        where += " AND (t.subject ILIKE %s OR t.category ILIKE %s)"
+        params += [f"%{q}%", f"%{q}%"]
+    if status:
+        where += " AND t.status=%s"
+        params.append(status)
+    params += [limit, offset]
+    rows = fetch_all(f"SELECT t.*,COUNT(*) OVER()::int AS total FROM support_tickets t WHERE {where} ORDER BY t.created_at DESC LIMIT %s OFFSET %s", tuple(params), actor.workspace_id)
+    return serialize({"items": rows, "total": rows[0]["total"] if rows else 0, "limit": limit, "offset": offset})
 
 
 @router.post("/support/tickets", status_code=201)
