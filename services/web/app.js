@@ -1366,7 +1366,8 @@ async function payOrder(orderId, btn) {
 }
 $('#reloadOffers').onclick = loadOffers;
 async function loadOffers() {
-  const rows = await api('/api/marketplace/offers');
+  const data = await api('/api/marketplace/offers');
+  const rows = data.items || [];
   $('#marketOffers').innerHTML = rows.length ? rows.map(o => `<article class="offer-card"><p class="eyebrow">${escapeHtml(o.seller_name)}</p><h3>${escapeHtml(o.title)}</h3><p>${escapeHtml(o.description)}</p><div class="price">${fmtMoney(o.price_amount, o.currency)}</div><p>${escapeHtml(o.territory)} · ${o.duration_days || '永久'} 天 · ${o.exclusive ? '独家' : '非独家'}</p><button data-purchase-offer="${o.id}">购买许可</button></article>`).join('') : '<div class="panel muted">暂无公开许可报价。先在资产页完成权利复核并发布报价。</div>';
   $$('[data-purchase-offer]').forEach(b => b.onclick = () => purchaseOffer(b.dataset.purchaseOffer, b));
 }
@@ -1492,7 +1493,7 @@ async function loadOrders() {
   state.lists.orders.total = orders.total || 0;
   state.lists.licenses.total = licenses.total || 0;
   renderOrders(orders.items || []);
-  renderLicenses(licenses.items || [], deliveries || []);
+  renderLicenses(licenses.items || [], deliveries.items || []);
 }
 function renderOrders(items) {
   $('#ordersTools').innerHTML = searchHtml('orders', '搜索订单号 / 类型…') + statusTabsHtml('orders', [['pending', '待支付'], ['paid', '已支付'], ['fulfilled', '已完成'], ['refunded', '已退款']]);

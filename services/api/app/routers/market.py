@@ -443,12 +443,14 @@ def refund_order(order_id: str, body: RefundCreate, request: Request, idempotenc
 def marketplace_offers(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing"))):
     if not setting_enabled("marketplace_enabled"):
         raise HTTPException(503, "marketplace is disabled")
-    return serialize(fetch_all("SELECT * FROM marketplace_offers_public ORDER BY created_at DESC LIMIT %s OFFSET %s", (limit, offset)))
+    rows = fetch_all("SELECT *, COUNT(*) OVER()::int AS total FROM marketplace_offers_public ORDER BY created_at DESC LIMIT %s OFFSET %s", (limit, offset))
+    return serialize({"items": rows, "total": rows[0]["total"] if rows else 0, "limit": limit, "offset": offset})
 
 
 @router.get("/offers")
 def own_offers(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing"))):
-    return serialize(fetch_all("SELECT * FROM asset_offers WHERE workspace_id=%s ORDER BY created_at DESC LIMIT %s OFFSET %s", (actor.workspace_id, limit, offset), actor.workspace_id))
+    rows = fetch_all("SELECT *, COUNT(*) OVER()::int AS total FROM asset_offers WHERE workspace_id=%s ORDER BY created_at DESC LIMIT %s OFFSET %s", (actor.workspace_id, limit, offset), actor.workspace_id)
+    return serialize({"items": rows, "total": rows[0]["total"] if rows else 0, "limit": limit, "offset": offset})
 
 
 @router.post("/offers", status_code=201)
@@ -520,7 +522,8 @@ def list_licenses(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_L
 
 @router.get("/deliveries")
 def list_deliveries(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), actor: Actor = Depends(require_roles("owner", "admin", "creator", "reviewer", "viewer", "billing", "legal"))):
-    return serialize(fetch_all("SELECT d.*,l.license_hash,l.asset_snapshot_id,l.licensee_name FROM deliveries d LEFT JOIN licenses l ON l.id=d.license_id WHERE d.workspace_id=%s ORDER BY d.created_at DESC LIMIT %s OFFSET %s", (actor.workspace_id, limit, offset), actor.workspace_id))
+    rows = fetch_all("SELECT d.*,l.license_hash,l.asset_snapshot_id,l.licensee_name,COUNT(*) OVER()::int AS total FROM deliveries d LEFT JOIN licenses l ON l.id=d.license_id WHERE d.workspace_id=%s ORDER BY d.created_at DESC LIMIT %s OFFSET %s", (actor.workspace_id, limit, offset), actor.workspace_id)
+    return serialize({"items": rows, "total": rows[0]["total"] if rows else 0, "limit": limit, "offset": offset})
 
 
 @router.get("/deliveries/{delivery_id}/export")
@@ -556,7 +559,8 @@ def export_delivery(delivery_id: str, request: Request, actor: Actor = Depends(r
 
 @router.get("/payouts")
 def list_payouts(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX), offset: int = Query(default=0, ge=0), actor: Actor = Depends(require_roles("owner", "admin", "billing"))):
-    return serialize(fetch_all("SELECT * FROM payouts WHERE workspace_id=%s ORDER BY created_at DESC LIMIT %s OFFSET %s", (actor.workspace_id, limit, offset), actor.workspace_id))
+    rows = fetch_all("SELECT *, COUNT(*) OVER()::int AS total FROM payouts WHERE workspace_id=%s ORDER BY created_at DESC LIMIT %s OFFSET %s", (actor.workspace_id, limit, offset), actor.workspace_id)
+    return serialize({"items": rows, "total": rows[0]["total"] if rows else 0, "limit": limit, "offset": offset})
 
 
 @router.get("/brand-briefs/public")
