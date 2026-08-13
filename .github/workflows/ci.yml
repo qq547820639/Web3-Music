@@ -1,4 +1,4 @@
-name: v12-final-product
+name: ci
 on: [push, pull_request]
 
 permissions:
@@ -13,10 +13,16 @@ jobs:
         with: {python-version: '3.12', cache: 'pip'}
       - uses: actions/setup-node@v4
         with: {node-version: '22'}
-      - run: pip install -r services/api/requirements.txt -r services/payment-emulator/requirements.txt pytest pyyaml jsonschema
+      - run: pip install -r services/api/requirements.txt -r services/worker/requirements.txt -r services/payment-emulator/requirements.txt -r services/acceptance/requirements.txt pytest pyyaml jsonschema
       - run: ./scripts/static-verify.sh
       - run: docker compose config --quiet
       - run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml config --quiet
+      - run: ./scripts/release-evidence.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence
+          path: release-evidence/*.tar.gz
+          if-no-files-found: ignore
 
   compose-acceptance:
     runs-on: ubuntu-latest

@@ -9,14 +9,16 @@
 
 `scripts/acceptance-all.sh` 把平台的全部端到端（E2E）验收动作串成**一条命令**，按固定顺序执行，任一步失败即停并告诉你日志在哪，全部通过后把步骤摘要与 `docker compose logs` 归档到 `release-evidence/acceptance-<时间戳>/`。
 
-它执行的序列等价于 CI 里的两个 job 合并：
+它执行的序列等价于 CI（`.github/workflows/ci.yml`，每次 push 自动运行，无需本地 Docker）：
 
-| 本脚本步骤 | 等价 CI 步骤（`.github/workflows/ci.yml`） |
+| 本脚本步骤 | 等价 CI job |
 |---|---|
-| static-verify / test.sh | `static-and-unit` |
-| compose 起栈 → acceptance → contract → chaos → backup → restore → 复跑 acceptance | `compose-acceptance` |
+| static-verify（含 `pytest tests/unit`） | `static-and-unit` |
+| compose 起栈 → acceptance(test.sh) → contract → chaos → backup → restore → 复跑 acceptance | `compose-acceptance` |
 | commercial-flow（commercial-test 覆层） | `commercial-flow` |
 | capacity-gate-500（可选） | 无 CI 等价，本地容量验证 |
+
+> 💡 若本机没有 Docker，直接 `git push` 到仓库即可让 GitHub Actions 替你执行同一套 E2E，结果在仓库 **Actions** 页查看，日志以 artifacts 留存（`compose-logs` / `commercial-compose-logs` / `release-evidence`）。
 
 ---
 

@@ -3,7 +3,7 @@
 # acceptance-all.sh — 一键 E2E 验收管线（Resonance AI 音乐资产平台）
 #
 # 在部署主机（具备 Docker + Compose v2）上运行，按固定顺序串联现有的验证脚本：
-#   static-verify → test.sh → compose 起栈 → 默认 acceptance → contract-test →
+#   static-verify → compose 起栈 → acceptance(test.sh) → contract-test →
 #   chaos-worker-recovery → backup → restore(带确认) → 复跑 acceptance →
 #   commercial-flow(commercial-test 覆层) → capacity-gate-500(可选, CAPACITY=1)
 #
@@ -110,19 +110,14 @@ step_static_verify() {
   ./scripts/static-verify.sh
 }
 
-step_test() {
-  # test.sh 内部执行 `docker compose --profile test build acceptance` 与
-  # `docker compose --profile test run --rm acceptance`；`run` 会按依赖自动拉起 api/worker/web/admin。
-  ./scripts/test.sh
-}
-
 step_stack_up() {
   docker compose up --build -d
   docker compose ps
 }
 
 step_acceptance() {
-  docker compose --profile test run --rm acceptance
+  # 等价于 acceptance E2E：显式构建 acceptance 镜像后运行（此时栈已在 step_stack_up 就绪）。
+  ./scripts/test.sh
 }
 
 step_contract_test() {
@@ -156,7 +151,6 @@ step_capacity() {
 
 # ---- 主流程 ----
 run_step "static-verify" step_static_verify
-run_step "unit-test-docker" step_test
 run_step "compose-up" step_stack_up
 run_step "acceptance" step_acceptance
 run_step "contract-test" step_contract_test
