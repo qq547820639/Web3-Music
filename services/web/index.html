@@ -8,7 +8,8 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="toast" class="toast" hidden></div>
+<a class="skip-link" href="#main">跳到主内容</a>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <section id="login" class="login-shell">
   <div class="login-art">
     <div class="brand-mark">R</div>
@@ -36,15 +37,15 @@
   <header class="topbar">
     <div class="brand"><span class="brand-mark small">R</span><div><b>Resonance</b><small>AI Music Asset Platform</small></div></div>
     <nav id="mainNav" aria-label="主导航">
-      <button data-view="creation" class="active">创作</button>
-      <button data-view="assets">资产</button>
-      <button data-view="market">市场</button>
-      <button data-view="account">数据与账户</button>
+      <button data-view="creation" class="active" aria-current="page" aria-label="创作视图">创作</button>
+      <button data-view="assets" aria-label="资产视图">资产</button>
+      <button data-view="market" aria-label="市场视图">市场</button>
+      <button data-view="account" aria-label="数据与账户视图">数据与账户</button>
     </nav>
-    <div class="top-actions"><span id="creditPill" class="credit-pill">— Credits</span><select id="workspace"></select><span id="identity"></span><button id="logout" class="ghost">退出</button></div>
+    <div class="top-actions"><span id="creditPill" class="credit-pill">— Credits</span><select id="workspace" aria-label="选择工作区"></select><span id="identity"></span><button id="logout" class="ghost">退出</button></div>
   </header>
 
-  <main>
+  <main id="main" tabindex="-1">
     <section id="view-creation" class="view active">
       <div class="creation-layout">
         <aside class="project-rail">
@@ -97,7 +98,7 @@
 
     <section id="view-market" class="view">
       <div class="page-head"><div><p class="eyebrow">MARKET OS</p><h1>额度、许可与品牌任务</h1><p>订单、支付、许可、交付、退款和争议保持独立对象并可对账。</p></div></div>
-      <div class="market-tabs"><button data-market="credits" class="active">额度与订阅</button><button data-market="offers">音乐许可</button><button data-market="briefs">品牌任务</button><button data-market="orders">订单与交付</button></div>
+      <div class="market-tabs" role="tablist" aria-label="市场子页"><button data-market="credits" class="active" role="tab" aria-selected="true">额度与订阅</button><button data-market="offers" role="tab" aria-selected="false">音乐许可</button><button data-market="briefs" role="tab" aria-selected="false">品牌任务</button><button data-market="orders" role="tab" aria-selected="false">订单与交付</button></div>
       <div id="market-credits" class="market-pane active"><div id="catalog" class="catalog-grid"></div></div>
       <div id="market-offers" class="market-pane"><div class="row section-title"><h2>可授权作品</h2><button id="reloadOffers" class="secondary">刷新</button></div><div id="marketOffers" class="offer-grid"></div></div>
       <div id="market-briefs" class="market-pane"><div class="row section-title"><h2>公开品牌需求</h2><button id="createBrief" class="secondary">发布需求</button></div><div id="briefs" class="brief-grid"></div></div>
@@ -110,9 +111,14 @@
       <div class="account-grid"><section class="panel"><div class="panel-head"><h3>创作偏好</h3><button id="savePreferences" class="secondary">保存</button></div><label>偏好 JSON<textarea id="preferences" rows="12">{}</textarea></label><label class="check"><input id="learningEnabled" type="checkbox" checked>允许使用我的选择行为改善个人偏好模型</label></section><section class="panel"><div class="panel-head"><h3>支持与问题</h3><button id="newTicket" class="secondary">新建工单</button></div><div id="ticketTools" class="list-tools"></div><div id="tickets" class="ticket-list"></div><div id="ticketPager"></div></section><section class="panel"><h3>账本</h3><div id="ledgerBalances" class="balance-grid"></div><div id="ledgerTransactions" class="ledger-list"></div></section></div>
     </section>
   </main>
+
+  <footer class="app-footer">
+    <span>Resonance AI Music Asset Platform</span>
+    <span class="muted">本地参考系统 · 不构成版权登记或法律意见</span>
+  </footer>
 </div>
 
-<dialog id="dialog"><form method="dialog"><button class="dialog-close" value="cancel">×</button><div id="dialogContent"></div></form></dialog>
+<dialog id="dialog"><form method="dialog"><button class="dialog-close" value="cancel" aria-label="关闭对话框">×</button><div id="dialogContent"></div></form></dialog>
 <div id="radarTip" class="radar-tip" hidden></div>
 <script src="app.js"></script>
 </body>

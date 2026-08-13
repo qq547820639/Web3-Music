@@ -33,6 +33,140 @@ function fmtMoney(v, c = 'USD') {
     currency: c
   }).format((Number(v) || 0) / 100);
 }
+let lastDialogTrigger = null;
+function rememberDialogTrigger() {
+  lastDialogTrigger = document.activeElement;
+}
+function restoreDialogFocus() {
+  if (lastDialogTrigger && typeof lastDialogTrigger.focus === 'function') {
+    lastDialogTrigger.focus();
+  }
+  lastDialogTrigger = null;
+}
+// 原生 <dialog>.showModal() 自带焦点陷阱与 Escape 关闭；这里补“关闭后焦点还原到触发按钮”。
+$('#dialog').addEventListener('close', restoreDialogFocus);
+function askDialog({
+  title,
+  description = '',
+  fields = [],
+  submitText = '确定',
+  cancelText = '取消'
+}) {
+  return new Promise(resolve => {
+    rememberDialogTrigger();
+    const dialog = $('#dialog');
+    const content = $('#dialogContent');
+    if (dialog.open) dialog.close();
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    content.innerHTML = `<p class="eyebrow">${escapeHtml(title)}</p>${description ? `<p class="muted">${escapeHtml(description)}</p>` : ''}<div class="dialog-fields"></div><div class="dialog-error error"></div><div class="dialog-actions"><button type="button" class="secondary dialog-cancel">${escapeHtml(cancelText)}</button><button type="button" class="dialog-submit">${escapeHtml(submitText)}</button></div>`;
+    const fieldsBox = content.querySelector('.dialog-fields');
+    const inputs = {};
+    for (const f of fields) {
+      const wrap = document.createElement('label');
+      wrap.textContent = f.label;
+      let el;
+      if (f.multiline) {
+        el = document.createElement('textarea');
+        el.rows = f.rows || 4;
+      } else if (f.type === 'select') {
+        el = document.createElement('select');
+        for (const opt of f.options || []) {
+          const o = document.createElement('option');
+          o.value = opt.value;
+          o.textContent = opt.label;
+          el.appendChild(o);
+        }
+      } else {
+        el = document.createElement('input');
+        el.type = f.type || 'text';
+      }
+      if (f.placeholder) el.placeholder = f.placeholder;
+      if (f.value !== undefined && f.value !== null) el.value = String(f.value);
+      if (f.required !== false) el.required = true;
+      wrap.appendChild(el);
+      fieldsBox.appendChild(wrap);
+      inputs[f.name] = el;
+    }
+    const errorBox = content.querySelector('.dialog-error');
+    const submit = () => {
+      const out = {};
+      for (const f of fields) {
+        const el = inputs[f.name];
+        const v = String(el.value).trim();
+        if (f.required !== false && !v) {
+          errorBox.textContent = f.error || `请填写${f.label}`;
+          el.focus();
+          return;
+        }
+        out[f.name] = f.type === 'number' ? Number(v) : v;
+      }
+      finish(out);
+      dialog.close();
+    };
+    content.querySelector('.dialog-submit').onclick = submit;
+    content.querySelector('.dialog-cancel').onclick = () => {
+      finish(null);
+      dialog.close();
+    };
+    const onClose = () => {
+      finish(null);
+      dialog.removeEventListener('close', onClose);
+    };
+    dialog.addEventListener('close', onClose);
+    for (const f of fields) {
+      inputs[f.name].addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !f.multiline) {
+          e.preventDefault();
+          submit();
+        }
+      });
+    }
+    dialog.showModal();
+    const first = fields[0];
+    if (first) inputs[first.name].focus();
+  });
+}
+function confirmDialog({
+  title,
+  message,
+  confirmText = '确认',
+  cancelText = '取消',
+  danger = false
+}) {
+  return new Promise(resolve => {
+    rememberDialogTrigger();
+    const dialog = $('#dialog');
+    const content = $('#dialogContent');
+    if (dialog.open) dialog.close();
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    content.innerHTML = `<p class="eyebrow">${escapeHtml(title)}</p><p class="muted">${escapeHtml(message)}</p><div class="dialog-actions"><button type="button" class="secondary dialog-cancel">${escapeHtml(cancelText)}</button><button type="button" class="dialog-submit${danger ? ' danger' : ''}">${escapeHtml(confirmText)}</button></div>`;
+    content.querySelector('.dialog-submit').onclick = () => {
+      finish(true);
+      dialog.close();
+    };
+    content.querySelector('.dialog-cancel').onclick = () => {
+      finish(false);
+      dialog.close();
+    };
+    const onClose = () => {
+      finish(false);
+      dialog.removeEventListener('close', onClose);
+    };
+    dialog.addEventListener('close', onClose);
+    dialog.showModal();
+    content.querySelector('.dialog-submit').focus();
+  });
+}
 function toast(m) {
   const e = $('#toast');
   e.textContent = m;
@@ -128,7 +262,11 @@ async function init() {
 }
 function bindNav() {
   $$('nav [data-view]').forEach(b => b.onclick = async () => {
-    $$('nav button').forEach(x => x.classList.toggle('active', x === b));
+    $$('nav button').forEach(x => {
+      x.classList.toggle('active', x === b);
+      if (x === b) x.setAttribute('aria-current', 'page');
+      else x.removeAttribute('aria-current');
+    });
     $$('.view').forEach(v => v.classList.toggle('active', v.id === `view-${b.dataset.view}`));
     if (b.dataset.view === 'release') await loadRelease();
   });
@@ -143,9 +281,15 @@ async function loadOverview() {
   const c = v12.counts;
   const stats = [['项目', c.projects], ['生成任务', c.jobs], ['失败任务', c.failed_jobs], ['资产', c.assets], ['订单', c.orders], ['已履约', c.fulfilled_orders], ['许可', c.licenses], ['开放案件', c.open_cases], ['开放工单', c.open_tickets]];
   $('#stats').innerHTML = stats.map(([k, v]) => `<div class="stat"><span>${escapeHtml(k)}</span><b>${escapeHtml(v)}</b></div>`).join('');
-  $('#switches').innerHTML = Object.entries(legacy.switches).map(([k, v]) => `<div class="switch-row"><span>${escapeHtml(k)}</span><span class="switch-state ${v ? 'on' : ''}">${v ? 'ON' : 'OFF'}</span><button class="secondary switch-btn" data-key="${k}" data-value="${v}">${v ? '关闭' : '开启'}</button></div>`).join('');
+  $('#switches').innerHTML = Object.entries(legacy.switches).map(([k, v]) => `<div class="switch-row"><span>${escapeHtml(k)}</span><span class="switch-state ${v ? 'on' : ''}">${v ? 'ON' : 'OFF'}</span><button class="secondary switch-btn" data-key="${k}" data-value="${v}" aria-pressed="${v ? 'true' : 'false'}" aria-label="${v ? '关闭' : '开启'}开关 ${escapeHtml(k)}">${v ? '关闭' : '开启'}</button></div>`).join('');
   $$('.switch-btn').forEach(b => b.onclick = async () => {
-    if (!confirm(`确认${b.dataset.value === 'true' ? '关闭' : '开启'} ${b.dataset.key}？`)) return;
+    const ok = await confirmDialog({
+      title: '确认操作',
+      message: `确认${b.dataset.value === 'true' ? '关闭' : '开启'} ${b.dataset.key}？`,
+      confirmText: '确认',
+      danger: true
+    });
+    if (!ok) return;
     try {
       await api('/api/admin/switches/' + b.dataset.key, {
         method: 'PUT',
@@ -240,23 +384,40 @@ async function loadRelease() {
       (a[r.gate] ??= []).push(r);
       return a;
     }, {});
-    $('#releaseEvidence').innerHTML = Object.entries(grouped).map(([gate, items]) => `<article class="gate-card"><h2>${escapeHtml(gate)}</h2>${items.map(i => `<div class="evidence-row"><div><b>${escapeHtml(i.evidence_key)}</b><br><small>${escapeHtml(i.owner)} · ${fmtDate(i.updated_at)}</small></div><button class="status ${i.status} evidence-btn" data-gate="${gate}" data-key="${i.evidence_key}" data-status="${i.status}">${escapeHtml(i.status)}</button></div>`).join('')}</article>`).join('');
+    $('#releaseEvidence').innerHTML = Object.entries(grouped).map(([gate, items]) => `<article class="gate-card"><h2>${escapeHtml(gate)}</h2>${items.map(i => `<div class="evidence-row"><div><b>${escapeHtml(i.evidence_key)}</b><br><small>${escapeHtml(i.owner)} · ${fmtDate(i.updated_at)}</small></div><button class="status ${i.status} evidence-btn" data-gate="${gate}" data-key="${i.evidence_key}" data-status="${i.status}" aria-label="更新证据 ${escapeHtml(gate)} / ${escapeHtml(i.evidence_key)} 状态">${escapeHtml(i.status)}</button></div>`).join('')}</article>`).join('');
     $$('.evidence-btn').forEach(b => b.onclick = () => editEvidence(b.dataset.gate, b.dataset.key, b.dataset.status));
   } catch (e) {
     $('#releaseEvidence').innerHTML = `<div class="panel">${escapeHtml(e.message)}<br><small>发布证据室仅平台管理员可访问。</small></div>`;
   }
 }
 async function editEvidence(gate, key, current) {
-  const status = prompt('状态：missing / in_progress / passed / waived / failed', current);
-  if (!status) return;
-  const note = prompt('证据说明或链接', 'Validated in local release pipeline');
+  const result = await askDialog({
+    title: '更新发布证据',
+    description: `${escapeHtml(gate)} / ${escapeHtml(key)}`,
+    fields: [{
+      name: 'status',
+      label: '状态',
+      type: 'select',
+      value: current,
+      options: ['missing', 'in_progress', 'passed', 'waived', 'failed'].map(s => ({
+        value: s,
+        label: s
+      }))
+    }, {
+      name: 'note',
+      label: '证据说明或链接',
+      value: 'Validated in local release pipeline'
+    }],
+    submitText: '保存'
+  });
+  if (!result) return;
   try {
     await api(`/api/admin/v12/release-evidence/${gate}/${key}`, {
       method: 'PUT',
       body: JSON.stringify({
-        status,
+        status: result.status,
         evidence: {
-          note
+          note: result.note
         },
         owner: 'platform-admin'
       })

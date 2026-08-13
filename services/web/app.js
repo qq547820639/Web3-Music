@@ -63,13 +63,32 @@ function toast(message, type = 'info') {
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => el.hidden = true, 4200);
 }
+let lastDialogTrigger = null;
+function rememberDialogTrigger() {
+  lastDialogTrigger = document.activeElement;
+}
+function restoreDialogFocus() {
+  if (lastDialogTrigger && typeof lastDialogTrigger.focus === 'function') {
+    lastDialogTrigger.focus();
+  }
+  lastDialogTrigger = null;
+}
+function firstFocusable(root) {
+  return root.querySelector('button, [href], input, select, textarea, audio, [tabindex]:not([tabindex="-1"])');
+}
 function showDialog(html) {
+  rememberDialogTrigger();
   $('#dialogContent').innerHTML = html;
-  $('#dialog').showModal();
+  const dialog = $('#dialog');
+  dialog.showModal();
+  const target = firstFocusable($('#dialogContent')) || dialog.querySelector('.dialog-close');
+  if (target) target.focus();
 }
 function closeDialog() {
   if ($('#dialog').open) $('#dialog').close();
 }
+// 原生 <dialog>.showModal() 自带焦点陷阱与 Escape 关闭；这里补“关闭后焦点还原到触发按钮”。
+$('#dialog').addEventListener('close', restoreDialogFocus);
 const ERROR_MESSAGES = {
   revision_conflict: '版本已被其他人更新，请刷新后重试',
   locked_or_invalid_patch: '修改触及锁定字段或补丁无效',
@@ -109,11 +128,13 @@ function setLoading(btn, loading, loadingLabel = '处理中…') {
     btn.classList.add('loading');
     btn.textContent = loadingLabel;
     btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
   } else {
     btn.dataset.loading = '0';
     btn.classList.remove('loading');
     if (btn.dataset.origLabel !== undefined) btn.textContent = btn.dataset.origLabel;
     btn.disabled = false;
+    btn.removeAttribute('aria-busy');
   }
 }
 function askDialog({
@@ -124,6 +145,7 @@ function askDialog({
   cancelText = '取消'
 }) {
   return new Promise(resolve => {
+    rememberDialogTrigger();
     const dialog = $('#dialog');
     const content = $('#dialogContent');
     if (dialog.open) dialog.close();
@@ -210,6 +232,7 @@ function confirmDialog({
   danger = false
 }) {
   return new Promise(resolve => {
+    rememberDialogTrigger();
     const dialog = $('#dialog');
     const content = $('#dialogContent');
     if (dialog.open) dialog.close();
@@ -355,7 +378,10 @@ function bindNavigation() {
   $$('#mainNav [data-view]').forEach(b => b.onclick = () => navigate(b.dataset.view));
   $$('.market-tabs [data-market]').forEach(b => b.onclick = () => {
     const name = b.dataset.market;
-    $$('.market-tabs button').forEach(x => x.classList.toggle('active', x === b));
+    $$('.market-tabs button').forEach(x => {
+      x.classList.toggle('active', x === b);
+      x.setAttribute('aria-selected', x === b ? 'true' : 'false');
+    });
     $$('.market-pane').forEach(x => x.classList.toggle('active', x.id === `market-${name}`));
     if (name === 'offers') loadOffers();
     if (name === 'orders') loadOrders();
@@ -364,7 +390,12 @@ function bindNavigation() {
 }
 async function navigate(view) {
   state.view = view;
-  $$('#mainNav button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  $$('#mainNav button').forEach(b => {
+    const active = b.dataset.view === view;
+    b.classList.toggle('active', active);
+    if (active) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
   $$('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`));
   try {
     if (view === 'assets') await loadAssets();
@@ -399,18 +430,18 @@ function listQuery(name) {
   return '?' + p.toString();
 }
 function searchHtml(name, placeholder) {
-  return `<input class="list-search" data-list-search="${name}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(state.lists[name].q)}">`;
+  return `<input class="list-search" data-list-search="${name}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(state.lists[name].q)}" aria-label="搜索：${escapeHtml(placeholder)}">`;
 }
 function statusTabsHtml(name, options) {
   const cur = state.lists[name].status;
-  const tabs = [['', '全部'], ...options].map(([v, label]) => `<button class="tab-btn${cur === v ? ' active' : ''}" data-list-status="${name}" data-status="${v}">${escapeHtml(label)}</button>`).join('');
-  return `<div class="status-tabs">${tabs}</div>`;
+  const tabs = [['', '全部'], ...options].map(([v, label]) => `<button class="tab-btn${cur === v ? ' active' : ''}" data-list-status="${name}" data-status="${v}" aria-pressed="${cur === v ? 'true' : 'false'}">${escapeHtml(label)}</button>`).join('');
+  return `<div class="status-tabs" role="group" aria-label="状态筛选">${tabs}</div>`;
 }
 function pagerHtml(name) {
   const s = state.lists[name];
   const page = Math.floor(s.offset / s.limit) + 1;
   const pages = Math.max(1, Math.ceil(s.total / s.limit));
-  return `<div class="pager"><button class="secondary pager-btn" data-pager="${name}" data-dir="-1"${page <= 1 ? ' disabled' : ''}>上一页</button><span class="muted">${page} / ${pages} · 共 ${s.total} 条</span><button class="secondary pager-btn" data-pager="${name}" data-dir="1"${page >= pages ? ' disabled' : ''}>下一页</button></div>`;
+  return `<div class="pager"><button class="secondary pager-btn" data-pager="${name}" data-dir="-1" aria-label="上一页"${page <= 1 ? ' disabled' : ''}>上一页</button><span class="muted">${page} / ${pages} · 共 ${s.total} 条</span><button class="secondary pager-btn" data-pager="${name}" data-dir="1" aria-label="下一页"${page >= pages ? ' disabled' : ''}>下一页</button></div>`;
 }
 function pageList(name, dir) {
   const s = state.lists[name];
@@ -536,10 +567,10 @@ function radarChart(group, dims, criticalCodes) {
     const ly = cy + (radius + 16) * Math.sin(angle(i));
     const crit = criticalCodes.has(d.code);
     const raw = Number(d.raw) || 0;
-    parts.push(`<circle class="radar-point${crit ? ' critical' : ''}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" data-radar-point data-code="${escapeHtml(d.code)}" data-name="${escapeHtml(d.name)}" data-group="${group}" data-val="${raw}" data-max="${d.max || 5}" data-note="${escapeHtml(d.note || '')}"></circle>`);
+    parts.push(`<circle class="radar-point${crit ? ' critical' : ''}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" tabindex="0" role="img" aria-label="${escapeHtml(d.code)} ${escapeHtml(d.name)}：${raw} / ${d.max || 5}" data-radar-point data-code="${escapeHtml(d.code)}" data-name="${escapeHtml(d.name)}" data-group="${group}" data-val="${raw}" data-max="${d.max || 5}" data-note="${escapeHtml(d.note || '')}"></circle>`);
     parts.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" class="radar-label" text-anchor="middle" dominant-baseline="middle">${escapeHtml(d.code)}</text>`);
   });
-  return `<div class="radar-chart"><div class="radar-chart-head"><span class="radar-dot" style="background:${color}"></span><b>${RADAR_GROUP_META[group].label}</b><span class="muted">${n} 维</span></div><svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${parts.join('')}</svg></div>`;
+  return `<div class="radar-chart"><div class="radar-chart-head"><span class="radar-dot" style="background:${color}"></span><b>${RADAR_GROUP_META[group].label}</b><span class="muted">${n} 维</span></div><svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="${RADAR_GROUP_META[group].label} 雷达图（${n} 维）">${parts.join('')}</svg></div>`;
 }
 function asObj(v) {
   if (v === null || v === undefined) return v;
@@ -563,19 +594,34 @@ function renderRadar(dims, vars) {
     const gd = dims.filter(d => d.priority === g);
     return gd.length ? radarChart(g, gd, criticalCodes) : '';
   }).join('');
-  box.innerHTML = `${charts}<div class="radar-legend muted">${groups.map(g => `<span><i class="radar-dot" style="background:${RADAR_GROUP_META[g].color}"></i>${RADAR_GROUP_META[g].label}</span>`).join('')}${criticalCodes.size ? '<span class="radar-critical">红点 = CriticalPenalty 命中</span>' : ''}</div>`;
+  const dimsList = dims.length ? `<details class="radar-dims"><summary>维度列表（${dims.length} 维，含分值明细）</summary><ul>${dims.map(d => `<li><b>${escapeHtml(d.code)}</b> ${escapeHtml(d.name)} · ${escapeHtml(d.priority || '')} · 分值 ${Number(d.raw) || 0}/${d.max || 5}${d.note ? ` · ${escapeHtml(d.note)}` : ''}</li>`).join('')}</ul></details>` : '';
+  box.innerHTML = `${charts}${dimsList}<div class="radar-legend muted">${groups.map(g => `<span><i class="radar-dot" style="background:${RADAR_GROUP_META[g].color}"></i>${RADAR_GROUP_META[g].label}</span>`).join('')}${criticalCodes.size ? '<span class="radar-critical">红点 = CriticalPenalty 命中</span>' : ''}</div>`;
   $$('#radarGrid [data-radar-point]').forEach(el => {
     el.addEventListener('mousemove', e => moveRadarTip(e, el));
     el.addEventListener('mouseleave', hideRadarTip);
+    el.addEventListener('focus', () => showRadarTipFor(el));
+    el.addEventListener('blur', hideRadarTip);
   });
+}
+function radarTipHtml(el) {
+  return `<b>${escapeHtml(el.dataset.code)} ${escapeHtml(el.dataset.name)}</b><br><span class="muted">${escapeHtml(el.dataset.group)}</span> · 分值 <b>${escapeHtml(el.dataset.val)}</b> / ${escapeHtml(el.dataset.max)}${el.dataset.note ? `<br><span class="muted">${escapeHtml(el.dataset.note)}</span>` : ''}`;
 }
 function moveRadarTip(e, el) {
   const tip = $('#radarTip');
   if (!tip) return;
-  tip.innerHTML = `<b>${el.dataset.code} ${el.dataset.name}</b><br><span class="muted">${el.dataset.group}</span> · 分值 <b>${el.dataset.val}</b> / ${el.dataset.max}${el.dataset.note ? `<br><span class="muted">${el.dataset.note}</span>` : ''}`;
+  tip.innerHTML = radarTipHtml(el);
   tip.hidden = false;
   tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 250) + 'px';
   tip.style.top = (e.clientY + 14) + 'px';
+}
+function showRadarTipFor(el) {
+  const tip = $('#radarTip');
+  if (!tip) return;
+  tip.innerHTML = radarTipHtml(el);
+  tip.hidden = false;
+  const r = el.getBoundingClientRect();
+  tip.style.left = Math.min(r.left + 14, window.innerWidth - 250) + 'px';
+  tip.style.top = (r.top + 14) + 'px';
 }
 function hideRadarTip() {
   const tip = $('#radarTip');
@@ -916,6 +962,7 @@ async function renderCandidates(candidates) {
     const isReady = c.status === 'ready';
     const blind = state.blindMode && isReady;
     const blindLabel = blind ? String.fromCharCode(65 + readyIndex) : null;
+    const candLabel = blind ? `候选 ${blindLabel}` : `候选 ${c.ordinal}`;
     const head = blind
       ? `<b class="blind-label">${blindLabel}</b><span class="status ${c.status}">${c.status}</span>`
       : `<b>Candidate ${c.ordinal}</b><span class="status ${c.status}">${c.status}</span>`;
@@ -926,7 +973,7 @@ async function renderCandidates(candidates) {
         const token = await api(`/api/candidates/${c.id}/media-token`, {
           method: 'POST'
         });
-        card.innerHTML += `<audio controls preload="none" src="${token.url}"></audio><div class="play-progress"><div class="play-progress-fill"></div></div><div class="row candidate-meta"><span class="muted duration">${fmtDuration(c.duration_ms)}</span>${qualityBadge ? `<span class="tag neutral">${escapeHtml(qualityBadge)}</span>` : ''}</div><div class="row"><button class="master-btn" data-candidate="${c.id}" data-revision="${c.spec_revision}">设为 Master</button><button class="secondary comment-candidate" data-candidate="${c.id}">时间点评论</button></div>`;
+        card.innerHTML += `<audio controls preload="none" src="${token.url}" aria-label="${candLabel} 试听"></audio><div class="play-progress"><div class="play-progress-fill"></div></div><div class="row candidate-meta"><span class="muted duration">${fmtDuration(c.duration_ms)}</span>${qualityBadge ? `<span class="tag neutral">${escapeHtml(qualityBadge)}</span>` : ''}</div><div class="row"><button class="master-btn" data-candidate="${c.id}" data-revision="${c.spec_revision}" aria-label="将${candLabel}设为 Master">设为 Master</button><button class="secondary comment-candidate" data-candidate="${c.id}" aria-label="对${candLabel}添加时间点评论">时间点评论</button></div>`;
         const audio = card.querySelector('audio');
         const fill = card.querySelector('.play-progress-fill');
         const dur = card.querySelector('.duration');

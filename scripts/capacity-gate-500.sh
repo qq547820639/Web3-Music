@@ -1,5 +1,5 @@
-#!/usr/bin/env sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 cd "$(dirname "$0")/.."
 FILES="-f docker-compose.yml -f docker-compose.capacity500.yml"
 mkdir -p capacity-results

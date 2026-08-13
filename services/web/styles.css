@@ -1185,3 +1185,51 @@ button.loading::after {
   box-shadow: var(--shadow);
   pointer-events: none;
 }
+
+/* ---- a11y (Phase 3) ---- */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 9999;
+  padding: 10px 14px;
+  background: var(--primary);
+  color: #0b0c10;
+  border-radius: 0 0 8px 0;
+  font-weight: 600;
+}
+.skip-link:focus {
+  left: 0;
+}
+.app-footer {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.app-footer .muted {
+  color: var(--muted);
+}
+.radar-dims {
+  margin-top: 10px;
+  font-size: 12px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+.radar-dims summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.radar-dims ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.radar-point:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
