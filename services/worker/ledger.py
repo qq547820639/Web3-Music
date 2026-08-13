@@ -3,16 +3,24 @@ import uuid
 import psycopg2.extras
 
 def d(x):return Decimal(str(x))
+
+def _g(row, key, idx):
+    # The worker calls ledger functions with a RealDictCursor (dict rows).
+    # Keep a tuple-index fallback so a plain cursor still works if reused.
+    return row[key] if isinstance(row, dict) else row[idx]
+
 def accounts(cur,workspace):
-    cur.execute("SELECT id,account_type FROM ledger_accounts WHERE workspace_id=%s FOR UPDATE",(workspace,));return {r[1]:str(r[0]) for r in cur.fetchall()}
+    cur.execute("SELECT id,account_type FROM ledger_accounts WHERE workspace_id=%s FOR UPDATE",(workspace,))
+    return {_g(r,"account_type",1):str(_g(r,"id",0)) for r in cur.fetchall()}
+
 def post(cur,workspace,op,kind,ref,pairs,actor="worker",meta=None):
     pairs=[(a,d(v)) for a,v in pairs]
     cur.execute("SELECT id,transaction_type,reference_type,reference_id FROM ledger_transactions WHERE workspace_id=%s AND operation_key=%s FOR UPDATE",(workspace,op));row=cur.fetchone()
     if row:
-        tx_id=str(row[0])
+        tx_id=str(_g(row,"id",0))
         cur.execute("SELECT a.account_type,e.delta FROM ledger_entries e JOIN ledger_accounts a ON a.id=e.account_id WHERE e.transaction_id=%s ORDER BY a.account_type",(tx_id,))
-        actual=sorted((r[0],d(r[1])) for r in cur.fetchall())
-        if row[1]!=kind or row[2]!="generation_job" or str(row[3])!=str(ref) or actual!=sorted(pairs):
+        actual=sorted((_g(r,"account_type",0),d(_g(r,"delta",1))) for r in cur.fetchall())
+        if _g(row,"transaction_type",1)!=kind or _g(row,"reference_type",2)!="generation_job" or str(_g(row,"reference_id",3))!=str(ref) or actual!=sorted(pairs):
             raise RuntimeError("operation key reused with different ledger semantics")
         return tx_id,False
     if sum((v for _,v in pairs),Decimal(0))!=0:raise RuntimeError("unbalanced ledger transaction")
@@ -24,7 +32,7 @@ def post(cur,workspace,op,kind,ref,pairs,actor="worker",meta=None):
 def close_hold(cur,workspace,hold_id,settle,job_id):
     cur.execute("SELECT original_amount,settled_amount,released_amount,status FROM credit_holds WHERE id=%s AND workspace_id=%s FOR UPDATE",(hold_id,workspace));row=cur.fetchone()
     if not row:raise RuntimeError("hold missing")
-    original,settled,released,status=d(row[0]),d(row[1]),d(row[2]),row[3]
+    original,settled,released,status=d(_g(row,"original_amount",0)),d(_g(row,"settled_amount",1)),d(_g(row,"released_amount",2)),_g(row,"status",3)
     remaining=original-settled-released;target=d(settle)
     if target<0 or target>remaining:raise RuntimeError("settlement exceeds hold")
     release=remaining-target

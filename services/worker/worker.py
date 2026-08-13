@@ -391,6 +391,10 @@ async def job_loop(slot:int):
         set_gauge("ai_music_worker_slot_busy",1,slot=str(slot))
         try:
             await process(job)
+        except Exception as exc:
+            # process() handles domain errors itself, but an unexpected exception
+            # must not take down the whole worker loop (and thus every queued job).
+            print(f"worker slot {slot}: job {job.get('id')} crashed: {exc}",flush=True)
         finally:
             set_gauge("ai_music_worker_slot_busy",0,slot=str(slot))
 
