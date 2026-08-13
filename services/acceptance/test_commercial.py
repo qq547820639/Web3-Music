@@ -43,7 +43,7 @@ def wait_job(job_id, timeout=80):
 def wait_order(order_id, status, timeout=35):
     end = time.time() + timeout
     while time.time() < end:
-        rows = call('GET', '/orders', BUYER_TOKEN, BUYER_WS).json()
+        rows = call('GET', '/orders', BUYER_TOKEN, BUYER_WS).json()['items']
         row = next(x for x in rows if x['id'] == order_id)
         if row['status'] == status:
             return row
@@ -77,28 +77,28 @@ def test_synthetic_commercial_license_delivery_and_reversal():
     call('POST', f"/assets/{asset['asset_snapshot_id']}/rights-review", SELLER_TOKEN, SELLER_WS, json={'status': 'verified', 'capabilities': capabilities, 'legal_hold': False, 'review_note': 'Synthetic contract test only', 'evidence_ids': [evidence['id']]})
     offer = call('POST', '/offers', SELLER_TOKEN, SELLER_WS, json={'asset_snapshot_id': asset['asset_snapshot_id'], 'title': 'Exclusive commercial test', 'price_amount': 4900, 'currency': 'USD', 'territory': 'worldwide', 'duration_days': 365, 'exclusive': True, 'status': 'active'}).json()
     order = call('POST', f"/marketplace/offers/{offer['id']}/purchase", BUYER_TOKEN, BUYER_WS, json={'licensee_name': 'Other Workspace'}).json()
-    hidden = call('GET', '/marketplace/offers', SELLER_TOKEN, SELLER_WS).json()
+    hidden = call('GET', '/marketplace/offers', SELLER_TOKEN, SELLER_WS).json()['items']
     assert all(x['id'] != offer['id'] for x in hidden), 'exclusive reserved offer must be hidden'
     pay_key = 'license-pay-' + uuid.uuid4().hex
     call('POST', f"/orders/{order['id']}/pay", BUYER_TOKEN, BUYER_WS, headers={'Idempotency-Key': pay_key}, json={'scenario': 'success'})
     wait_order(order['id'], 'fulfilled')
-    licenses = call('GET', '/licenses', BUYER_TOKEN, BUYER_WS).json()
+    licenses = call('GET', '/licenses', BUYER_TOKEN, BUYER_WS).json()['items']
     license_row = next(x for x in licenses if x['order_id'] == order['id'])
     assert license_row['status'] == 'active'
-    deliveries = call('GET', '/deliveries', BUYER_TOKEN, BUYER_WS).json()
+    deliveries = call('GET', '/deliveries', BUYER_TOKEN, BUYER_WS).json()['items']
     delivery = next(x for x in deliveries if x['order_id'] == order['id'])
     exported = call('GET', f"/deliveries/{delivery['id']}/export", BUYER_TOKEN, BUYER_WS)
     archive = zipfile.ZipFile(io.BytesIO(exported.content))
     assert {'license/license.json', 'license/rights-manifest.json', 'asset/asset-snapshot.json'}.issubset(archive.namelist())
     assert any(name.startswith('media/master') for name in archive.namelist())
-    payouts = call('GET', '/payouts', SELLER_TOKEN, SELLER_WS).json()
+    payouts = call('GET', '/payouts', SELLER_TOKEN, SELLER_WS).json()['items']
     payout = next(x for x in payouts if x['reference_id'] == license_row['id'])
     assert payout['amount'] == 4165 and payout['status'] == 'pending'
     call('POST', f"/orders/{order['id']}/refunds", BUYER_TOKEN, BUYER_WS, headers={'Idempotency-Key': 'license-refund-' + uuid.uuid4().hex}, json={'reason': 'Commercial acceptance reversal'})
     wait_order(order['id'], 'refunded')
-    deliveries = call('GET', '/deliveries', BUYER_TOKEN, BUYER_WS).json()
+    deliveries = call('GET', '/deliveries', BUYER_TOKEN, BUYER_WS).json()['items']
     assert next(x for x in deliveries if x['id'] == delivery['id'])['status'] == 'revoked'
-    payouts = call('GET', '/payouts', SELLER_TOKEN, SELLER_WS).json()
+    payouts = call('GET', '/payouts', SELLER_TOKEN, SELLER_WS).json()['items']
     assert next(x for x in payouts if x['id'] == payout['id'])['status'] == 'reversed'
 
     # Brand brief award uses the same immutable asset/rights evidence, but creates a
@@ -115,13 +115,13 @@ def test_synthetic_commercial_license_delivery_and_reversal():
     }).json()
     call('POST', f"/orders/{award_order['id']}/pay", BUYER_TOKEN, BUYER_WS, headers={'Idempotency-Key': 'brand-pay-' + uuid.uuid4().hex}, json={'scenario': 'success'})
     wait_order(award_order['id'], 'fulfilled')
-    brand_license = next(x for x in call('GET', '/licenses', BUYER_TOKEN, BUYER_WS).json() if x['order_id'] == award_order['id'])
+    brand_license = next(x for x in call('GET', '/licenses', BUYER_TOKEN, BUYER_WS).json()['items'] if x['order_id'] == award_order['id'])
     assert brand_license['status'] == 'active'
-    brand_delivery = next(x for x in call('GET', '/deliveries', BUYER_TOKEN, BUYER_WS).json() if x['order_id'] == award_order['id'])
+    brand_delivery = next(x for x in call('GET', '/deliveries', BUYER_TOKEN, BUYER_WS).json()['items'] if x['order_id'] == award_order['id'])
     brand_zip = call('GET', f"/deliveries/{brand_delivery['id']}/export", BUYER_TOKEN, BUYER_WS)
     assert zipfile.is_zipfile(io.BytesIO(brand_zip.content))
-    brand_payout = next(x for x in call('GET', '/payouts', SELLER_TOKEN, SELLER_WS).json() if x['reference_id'] == brand_license['id'])
+    brand_payout = next(x for x in call('GET', '/payouts', SELLER_TOKEN, SELLER_WS).json()['items'] if x['reference_id'] == brand_license['id'])
     assert brand_payout['amount'] == 2550 and brand_payout['status'] == 'pending'
     call('POST', f"/orders/{award_order['id']}/refunds", BUYER_TOKEN, BUYER_WS, headers={'Idempotency-Key': 'brand-refund-' + uuid.uuid4().hex}, json={'reason': 'Brand award contract reversal'})
     wait_order(award_order['id'], 'refunded')
-    assert next(x for x in call('GET', '/payouts', SELLER_TOKEN, SELLER_WS).json() if x['id'] == brand_payout['id'])['status'] == 'reversed'
+    assert next(x for x in call('GET', '/payouts', SELLER_TOKEN, SELLER_WS).json()['items'] if x['id'] == brand_payout['id'])['status'] == 'reversed'

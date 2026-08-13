@@ -96,7 +96,7 @@ def test_provider_emulator_contract():
 def wait_order(order_id, wanted, timeout=30):
     end=time.time()+timeout
     while time.time()<end:
-        rows=call("GET","/orders").json()
+        rows=call("GET","/orders").json()["items"]
         row=next(x for x in rows if x["id"]==order_id)
         if row["status"] in wanted:return row
         time.sleep(.5)

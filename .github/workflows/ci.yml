@@ -60,7 +60,8 @@ jobs:
         shell: bash
         run: |
           if ! docker compose --profile test run --rm acceptance > /tmp/acc.log 2>&1; then
-            echo "::error title=acceptance::$(tail -60 /tmp/acc.log | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
+            echo "::error title=acceptance::$(tail -60 /tmp/acc.log | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
+            echo "::error title=api-logs::$(docker compose logs --no-color api 2>/dev/null | tail -50 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
       - run: ./scripts/contract-test.sh
@@ -95,7 +96,8 @@ jobs:
         shell: bash
         run: |
           if ! docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial > /tmp/acc-comm.log 2>&1; then
-            echo "::error title=acceptance-commercial::$(tail -60 /tmp/acc-comm.log | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
+            echo "::error title=acceptance-commercial::$(tail -60 /tmp/acc-comm.log | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
+            echo "::error title=api-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color api 2>/dev/null | tail -50 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
       - if: always()
