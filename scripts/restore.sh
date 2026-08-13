@@ -17,7 +17,7 @@ cat "$DIR/postgres.dump" | docker compose exec -T postgres pg_restore -U music_a
 
 echo "Restoring local MinIO data"
 docker compose stop minio
-docker compose run --rm --no-deps --entrypoint sh minio -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} +' >/dev/null
+docker compose run --rm --no-deps --entrypoint sh minio -c 'rm -rf /data/* /data/.[!.]* /data/..?*' >/dev/null 2>&1 || true
 docker compose cp "$DIR/minio-data/." minio:/data >/dev/null
 docker compose start minio
 
