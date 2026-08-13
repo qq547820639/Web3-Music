@@ -56,7 +56,13 @@ jobs:
             exit 1
           fi
       - run: docker compose ps
-      - run: docker compose --profile test run --rm acceptance
+      - name: Run acceptance (with diagnostics)
+        shell: bash
+        run: |
+          if ! docker compose --profile test run --rm acceptance > /tmp/acc.log 2>&1; then
+            echo "::error title=acceptance::$(tail -60 /tmp/acc.log | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
+            exit 1
+          fi
       - run: ./scripts/contract-test.sh
       - run: ./scripts/chaos-worker-recovery.sh
       - run: ./scripts/backup.sh ci
@@ -85,7 +91,13 @@ jobs:
             echo "::error title=worker-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color worker 2>/dev/null | tail -40 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
-      - run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial
+      - name: Run commercial acceptance (with diagnostics)
+        shell: bash
+        run: |
+          if ! docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial > /tmp/acc-comm.log 2>&1; then
+            echo "::error title=acceptance-commercial::$(tail -60 /tmp/acc-comm.log | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
+            exit 1
+          fi
       - if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color > commercial-compose.log || true
       - if: always()
