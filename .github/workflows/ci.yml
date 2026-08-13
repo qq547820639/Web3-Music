@@ -77,7 +77,7 @@ jobs:
         shell: bash
         run: |
           if ! RESTORE_CONFIRM=YES ./scripts/restore.sh backups/ci > /tmp/restore.log 2>&1; then
-            echo "::error title=restore::$(grep -iE 'error|failed|fatal|pg_restore|dropdb|createdb|cannot|does not exist|DETAIL' /tmp/restore.log | tail -25 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
+            echo "::error title=restore::$(tail -25 /tmp/restore.log | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
       - run: docker compose --profile test run --rm acceptance
