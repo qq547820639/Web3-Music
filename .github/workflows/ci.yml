@@ -73,7 +73,13 @@ jobs:
           fi
       - run: ./scripts/chaos-worker-recovery.sh
       - run: ./scripts/backup.sh ci
-      - run: RESTORE_CONFIRM=YES ./scripts/restore.sh backups/ci
+      - name: Restore from backup (with diagnostics)
+        shell: bash
+        run: |
+          if ! RESTORE_CONFIRM=YES ./scripts/restore.sh backups/ci > /tmp/restore.log 2>&1; then
+            echo "::error title=restore::$(tail -60 /tmp/restore.log | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
+            exit 1
+          fi
       - run: docker compose --profile test run --rm acceptance
       - if: always()
         run: docker compose logs --no-color > compose.log || true
@@ -103,7 +109,7 @@ jobs:
         run: |
           if ! docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial > /tmp/acc-comm.log 2>&1; then
             echo "::error title=acceptance-commercial::$(grep -E '^E |FAILED|AssertionError|Error' /tmp/acc-comm.log | tr -d '\r' | tr '\n' ' ' | head -c 4500)"
-            echo "::error title=api-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color api 2>/dev/null | tail -50 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
+            echo "::error title=api-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color api 2>/dev/null | grep -vE 'GET /ready|GET /metrics|GET /api/orders|GET /api/jobs/' | tail -40 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             echo "::error title=worker-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color worker 2>/dev/null | tail -50 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
