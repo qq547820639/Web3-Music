@@ -68,6 +68,12 @@ def db_pool():
 class PooledConnection:
     def __init__(self):
         self._pool=db_pool();self._conn=self._pool.getconn();self._broken=False
+        # jsonb columns must come back as dicts (not JSON strings) so load_job's
+        # spec/quote and step output/error are usable without json.loads(). The
+        # API registers the same typecaster; the worker had its own pool and
+        # was missing it, so EmulatorAdapter.submit(spec.get(...)) raised
+        # AttributeError on a str and crashed the whole worker.
+        psycopg2.extras.register_default_jsonb(self._conn, loads=json.loads)
     def __getattr__(self,name):return getattr(self._conn,name)
     def __enter__(self):return self
     def __exit__(self,exc_type,exc,tb):
