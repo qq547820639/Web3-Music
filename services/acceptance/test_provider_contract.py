@@ -35,9 +35,9 @@ def test_capabilities_and_idempotent_generation_contract():
             break
         time.sleep(.5)
     assert result and result["status"] == "partial"
-    assert len(result["candidates"]) == 2
-    assert sum(1 for c in result["candidates"] if c["status"] == "completed") == 1
-    audio = next(c["audio_url"] for c in result["candidates"] if c["status"] == "completed")
+    assert len(result["results"]) == 2
+    assert sum(1 for c in result["results"] if c["status"] == "completed") == 1
+    audio = next(c["audio_url"] for c in result["results"] if c["status"] == "completed")
     media = requests.get(audio, timeout=20)
     assert media.status_code == 200 and media.headers["content-type"].startswith("audio/") and len(media.content) > 1024
 
