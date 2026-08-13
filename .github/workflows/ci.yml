@@ -49,10 +49,11 @@ jobs:
       - name: Start stack (with diagnostics)
         shell: bash
         run: |
-          set -o pipefail
-          docker compose up --build -d 2>&1 | tee /tmp/up.log
-          rc=${PIPESTATUS[0]}
-          if [ "$rc" -ne 0 ]; then tail -60 /tmp/up.log | sed 's/^/::error::/'; exit "$rc"; fi
+          if ! docker compose up --build -d > /tmp/up.log 2>&1; then
+            echo "::error title=compose-up::$(tail -50 /tmp/up.log | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
+            echo "::error title=migrate-logs::$(docker compose logs --no-color migrate 2>/dev/null | tail -30 | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
+            exit 1
+          fi
       - run: docker compose ps
       - run: docker compose --profile test run --rm acceptance
       - run: ./scripts/contract-test.sh
@@ -77,10 +78,11 @@ jobs:
       - name: Start commercial stack (with diagnostics)
         shell: bash
         run: |
-          set -o pipefail
-          docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d 2>&1 | tee /tmp/up-comm.log
-          rc=${PIPESTATUS[0]}
-          if [ "$rc" -ne 0 ]; then tail -60 /tmp/up-comm.log | sed 's/^/::error::/'; exit "$rc"; fi
+          if ! docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d > /tmp/up-comm.log 2>&1; then
+            echo "::error title=compose-up::$(tail -50 /tmp/up-comm.log | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
+            echo "::error title=migrate-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color migrate 2>/dev/null | tail -30 | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
+            exit 1
+          fi
       - run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial
       - if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color > commercial-compose.log || true
