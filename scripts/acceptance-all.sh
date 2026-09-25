@@ -159,6 +159,10 @@ step_reservation_race() {
   python scripts/reservation_race.py
 }
 
+step_reconcile_market() {
+  python scripts/reconcile_market.py
+}
+
 step_capacity() {
   # 容量 Gate 会用 capacity500 覆层重起整套栈；先把商业/主栈停掉以释放宿主机端口。
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml down --remove-orphans >/dev/null 2>&1 || true
@@ -179,6 +183,7 @@ run_step "restore-fidelity-compare" step_fidelity_compare
 run_step "acceptance-rerun" step_acceptance_rerun
 run_step "commercial-flow" step_commercial
 run_step "reservation-race" step_reservation_race
+run_step "market-reconciliation" step_reconcile_market
 
 if [ "${CAPACITY:-0}" = "1" ]; then
   run_step "capacity-gate-500" step_capacity

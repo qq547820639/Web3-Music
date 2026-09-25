@@ -115,6 +115,14 @@ jobs:
             echo "::error title=worker-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color worker 2>/dev/null | tail -40 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
+      - name: Market reconciliation (with diagnostics)
+        shell: bash
+        run: |
+          if ! python scripts/reconcile_market.py > /tmp/reconcile.log 2>&1; then
+            echo "::error title=market-reconciliation::$(tail -25 /tmp/reconcile.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            exit 1
+          fi
+          cat /tmp/reconcile.log
       - name: Exclusive-offer reservation race (with diagnostics)
         shell: bash
         run: |
