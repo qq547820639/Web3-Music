@@ -80,6 +80,7 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
 
 ## Not verified: the 500-user capacity gate
 
+
 `scripts/capacity-gate-500.sh` was executed for real and **FAILS on this host**: at the
 configured 500 users the gate needs p95 ≤ 800 ms and measured p95 **4197 ms** on one run and
 **9832 ms** on another, with `error_rate=0.000%` and every request returning 200.
@@ -113,7 +114,27 @@ Also noted for the owner, deliberately not "fixed" by loosening a control:
 to 429 sequential test suites here and would throttle legitimate users behind one shared
 egress address. The drills now back off instead.
 
+## Scope of the external-tooling review, and what was skipped
+
+Per project practice, new or large components are compared against mature implementations
+before being built. The one such comparison this round was for the load generator, and it is
+recorded with sources in `COST_OPTIMIZED_500_CONCURRENCY.md` (verdict: keep the in-repo
+tester; the shortfall measured was host capacity, not tooling).
+
+The remaining changes were deliberately **not** given an external survey, for the stated
+reason that each is a scope-clear local fix or a test-only addition, and each reuses a
+pattern that already exists in this repository rather than inventing one:
+
+- the cross-tenant, contention, race, reconciliation and regression suites are tests, using
+  the existing acceptance/drill harnesses and the same httpx/psql conventions;
+- the reservation guard was placed in a `SECURITY DEFINER` migration function because
+  `reserve_marketplace_offer` already establishes exactly that pattern for the same two
+  tables — the alternative (application-side writes) is what silently matched zero rows;
+- apt-over-TLS, the two host-port variables, and the `static-verify.sh` directory pruning
+  are single-line-scale environment robustness fixes with no design surface.
+
 ## Requires external commercial evidence
+
 
 A real music provider, payment processor, tax/fiscal setup, identity provider and legal
 approval cannot be embedded in source code. The default system remains fully usable with

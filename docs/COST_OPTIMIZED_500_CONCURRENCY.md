@@ -97,6 +97,34 @@ KEEP_CAPACITY_STACK=1 \
 
 同轮一并观察：`LOGIN_RATE_LIMIT_PER_MINUTE` 缺省 10 次/分钟且按 IP 计，串行执行的验收步骤会被它挡到 429（本轮通过让脚本退避解决，未放宽该控制）。真实站点若用户共用出口 IP，这一缺省值会误伤正常登录，需要属主定值。
 
+## 压测器选型记录（2026-09-25）
+
+当前 Gate 用的是仓内自研 `scripts/load-test-500.py`（asyncio，124 行，已自带
+`--max-p95-ms` / `--max-error-rate` 判据并以非零码退出）。按选型规程对外部成熟实现做了比对，
+候选为 Grafana k6 与 Locust：
+
+| 维度 | 保持自研 | k6（grafana/k6） | Locust |
+|---|---|---|---|
+| 功能匹配度 | 已满足单端点 SLO Gate + 与 Compose 同网络起栈 + 压后跑 Acceptance | 阈值原生且更强：官方文档给出 `p(95)<800`、`rate<0.01` 这类判据，阈值不过则"test finishes with a failed status"并以非零码退出；支持 ramping-vus、分布式执行 | 面向可编程用户行为，Python 生态一致；但本次在其项目文档页未见内建的 SLO 阈值/非零退出机制（文档本身未记录，不等于运行时一定没有） |
+| License 兼容性 | 无新增依赖（本仓为 MIT） | README 明示 `AGPL-3.0`；作为 CI/开发期独立二进制调用不构成对应用代码的传染，但不得把 k6 代码 vendored 进服务 | MIT（其文档页明示），约束最松 |
+| 维护活跃度 | 由本项目维护，规模小 | 31,579 stars、非归档、比对当日（2026-09-25）仍有更新 | 活跃（本次未取星数等指标，不作结论） |
+| 安全风险 | 攻击面最小，仅 httpx/aiohttp 级别 | 引入 JS 运行时与 Go 二进制；脚本即依赖 | 引入 Python 依赖树与 Web UI（默认监听需关闭） |
+| 代码质量 | 手写分位数/统计，已有回归覆盖 | 成熟、统计口径久经使用 | 成熟 |
+| 适配成本 | 0 | 需用 JS 重写场景；要复刻当前"压完立刻跑领域 Acceptance"的编排（该编排价值高于压测本身） | 需把认证 + CSRF 双提交与 think-time 语义改写成 Locust task |
+
+**决定：本轮不替换压测器。** 理由是功能与判据能力上外部方案没有补上当前 Gate 缺的东西——
+p95/错误率阈值与非零退出自研已具备；而本轮实测到不达标的真正原因是宿主资源
+（4 vCPU / 6 GiB < profile 自身请求的 4+4 GiB），换工具不会改变这一结论。k6 值得在未来
+需要「多端点 SLO 矩阵 / 阶梯爬坡 / 分布式发压」时引入，届时借鉴其 thresholds 声明式写法。
+
+核实来源（本轮实际访问）：
+- Grafana k6 官方文档 thresholds 页：`https://grafana.com/docs/k6/latest/using-k6/thresholds/`
+- k6 README 许可声明：`https://raw.githubusercontent.com/grafana/k6/master/README.md`
+- k6 仓库元数据（语言/星标/更新时间）经 GitHub API 查询 `grafana/k6`
+- Locust 官方文档 `what-is-locust` 页（许可为 MIT）
+
+未核实项（不作为结论依据）：Locust 的实际维护指标与 k6 的性能基准数据。
+
 ## 生产部署
 
 Kubernetes 基线：
