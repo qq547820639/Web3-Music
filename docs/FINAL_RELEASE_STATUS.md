@@ -16,7 +16,14 @@ full `compose-logs.txt` and `commercial-compose-logs.txt`).
 
 Host: Docker 29.5.2 on a Colima VM with **4 vCPU / 6 GiB**, Compose v5.4.0. The same suite
 also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-acceptance`,
-`commercial-flow`).
+`commercial-flow`, and now `capacity-500`).
+
+> **CI status is deliberately not claimed as evidence.** The branch was pushed, which
+> dispatches those jobs, but this environment cannot read their outcome: the repository is
+> private (unauthenticated fetch returns 404), the `gh` CLI is not logged in, the GitHub MCP
+> connector exposes no workflow-run tool, and the local browser has no GitHub session. Treat
+> the CI jobs as dispatched-and-unverified; every number quoted in this file comes from the
+> local run above.
 
 - Compose E2E, twice — including once **after** a backup/restore: 11 resident cases over
   live api/worker/web/admin/gateway.
