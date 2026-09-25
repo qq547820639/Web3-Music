@@ -156,3 +156,29 @@ jobs:
         with: {name: commercial-compose-logs, path: commercial-compose.log}
       - if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml down -v --remove-orphans
+
+  capacity-500:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r services/api/requirements.txt -r services/worker/requirements.txt -r services/payment-emulator/requirements.txt -r services/acceptance/requirements.txt pytest pyyaml jsonschema httpx
+      - run: cp .env.example .env
+      - name: Run the 500-user capacity gate (with diagnostics)
+        shell: bash
+        run: |
+          if ! ./scripts/capacity-gate-500.sh > /tmp/capacity.log 2>&1; then
+            echo "::error title=capacity-gate::$(tail -30 /tmp/capacity.log | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
+            tail -40 /tmp/capacity.log
+            exit 1
+          fi
+          tail -15 /tmp/capacity.log
+      - if: always()
+        run: docker compose logs --no-color > capacity-compose.log || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: capacity-500-logs, path: capacity-compose.log}
+      - if: always()
+        run: docker compose down -v --remove-orphans
