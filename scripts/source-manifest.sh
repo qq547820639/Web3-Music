@@ -23,7 +23,7 @@ digests() {
     | awk -v self="$(basename "$MANIFEST")" '
         { hash = $1; path = substr($0, length(hash) + 3)
           if (path == "SOURCE_MANIFEST.sha256" || path == self) next
-          if (substr(path, 1, 16) == "release-evidence/") next
+          if (path ~ /^release-evidence\//) next
           print path "\t" hash }' \
     | sort
 }

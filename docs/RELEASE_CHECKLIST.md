@@ -57,7 +57,7 @@
 2. **UI 代理把 API 的死地址钉住了。** `proxy_pass http://api:8000` 里的字面主机名只在配置加载时解析一次，api 容器一旦被重建（本轮商业覆层 `up` 就重建了），nginx 仍连旧 IP：日志实录 `connect() failed (111) while connecting to upstream http://172.19.0.8:8000`，而 api 当时在 `172.19.0.7`，Studio/后台每个 `/api/` 调用都 502，API 本身却是健康的。改用 Docker 内嵌 resolver + 变量后强制换址复验（.7 → .13，web 容器全程不重启）：连点三次登录均 200。
 3. **错误路径把真因吃掉了。** 两个前端都先 `response.json()` 再在 `catch` 里 `response.text()`——流已被读干，第二次抛 `body stream already read`，用户看到的就是这句 TypeError。改成读一次再按需解析后，同一界面立刻报出真因 `"too many login attempts"`，上面第 2 条与下面"待决"第 1 条都是靠这个才定位到的。
 4. **退款路径的静默 0 行**（上一版本文列为"未一并改动"）：`market.py` 退款分支在买方事务里直接把独家 offer 置 `paused`，与 G12-a 的成因同源；实测复现 14/15，`db/migrations/012` 换成 `SECURITY DEFINER` 的 `pause_marketplace_offer_on_refund` 后 15/15，退款后 offer 状态实测为 `paused`。
-5. **交付清单撒谎。** `SOURCE_MANIFEST.sha256` 是被引用为发布证据的入库文件，却没人校验：194 个跟踪文件里只列了 154（migration 007–012 全部缺席），列出的 154 条里 44 条哈希已对不上内容——等于只有 112 个文件被如实描述，而文件本身看起来像一道完整性校验。现在 `static-verify.sh` 会调 `scripts/source-manifest.sh check`，源码改了却没刷新清单 CI 就红；`write` 仍是独立命令，否则这道闸永远不会红。四侧对照已在临时仓库验过：漏一条、翻一个十六进制字符、枚举到 0 个文件都判红，刚写好的清单与历史 `./path` 写法判绿。
+5. **交付清单撒谎。** `SOURCE_MANIFEST.sha256` 是被引用为发布证据的入库文件，却没人校验：按修好后的判据对 `e1a8957`（本轮改动前最后一个提交）复算，188 个跟踪源文件里清单只覆盖 154 行（migration 007–012 全在缺席的 34 个里），且这 154 行有 44 行哈希已对不上内容——**只有 110/188 被如实描述**，而文件本身看起来像一道完整性校验。现在 `static-verify.sh` 会调 `scripts/source-manifest.sh check`，源码改了却没刷新清单 CI 就红；`write` 仍是独立命令，否则这道闸永远不会红。五侧对照已在临时仓库验过：漏一条、翻一个十六进制字符、枚举到 0 个文件都判红，刚写好的清单与历史 `./path` 写法判绿。这道闸上线后第一件事就抓到了自己过滤器的 off-by-one（`release-evidence/` 漏排除，表现为提交验收件后 `stale=6`），上面的数字是该修复之后的复算，首读（194/40/112）已作废——它现在还留在 `28deafc` 的提交说明里。
 
 ### 已澄清（上一版记为"需属主决策"，读码 + 实测后确认不是缺口）
 

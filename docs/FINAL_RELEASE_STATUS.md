@@ -134,14 +134,19 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
    `aria-`-counting method in `ITERATION_CHANGES_PHASE3.md` is superseded rather than
    extended.
 10. **The delivery manifest did not describe the delivery.** `SOURCE_MANIFEST.sha256` is
-    tracked and cited as release evidence but nothing validated it: it listed 154 of 194
-    tracked files (migrations 007–012 absent) and 44 of those entries no longer matched
-    their content, so 112 files were truthfully represented while the file read like an
-    integrity guarantee — and `release-evidence.sh` was already generating a correct
-    `source.sha256` per run, a second and fresher authority over the same fact.
-    `scripts/source-manifest.sh {write,check}` now exists, `static-verify.sh` runs `check`,
-    and the four control arms (missing entry, flipped hex, zero enumerated files, freshly
-    written manifest) were exercised in a scratch repository.
+    tracked and cited as release evidence but nothing validated it: measured with the
+    checker's own rule against the last commit before this work (`e1a8957`), it listed 154
+    rows against 188 tracked source files (migrations 007–012 among the 34 absent) and 44
+    of those rows no longer matched their content — 110 of 188 files truthfully represented,
+    while the file read like an integrity guarantee. `release-evidence.sh` was already
+    generating a correct `source.sha256` per run, a second and fresher authority over the
+    same fact. `scripts/source-manifest.sh {write,check}` now exists, `static-verify.sh`
+    runs `check`, and the control arms (missing entry, flipped hex, zero enumerated files,
+    freshly written manifest, `./path` compatibility) were exercised in a scratch repository.
+    The gate then found a bug in its own filter — an off-by-one prefix comparison let
+    `release-evidence/` through, which showed up as `stale=6` the moment verdict files were
+    committed — so the figures above are the recount *after* that fix, not the first reading
+    (which said 194/40/112 and is now wrong in the message of commit `28deafc`).
 
 ## Not verified: the 500-user capacity gate
 
