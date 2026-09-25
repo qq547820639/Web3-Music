@@ -11,10 +11,10 @@
 
 - [x] Compose E2E 通过；→ `acceptance`/`acceptance-rerun` 两步 PASS，11 项常驻用例在真实 api/worker/web/admin/gateway 栈上通过。
 - [x] 两个 Worker Lease 竞争与 Kill-9 恢复；→ Kill-9 由 `chaos-worker-recovery.sh` 覆盖；竞争此前**无人验证**（实机只有一个 worker），现由 `scripts/lease-contention.sh` 补上：`worker-b` profile + 8 个任务 + 2 个 claimant，实测 `8 jobs, 2 workers, 160.0 credits settled once`。claimant 身份取自 `generation_attempts.lease_owner`（`generation_jobs.lease_owner` 在任务落定后会被清空，用它会把"没发生竞争"读成通过）。
-- [x] Provider Contract Test；→ `contract-test` PASS（4 项，Provider 与 Payment 模拟器契约）。
+- [x] Provider Contract Test；→ `contract-test` PASS（5 项：Provider 与 Payment 模拟器契约，另加 2 项针对本轮写下的 provider 契约——vendor 方言必须被接受、违约请求必须 422）。
 - [x] 备份恢复后账本和资产哈希一致；→ 此前只做**相对增量**断言，整体漂移看不见，也没有任何一处把对象存储字节与资产哈希对拉过。现由 `scripts/restore_fidelity.py` 做绝对指纹（每租户各科目余额 + 每个资产导出包内 master 音频的 sha256），实测 restore 后 4 个资产字节一致、账本不动；反向对照已做：删掉某个已登记资产的 master 对象后判据立刻转红（`export 500`），再从备份恢复后转绿。
 - [x] 跨租户测试为零泄露；→ 此前全仓只有 **1 条**跨租户断言（`GET /projects/{id}` 404）。现由 `services/acceptance/test_tenant_isolation.py` 扩到 10 条用例、覆盖约 20 个读端点与写端点，并配了「三租户」夹具（`db/migrations/010` 新增与买卖双方同角色的第三者租户，用于把 licenses/deliveries/payouts 的 seller-OR-buyer 策略钉住）。每条"看不见"的断言都与"属主确实看得见"配对，所以路由本身不存在、或夹具什么都没建出来，都不会被读成隔离成功。
-- [ ] 至少 100 次真实 Provider 生成回归；→ 可数字化的一半已完成：`scripts/provider_regression.py` 实跑 100 个任务全链路（报价→冻结→Worker 领取→Provider 提交→媒体入库→结算），实测 `100/100 completed, error rate 0.0%`，逐任务校验 ready 数量、64 位 sha256、抽样真实下载、`settled_credits == 报价`，并核对账本只按结算总额移动、无悬挂冻结。**仍缺的是"真实 Provider"**：需要已签约的 Provider 与凭据，源码环境内无法产生；把 `MUSIC_PROVIDER` 指向真实适配器后同一套断言可直接复用。
+- [ ] 至少 100 次真实 Provider 生成回归；→ 可数字化的一半已完成：`scripts/provider_regression.py` 实跑 100 个任务全链路（报价→冻结→Worker 领取→Provider 提交→媒体入库→结算），实测 `100/100 completed, error rate 0.0%`，逐任务校验 ready 数量、64 位 sha256、抽样真实下载、`settled_credits == 报价`，并核对账本只按结算总额移动、无悬挂冻结。**仍缺的是"真实 Provider"**：需要已签约的 Provider 与凭据，源码环境内无法产生；本轮把这句话真的执行了一次：`docker-compose.generic-rest.yml` 让 `GenericRESTAdapter`（非自家模拟器适配器）驱动 25 个任务全通过（`25/25, error rate 0.0%, p50 5.12s / p95 5.24s`），并在过程中发现"两家方言没有共同契约"的真缺陷——`MUSIC_PROVIDER=generic_rest` 对我们自己的 provider 端点每一次提交都被 422 拒绝，现已把契约写成 `shared/contracts/provider-submit-v1.schema.json` 并让两端各自对齐（详见 `FINAL_RELEASE_STATUS.md` 缺陷 15）。**仍缺的是"真实 Provider"**：需要已签约的 Provider 与凭据，源码环境内无法产生；覆层背后仍是本仓库的模拟器，所以这条判据证明的是适配器与契约管线，不是任何供应商的行为。
 - [ ] 正式 Provider 合同和能力证据。→ 商业/法务文件，非代码可得。
 
 ## G10 Commercial Launch

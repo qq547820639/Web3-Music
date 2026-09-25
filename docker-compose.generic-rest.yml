@@ -1,0 +1,34 @@
+# Third-party provider adapter round trip.
+#
+# MUSIC_PROVIDER=generic_rest selects GenericRESTAdapter (services/worker/provider.py:347)
+# instead of the emulator's own adapter, and the base URL points back at the emulator because
+# that is the only audio endpoint this repository can run without credentials. The emulator
+# already serves the paths this adapter defaults to (/v1/jobs, /v1/jobs/{id},
+# /v1/jobs/{id}/cancel, /v1/capabilities -- services/provider-emulator/main.py:48-77), so no
+# stub service is needed.
+#
+# What this proves: the generation path works through a *different* adapter than the one the
+# emulator was written for -- the submit/response shapes go through _job_id and
+# _candidate_rows normalisation, the capability snapshot becomes contract_required with
+# supports_webhooks, and the API's own provider identity changes.
+#
+# What it does NOT prove: any real provider's behaviour, latency, error vocabulary or rights
+# position. The gate "100 real Provider generations" stays open until a signed contract and
+# credentials exist; scripts/provider_regression.py prints the identity it observed so a run
+# can never be mislabelled as the other thing.
+#
+# Compose footgun, measured the hard way: EVERY later compose invocation that names api or
+# worker (including `--profile test run --rm acceptance`, which reconciles its depends_on
+# services) computes those services from the file set on ITS OWN command line. Run any compose
+# command without -f docker-compose.generic-rest.yml and api/worker come back with
+# MUSIC_PROVIDER=emulator while the overlay file still looks applied.
+services:
+  api:
+    environment:
+      MUSIC_PROVIDER: generic_rest
+  worker:
+    environment:
+      MUSIC_PROVIDER: generic_rest
+      GENERIC_PROVIDER_BASE_URL: http://provider-emulator:8010
+      GENERIC_PROVIDER_API_KEY: generic-rest-round-trip-key
+      GENERIC_PROVIDER_MODEL: emulated-voice-v1

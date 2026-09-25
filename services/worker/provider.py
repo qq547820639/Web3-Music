@@ -198,16 +198,21 @@ class GenericRESTAdapter(ProviderAdapter):
             "provider": "generic_rest",
         }
 
-    async def submit(self, job_id: str, spec: dict, count: int, scenario: str) -> str:
-        payload = {
+    def submit_payload(self, job_id: str, spec: dict, count: int) -> dict:
+        """The body this adapter sends, as its own method so the written contract
+        (shared/contracts/provider-submit-v1.schema.json) can be checked against the real
+        thing rather than against a copy in a test."""
+        return {
             "external_request_id": job_id,
             "model": self.model or None,
             "candidate_count": count,
             "song_spec": spec,
         }
+
+    async def submit(self, job_id: str, spec: dict, count: int, scenario: str) -> str:
         response = await shared_http_client().post(
             self.base_url + self.submit_path,
-            json=payload,
+            json=self.submit_payload(job_id, spec, count),
             headers=self._headers(job_id),
             timeout=90,
         )

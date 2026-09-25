@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "provider-submit-v1.schema.json",
+  "title": "Provider job submit request (vendor-facing dialect), provider contract v1",
+  "description": "The body GenericRESTAdapter sends to POST /v1/jobs. Written down because the repository previously had two provider adapters posting two undocumented shapes and only one of them was accepted by the bundled emulator: with MUSIC_PROVIDER=generic_rest every submit was rejected with 422. A vendor implements this; the emulator also accepts its own legacy flat dialect for the built-in adapter, which is NOT part of this contract.",
+  "type": "object",
+  "required": ["external_request_id", "candidate_count", "song_spec"],
+  "additionalProperties": false,
+  "properties": {
+    "external_request_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Platform job id, also sent as the Idempotency-Key header."
+    },
+    "model": {
+      "type": ["string", "null"],
+      "description": "Configured GENERIC_PROVIDER_MODEL; null when unset."
+    },
+    "candidate_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8,
+      "description": "Must not exceed the candidate_count_max advertised by /v1/capabilities."
+    },
+    "song_spec": {
+      "type": "object",
+      "required": ["title"],
+      "additionalProperties": true,
+      "description": "The locked song spec revision. Providers may ignore fields they do not support; capabilities declare which ones are honoured.",
+      "properties": {
+        "title": {"type": "string", "minLength": 1},
+        "lyrics": {"type": "string"},
+        "styles": {"type": ["array", "string"], "items": {"type": "string"}},
+        "bpm": {"type": "integer", "minimum": 40, "maximum": 240}
+      }
+    }
+  }
+}

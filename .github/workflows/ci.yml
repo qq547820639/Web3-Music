@@ -98,6 +98,16 @@ jobs:
             exit 1
           fi
           tail -5 /tmp/erasure.log
+      - name: Third-party provider adapter round trip
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up --build -d
+          if ! python scripts/provider_regression.py 25 4 generic_rest > /tmp/genrest.log 2>&1; then
+            echo "::error title=generic-rest::$(grep -E '^  FAIL|expected provider' /tmp/genrest.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            tail -40 /tmp/genrest.log
+            exit 1
+          fi
+          tail -3 /tmp/genrest.log
       - if: always()
         run: docker compose logs --no-color > compose.log || true
       - if: always()

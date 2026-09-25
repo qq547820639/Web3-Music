@@ -49,3 +49,37 @@ def test_cancel_contract():
     assert created.status_code == 202
     cancelled = requests.post(BASE + f"/v1/jobs/{created.json()['id']}/cancel", timeout=20)
     assert cancelled.status_code == 200 and cancelled.json()["status"] == "cancelled"
+
+
+def test_vendor_contract_dialect_is_accepted_end_to_end():
+    """The body shape GenericRESTAdapter sends, checked against the server that must take it.
+
+    This is the shape from shared/contracts/provider-submit-v1.schema.json. The emulator used to
+    understand only its own flat dialect, so pointing MUSIC_PROVIDER=generic_rest at it failed
+    every submit with 422 -- two adapters, two undocumented request shapes, and no test that
+    covered the difference. The client side of the same contract is pinned in
+    tests/unit/test_provider_contract_schema.py.
+    """
+    key = "contract-vendor-" + uuid.uuid4().hex
+    body = {"external_request_id": key, "model": "voice-v9", "candidate_count": 2,
+            "song_spec": {"title": "Vendor dialect", "lyrics": "line one\nline two", "styles": ["synth pop"], "bpm": 96}}
+    created = requests.post(BASE + "/v1/jobs", headers={"Idempotency-Key": key}, json=body, timeout=20)
+    assert created.status_code == 202, created.text
+    job_id = created.json()["id"]
+
+    end = time.time() + 35
+    result = None
+    while time.time() < end:
+        result = requests.get(BASE + f"/v1/jobs/{job_id}", timeout=20).json()
+        if result["status"] in {"completed", "partial", "failed"}:
+            break
+        time.sleep(.5)
+    assert result and result["status"] == "completed", result
+    assert len(result["results"]) == 2
+    audio = [c["audio_url"] for c in result["results"] if c["status"] == "completed"]
+    assert len(audio) == 2 and all(requests.get(a, timeout=20).status_code == 200 for a in audio)
+
+    # a body that violates the contract is refused as unprocessable, not silently accepted
+    bad = requests.post(BASE + "/v1/jobs", headers={"Idempotency-Key": key + "-bad"},
+                        json={"candidate_count": 2, "song_spec": {"lyrics": "no title"}}, timeout=20)
+    assert bad.status_code == 422, bad.text

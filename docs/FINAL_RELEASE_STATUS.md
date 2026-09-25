@@ -44,7 +44,8 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
 
 - Compose E2E, twice — including once **after** a backup/restore: 11 resident cases over
   live api/worker/web/admin/gateway.
-- Provider and payment contract tests: 4 cases.
+- Provider and payment contract tests: 5 cases (the provider file gained a case that posts
+  the vendor-facing dialect, and one that requires a contract-violating body to be refused).
 - Worker kill -9 lease recovery: existing drill, passing.
 - **Two-worker lease contention** (new): `worker-b` claimant + 8 jobs →
   `8 jobs, 2 workers, 160.0 credits settled once`. Claimants are read from
@@ -75,6 +76,16 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
   settled; the red run at `1f8010e` read p50 31.88s / p95 81.81s on the same code path
   with 87/100 finished. The timing reading moves with host I/O, so it must be quoted per
   run, not as a property of the code.
+- **Third-party provider adapter round trip** (new): `docker-compose.generic-rest.yml` sets
+  `MUSIC_PROVIDER=generic_rest` so `GenericRESTAdapter` -- not the emulator's own adapter --
+  drives generation, and `scripts/provider_regression.py` now refuses the batch unless
+  `/api/bootstrap` reports that identity (measured both ways: with the overlay off it exits
+  `expected provider 'generic_rest', the stack reports 'emulator' ... the overlay did not take
+  effect`; with a dead base URL it fails a job and prints the reason the worker stored,
+  `job_error={'type': 'ConnectError', ...}`). Result: `25/25 completed, error rate 0.0%,
+  p50 5.12s / p95 5.24s, settled 250 credits`. This is the adapter and contract plumbing, not
+  a provider: the endpoint behind it is still our emulator, so the gate for 100 *real*
+  provider runs stays open.
 - **Real-browser walkthrough + axe audit** (new): Playwright driving axe-core 4.13.0
   (pinned by sha256, fetched at run time, test-only) against the live stack —
   **62 view records, 36 axe scans across desktop 1440 and phone 390, 0 critical and 0
@@ -97,8 +108,10 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
   subtracts every foreign key in the live schema that points at `users(id)`. That check was
   shown to bite — a throwaway `tmp_probe_link(user_id REFERENCES users(id))` table made it name
   `tmp_probe_link.user_id` and fail, and dropping the table made it pass again.
-- Static verification and unit tests: 78 unit tests (previously recorded here as 23, then
-  54, then 66, then 70).
+- Static verification and unit tests: 114 unit tests (previously recorded here as 23, then
+  54, 66, 70, then 78), of which 36 arrived with the provider contract: 26 on the generic
+  REST adapter's own surface and 10 validating the adapter's payload against the written
+  schema.
 
 ## Defects found and fixed by that execution
 
@@ -215,6 +228,30 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
    scored against the reverted semantics (5 of 8 turn red, real module 8/8 green) and by a new
    live assertion in `provider_regression.py` that fails any job ending
    `partial/failed/dead_letter` without a stored reason (exercised in both polarities).
+
+15. **The repository shipped two provider adapters and no written provider contract, and they
+   disagreed.** Turning on `MUSIC_PROVIDER=generic_rest` to check whether the "point it at a
+   real adapter" claim actually held produced 422 on *every* submit from our own
+   provider-emulator: `EmulatorAdapter` posts a flat `{title, lyrics, styles, bpm, ...}` body
+   (`services/worker/provider.py:70-78`) while `GenericRESTAdapter` posts
+   `{external_request_id, model, candidate_count, song_spec}` (:193-198), and the emulator
+   modelled only the first (`services/provider-emulator/main.py:12-13`). A "contract-first
+   adapter" whose contract existed nowhere was the real defect, so the contract is now a file
+   (`shared/contracts/provider-submit-v1.schema.json`), the emulator accepts and *labels* the
+   dialect it received, the adapter exposes `submit_payload()` so its body is checked against
+   the schema by the unit suite rather than by a copy in a test, and the acceptance contract
+   gains the server-side case. A must-fire arm is kept on both sides: the flat native body is
+   asserted NOT to satisfy the vendor schema, and a body without `external_request_id`, with
+   `candidate_count` 0 or 9, with a title-less `song_spec`, an out-of-range `bpm` or an
+   undeclared key is rejected.
+
+   Recorded alongside it, because it wasted a run: **a compose command that omits an overlay
+   file can silently revert services it did not touch.** `docker compose --profile test run
+   --rm acceptance` reconciles its `depends_on` services (api, worker) from the file set named
+   on *its own* command line, so running it after an overlay `up` brought the containers back
+   with `MUSIC_PROVIDER=emulator` while the overlay file still looked applied. That is why the
+   round-trip step does `up` and the batch with nothing in between, and why the batch verifies
+   the identity before submitting anything.
 
 ## Not verified: the 500-user capacity gate
 

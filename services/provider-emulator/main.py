@@ -1,16 +1,46 @@
 import hashlib,json,math,os,random,sqlite3,struct,time,uuid,wave
 from pathlib import Path
-from fastapi import FastAPI,Header,HTTPException,Request
+from fastapi import Body,FastAPI,Header,HTTPException,Request
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel,Field
+from pydantic import BaseModel,Field,ValidationError
 
-app=FastAPI(title="Persistent Music Provider Emulator",version="2.0.0")
+app=FastAPI(title="Persistent Music Provider Emulator",version="2.1.0")
 MEDIA_ROOT=Path(os.getenv("MEDIA_ROOT","/data/provider-media"));MEDIA_ROOT.mkdir(parents=True,exist_ok=True)
 DB_PATH=os.getenv("SQLITE_PATH","/data/provider/provider.db");Path(DB_PATH).parent.mkdir(parents=True,exist_ok=True)
 app.mount("/media",StaticFiles(directory=MEDIA_ROOT),name="media")
 
 class JobRequest(BaseModel):
     title:str;lyrics:str;styles:str;bpm:int=90;candidate_count:int=Field(default=2,ge=1,le=8);scenario:str="success"
+
+class SongSpec(BaseModel):
+    # The vendor contract (shared/contracts/provider-submit-v1.schema.json) nests the spec;
+    # the emulator's own flat dialect does not, so both are modelled here.
+    title:str=Field(min_length=1);lyrics:str="";styles:list[str]|str="";bpm:int=90
+
+class VendorJobRequest(BaseModel):
+    external_request_id:str=Field(min_length=1)
+    model:str|None=None
+    candidate_count:int=Field(default=2,ge=1,le=8)
+    song_spec:SongSpec
+
+def normalise_submit(raw:dict)->tuple[JobRequest,dict]:
+    """Accept the vendor-facing contract as well as the emulator's own flat shape.
+
+    Before this, only the flat shape existed, so GenericRESTAdapter -- the adapter the platform
+    uses for any provider it did not write -- was rejected with 422 by this service, and the
+    divergence was invisible because nothing wrote the contract down.
+    """
+    try:
+        if "song_spec" in raw:
+            vendor=VendorJobRequest(**raw)
+            spec=vendor.song_spec
+            styles=",".join(spec.styles) if isinstance(spec.styles,list) else spec.styles
+            return (JobRequest(title=spec.title,lyrics=spec.lyrics,styles=styles,bpm=spec.bpm,
+                               candidate_count=vendor.candidate_count,scenario="success"),
+                    {"dialect":"provider-submit-v1","external_request_id":vendor.external_request_id,"model":vendor.model})
+        return JobRequest(**raw),{"dialect":"emulator-native"}
+    except ValidationError as exc:
+        raise HTTPException(422,exc.errors()) from exc
 
 def db():
     conn=sqlite3.connect(DB_PATH,timeout=10);conn.row_factory=sqlite3.Row
@@ -51,10 +81,11 @@ def health():return {"status":"ok","provider":"emulator","persistence":"sqlite",
 def capabilities():return {"provider":"emulator","async":True,"candidate_count_max":8,"supports_custom_lyrics":True,"supports_styles":True,"supports_cancel":True,"supports_webhooks":False,"commercial_rights":"blocked","approval_status":"development_only"}
 
 @app.post("/v1/jobs",status_code=202)
-def create_job(body:JobRequest,request:Request,idempotency_key:str|None=Header(default=None,alias="Idempotency-Key")):
+async def create_job(request:Request,idempotency_key:str|None=Header(default=None,alias="Idempotency-Key")):
     if not idempotency_key:raise HTTPException(400,"Idempotency-Key required")
+    body,provenance=normalise_submit(await request.json())
     if body.scenario not in {"success","partial_success","failed","timeout","rate_limited"}:raise HTTPException(400,"unknown scenario")
-    payload=body.model_dump();request_hash=hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+    payload=body.model_dump();payload.update(provenance);request_hash=hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(",",":")).encode()).hexdigest()
     with db() as conn:
         existing=conn.execute("SELECT * FROM jobs WHERE idempotency_key=?",(idempotency_key,)).fetchone()
         if existing:

@@ -7,7 +7,7 @@
 #   chaos-worker-recovery → lease-contention → restore-fidelity → backup/restore →
 #   复跑 acceptance → commercial-flow(commercial-test 覆层) → reservation-race →
 #   market-reconciliation → provider-regression → browser-a11y(BROWSER=1) →
-#   capacity-gate-500(CAPACITY=1)
+#   generic-rest-roundtrip(generic_rest 适配器覆层) → capacity-gate-500(CAPACITY=1)
 #
 # 每步打印醒目的分节与时间戳；任一步失败即打印诊断并 exit 1。
 # 全部通过后，将步骤摘要与 `docker compose logs --no-color` 归档到
@@ -193,6 +193,15 @@ step_browser_a11y() {
   python scripts/browser_a11y.py
 }
 
+step_generic_rest_roundtrip() {
+  # 用「第三方适配器」再跑一批生成：MUSIC_PROVIDER=generic_rest，端点仍指向本仓库自带的模拟器
+  # （它已经提供该适配器默认的那组 /v1 路径）。第三个参数会让 provider_regression 先核对
+  # /api/bootstrap 报出的 provider 身份，覆层没生效就直接判红，而不是静默沿用默认适配器跑绿。
+  # 这不等于真实 Provider：合同、凭据与对方的错误词汇仍然缺，见 G9 条目。
+  docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up --build -d
+  python scripts/provider_regression.py "${GENERIC_REST_JOBS:-25}" 4 generic_rest
+}
+
 step_capacity() {
   # 容量 Gate 会用 capacity500 覆层重起整套栈；先把商业/主栈停掉以释放宿主机端口。
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml down --remove-orphans >/dev/null 2>&1 || true
@@ -216,6 +225,9 @@ run_step "commercial-flow" step_commercial
 run_step "reservation-race" step_reservation_race
 run_step "market-reconciliation" step_reconcile_market
 run_step "provider-regression-100" step_provider_regression
+
+# 放在浏览器验收之后：这一步会用覆层重建 api/worker，把 provider 身份换成 generic_rest。
+run_step "generic-rest-roundtrip" step_generic_rest_roundtrip
 
 if [ "${BROWSER:-0}" = "1" ]; then
   run_step "browser-a11y" step_browser_a11y

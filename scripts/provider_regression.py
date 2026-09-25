@@ -13,12 +13,16 @@ aggregate throughput the capacity gate measures:
   * the workspace's ledger closes: available drops by exactly the summed settlement and
     no hold is left dangling.
 
-RUNS AGAINST THE PROVIDER EMULATOR. The gate asks for 100 *real* provider regressions;
-that needs a signed provider contract and API credentials, which cannot be produced from
-source. This harness is the reusable half: point MUSIC_PROVIDER at a real adapter and the
-same 100-run assertion set applies.
+WHICH PROVIDER IS USED IS THE STACK'S CHOICE, NOT THIS FILE'S. The batch reports the identity
+it actually observed on /api/bootstrap, and an optional third argument refuses the run unless
+it matches -- otherwise an overlay that silently failed to apply would still print a pass
+against whatever provider the default stack happens to use. The gate asks for 100 *real*
+provider regressions; that needs a signed provider contract and API credentials, which cannot
+be produced from source. Running the batch with MUSIC_PROVIDER=generic_rest
+(scripts/generic-rest-roundtrip.sh) is the closest reproducible substitute: it moves the traffic
+through the third-party adapter instead of the emulator's own, and it still is not a contract.
 
-Usage: python scripts/provider_regression.py [jobs] [concurrency]
+Usage: python scripts/provider_regression.py [jobs] [concurrency] [expect-provider]
 """
 from __future__ import annotations
 
@@ -56,7 +60,7 @@ def run_one(index: int):
     """One complete generation, returning a record of what happened."""
     started = time.time()
     record = {"index": index, "status": "error", "candidates": 0, "settled": None,
-              "price": None, "hashes_ok": False, "download_ok": None, "error": None}
+              "price": None, "hashes_ok": False, "download_ok": None, "error": None, "job_error": None}
     try:
         project = call("POST", "/projects", json={"title": f"Regression {index:03d} {uuid.uuid4().hex[:6]}"})
         quote = call("POST", f"/projects/{project['id']}/quotes",
@@ -73,6 +77,10 @@ def run_one(index: int):
                 break
             time.sleep(1)
         record["status"] = detail.get("job", {}).get("status", "timeout")
+        # the reason the WORKER stored, not just the exception this harness caught -- a
+        # dead_letter job has no harness exception, so without this the line below reads
+        # "error=None" for a job whose row says exactly why it died.
+        record["job_error"] = detail.get("job", {}).get("error")
         record["elapsed"] = round(time.time() - started, 2)
         ready = [c for c in detail.get("candidates", []) if c["status"] == "ready"]
         record["candidates"] = len(ready)
@@ -103,7 +111,19 @@ def top_up_credits(needed: float):
     e2e_client.ensure_credits(BASE, TOKEN, WS, needed)
 
 
-def main(jobs: int, concurrency: int):
+def provider_identity() -> tuple[str, str]:
+    """What the stack itself says it is talking to, read from /api/bootstrap."""
+    snapshot = call("GET", "/bootstrap")["provider"]
+    return str(snapshot.get("provider")), str(snapshot.get("approval_status"))
+
+
+def main(jobs: int, concurrency: int, expect_provider: str | None = None):
+    provider_name, approval = provider_identity()
+    if expect_provider and provider_name != expect_provider:
+        # Without this, an overlay that never took effect would still run -- and pass -- a
+        # batch against whichever provider the default stack happens to use.
+        raise SystemExit(f"expected provider '{expect_provider}', the stack reports '{provider_name}' "
+                         f"(approval {approval}): the overlay did not take effect")
     price = unit_price()
     top_up_credits(jobs * price + price)
     before = call("GET", "/ledger")["balances"]
@@ -117,7 +137,7 @@ def main(jobs: int, concurrency: int):
 
     for r in records:
         if r["status"] != "completed":
-            problems.append(f"job #{r['index']} status={r['status']} error={r['error']}")
+            problems.append(f"job #{r['index']} status={r['status']} harness_error={r['error']} job_error={str(r['job_error'])[:160]}")
         elif r["candidates"] != 1:
             problems.append(f"job #{r['index']} produced {r['candidates']} ready candidates, expected 1")
         elif not r["hashes_ok"]:
@@ -142,7 +162,9 @@ def main(jobs: int, concurrency: int):
     print(f"provider regression: {len(completed)}/{jobs} completed, "
           f"error rate {error_rate}%, p50 {p50}s, p95 {p95}s, "
           f"settled {total_settled} credits across {len(finished)} finished jobs", flush=True)
-    print(f"  provider: emulator  (real-provider contract still required for this gate)", flush=True)
+    print(f"  provider: {provider_name} (approval {approval})  -- this batch measures the adapter "
+          "in front of whatever endpoint the stack points at; a non-emulator name here is still "
+          "not a signed provider contract", flush=True)
     for line in problems[:15]:
         print(f"  FAIL: {line}", flush=True)
     if len(problems) > 15:
@@ -153,4 +175,5 @@ def main(jobs: int, concurrency: int):
 
 if __name__ == "__main__":
     main(int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_JOBS,
-         int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_CONCURRENCY)
+         int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_CONCURRENCY,
+         sys.argv[3] if len(sys.argv) > 3 else None)
