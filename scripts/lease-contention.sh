@@ -14,11 +14,15 @@ JOBS="${CONTENTION_JOBS:-8}"
 TIMEOUT="${CONTENTION_TIMEOUT:-300}"
 
 cleanup() {
-  docker compose --profile contention stop worker-b >/dev/null 2>&1 || true
+  # Remove, never just stop: a stopped worker-b keeps the NetworkID of whatever project
+  # network existed at the time, and once `compose down` recreates that network the next
+  # `up` tries to start the old container and fails with "network <id> not found".
+  docker compose --profile contention rm -fs worker-b >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
 # Both claimants must be polling before the burst, or they never actually contend.
+cleanup
 docker compose --profile contention up -d worker worker-b
 sleep "${WORKER_SETTLE_SECONDS:-12}"
 

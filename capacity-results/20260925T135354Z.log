@@ -1,0 +1,57 @@
+Sending build context to Docker daemon  536.7kBSending build context to Docker daemon  4.732MBSending build context to Docker daemon  7.227MB
+Step 1/6 : FROM python:3.12-slim
+ ---> 2f17fc044b57
+Step 2/6 : WORKDIR /load
+ ---> Running in 3daa07814bc0
+ ---> Removed intermediate container 3daa07814bc0
+ ---> 58ab81561c83
+Step 3/6 : RUN pip install --no-cache-dir httpx==0.28.1
+ ---> Running in e7a25ebbad43
+Collecting httpx==0.28.1
+  Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+Collecting anyio (from httpx==0.28.1)
+  Downloading anyio-4.15.1-py3-none-any.whl.metadata (4.7 kB)
+Collecting certifi (from httpx==0.28.1)
+  Downloading certifi-2026.7.22-py3-none-any.whl.metadata (2.5 kB)
+Collecting httpcore==1.* (from httpx==0.28.1)
+  Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+Collecting idna (from httpx==0.28.1)
+  Downloading idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+Collecting h11>=0.16 (from httpcore==1.*->httpx==0.28.1)
+  Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+Collecting typing_extensions>=4.16.0 (from anyio->httpx==0.28.1)
+  Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+Downloading anyio-4.15.1-py3-none-any.whl (132 kB)
+Downloading idna-3.20-py3-none-any.whl (69 kB)
+Downloading certifi-2026.7.22-py3-none-any.whl (136 kB)
+Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+Installing collected packages: typing_extensions, idna, h11, certifi, httpcore, anyio, httpx
+Successfully installed anyio-4.15.1 certifi-2026.7.22 h11-0.16.0 httpcore-1.0.9 httpx-0.28.1 idna-3.20 typing_extensions-4.16.0
+[91mWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+[0m[91m
+[notice] A new release of pip is available: 25.0.1 -> 26.2.1
+[notice] To update, run: pip install --upgrade pip
+[0m ---> Removed intermediate container e7a25ebbad43
+ ---> a96be7de966b
+Step 4/6 : COPY scripts/load-test-500.py /load/load-test-500.py
+ ---> f4b410c9a300
+Step 5/6 : ENTRYPOINT ["python","/load/load-test-500.py"]
+ ---> Running in 9fdf7a0c5b79
+ ---> Removed intermediate container 9fdf7a0c5b79
+ ---> 3fe33ebc33f5
+Step 6/6 : LABEL com.docker.compose.image.builder=classic
+ ---> Running in 2687e0b637e7
+ ---> Removed intermediate container 2687e0b637e7
+ ---> 8f3bf82ff29b
+Successfully built 8f3bf82ff29b
+Successfully tagged w3m_e2e-loadtest:latest
+Resonance 500-user capacity result
+target=GET http://gateway/api/projects
+users=500 requests_per_user=2 total=1000
+elapsed=7.639s throughput=130.9 req/s
+latency_ms p50=2552.5 p95=4196.7 p99=4557.6 mean=2613.0
+statuses={200: 1000} error_rate=0.000%
+gate=FAIL max_error_rate=1.0% max_p95_ms=800.0
