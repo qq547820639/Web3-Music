@@ -9,14 +9,22 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database, **all 14 steps PASS**,
-commit `82f2ffe`, 2026-09-25T14:42:45Z → 14:54:14Z,
-evidence in `release-evidence/acceptance-20260925T144245Z/` (per-step logs, `SUMMARY.txt`,
-full `compose-logs.txt` and `commercial-compose-logs.txt`).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database, **15 steps PASS and
+1 recorded as skipped**, commit `28deafc`, 2026-09-25T18:18:23Z → 18:26:14Z, evidence in
+`release-evidence/acceptance-20260925T181823Z/` (per-step logs, `SUMMARY.txt`, full
+`compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
+machine-readable record at `release-evidence/browser-a11y-20260925T182515Z/report.json`
+(stamped with the same commit). The two earlier runs on this day are kept as discovery
+records, not as the headline: `acceptance-20260925T161532Z` proved 14 steps while the
+refund fix was still uncommitted, `acceptance-20260925T162746Z` is a genuine **FAIL** at
+commit `7b187dc` where lease-contention hit an unfunded tenant, and
+`browser-a11y-20260925T170315Z` is the run that found the CSP, contrast and overflow
+defects listed below. Docs that cite this section are committed after the tested tree;
+they change `docs/` only.
 
 Host: Docker 29.5.2 on a Colima VM with **4 vCPU / 6 GiB**, Compose v5.4.0. The same suite
 also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-acceptance`,
-`commercial-flow`, and now `capacity-500`).
+`commercial-flow`, `browser-a11y`, and `capacity-500`).
 
 > **CI status is deliberately not claimed as evidence.** The branch was pushed, which
 > dispatches those jobs, but this environment cannot read their outcome: the repository is
@@ -34,24 +42,37 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
   `generation_attempts`, because `generation_jobs.lease_owner` is cleared once a job
   settles and would have reported zero contenders as a pass.
 - **Absolute restore fidelity** (new): ledger balances per account and the sha256 of every
-  asset's exported master audio, taken before backup and re-checked after restore — 4
-  assets byte-identical, ledgers unmoved. The check was shown to bite: deleting a
-  fingerprinted master object turns it red (`export 500`), restoring turns it green again.
+  asset's exported master audio, taken before backup and re-checked after restore — this
+  run measured `2 workspaces, 2 assets byte-identical, ledgers unchanged` (an earlier run
+  reported 4 assets; the count is just how many assets that database held, the criterion
+  is unchanged and refuses to pass on a zero denominator). The check was shown to bite:
+  deleting a fingerprinted master object turns it red (`export 500`), restoring turns it
+  green again.
 - Commercial flow: licence → offer → purchase → payment → delivery package → seller payout
   → refund → reversal, plus the brand-award variant.
 - **Cross-tenant isolation** (new): 10 cases against three owner-role tenants, covering
   ~20 read routes, media-token minting, foreign writes, ledger scoping and the
   seller-OR-buyer counterparty policy.
 - **Exclusive-reservation race** (new): see the defect below.
-- **Market reconciliation** (new): 13 invariants across order / licence / delivery /
-  revenue split / payout, read twice (database as authority, HTTP API as what the product
-  shows), plus 8 pure-function unit tests proving the 85/15 policy checks can fail.
+- **Market reconciliation** (new): 15 invariants across order / licence / delivery /
+  revenue split / payout and the exclusive-offer listing states, read twice (database as
+  authority, HTTP API as what the product shows), plus 8 pure-function unit tests proving
+  the 85/15 policy checks can fail.
 - **100-run generation regression** (new): `100/100 completed, error rate 0.0%`, per-job
   ready count, 64-hex media hash, sampled real download, `settled_credits == quoted price`,
   and a ledger that moved by exactly the summed settlement with no dangling hold.
-  In-pipeline timing p50 8.18s / p95 20.77s under the concurrent stack; standalone
-  p50 4.145s / p95 6.29s.
-- Static verification and unit tests: 54 unit tests (previously recorded here as 23).
+  In this pipeline run: **p50 6.25s / p95 8.31s** across 100 finished jobs, 1000 credits
+  settled. Standalone timings on an idle stack have been as low as p50 4.145s — the number
+  follows host load, so the pipeline reading is the one to quote.
+- **Real-browser walkthrough + axe audit** (new): Playwright driving axe-core 4.13.0
+  (pinned by sha256, fetched at run time, test-only) against the live stack —
+  **62 view records, 36 axe scans across desktop 1440 and phone 390, 0 critical and 0
+  serious**, 48 moderate (`heading-order`, `landmark-one-main`, `region`) left as follow-up.
+  It also asserts what axe cannot see: the shipped CSP must block **zero** inline styles
+  authored by the app (measured 0 after the fix, 10 per radar render before), no uncaught
+  exceptions, `script-src 'self'` present on both origins, skip-link and keyboard access
+  to the nav, and no horizontal overflow at 390px.
+- Static verification and unit tests: 66 unit tests (previously recorded here as 23, then 54).
 
 ## Defects found and fixed by that execution
 
@@ -66,10 +87,11 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
    so an exclusive offer was never actually flipped to `sold`.
 2. **`GET /orders` reported the wrong money amount.** The window count was aliased
    `total`, and `o.*` already carries `orders.total`, so every listed order's amount was
-   replaced by the page row count — which `services/web/app.js:1501` rendered as the price
-   paid. The alias is now `row_total`. `information_schema` confirms `orders`/`order_items`
-   are the only tables with a `total` column, so no other list endpoint was affected. The
-   pre-existing unit test had pinned the clobbered shape and was corrected to the real one.
+   replaced by the page row count — which the order list in `services/web/app.js:1498`
+   rendered as the price paid. The alias is now `row_total`. `information_schema` confirms
+   `orders`/`order_items` are the only tables with a `total` column, so no other list
+   endpoint was affected. The pre-existing unit test had pinned the clobbered shape and was
+   corrected to the real one.
 3. **`apt-get` in the worker image could not reach `deb.debian.org` over plain HTTP:80**
    on this network, failing the build at ffmpeg; indexes are now fetched over TLS. Gateway
    and Prometheus host ports became overridable because another stack on this host owns
@@ -77,6 +99,49 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
 4. `static-verify.sh` crashed (rather than failing) when backup output was present, because
    its `**/*.json` walk met a MinIO directory named `.usage.json`; it now prunes artifact and
    hidden directories, with the pruned walk verified to still cover all 20 tracked JSON files.
+5. **A refunded exclusive licence left its listing stuck at `sold`.** Same root cause as #1's
+   second half: `market.py`'s refund branch flipped the seller's offer from the buyer's
+   transaction, so under `FORCE ROW LEVEL SECURITY` the UPDATE matched zero rows and raised
+   nothing. Reproduced as 14/15 in the reconciliation drill; `db/migrations/012`
+   (`pause_marketplace_offer_on_refund`, `SECURITY DEFINER`) lifts it to `paused`, 15/15.
+6. **The app's own CSP disabled parts of the app.** `style-src 'self'` rejects inline styles
+   and `style=` attributes, and `app.js` used both in ten places: the quality radar's group
+   dots measured `rgba(0,0,0,0)`, the data polygon lost its fill, the hover tip never moved,
+   and the audio progress bar never advanced. Rendering the radar emitted 10 CSP violations
+   **with no test tooling in the page** — attribution was made by re-running the identical
+   flow without axe, which separated 10 app-authored violations from 34 the scanner caused
+   by injecting its own styles (blocked, and previously reported as app console errors).
+   Fixed without weakening the policy: tone classes for colour, SVG `transform` attributes
+   for the tip, a native `<progress value>` for playback. `browser_a11y.py` now fails if the
+   app authors a single blocked inline style, so this cannot silently return.
+7. **The UI proxy kept dialling a dead API address.** `proxy_pass http://api:8000` with a
+   literal hostname is resolved once at config load; when the commercial overlay recreated
+   `api`, nginx continued to target the previous IP (`upstream: "http://172.19.0.8:8000"`,
+   api actually `172.19.0.7`) and every `/api/` call from Studio or the Control Plane
+   returned 502 while the API itself was healthy. Both proxy blocks now use Docker's
+   embedded resolver with a variable; re-verified by forcing an address change
+   (`.7 → .13`) with the web container never restarted — three consecutive logins through
+   the proxy returned 200.
+8. **The error path destroyed the reason.** Both frontends did `await r.json()` and, in the
+   `catch`, `await r.text()` on the already-consumed stream, so the user-visible message was
+   `Failed to execute 'text' on 'Response': body stream already read` instead of whatever
+   the server had said. Fixed to read the body once; that fix is what surfaced
+   `"too many login attempts"` and made #7's rate-limiter look-alike diagnosable.
+9. **Accessibility defects invisible to attribute counting.** The Control Plane's workspace
+   `<select>` had no accessible name (axe: `select-name`, critical), and the topbar's grid
+   items could not shrink below min-content, forcing 435px of layout into a 390px viewport
+   on every Studio screen. Both fixed; the audit measures the rendered page, so the
+   `aria-`-counting method in `ITERATION_CHANGES_PHASE3.md` is superseded rather than
+   extended.
+10. **The delivery manifest did not describe the delivery.** `SOURCE_MANIFEST.sha256` is
+    tracked and cited as release evidence but nothing validated it: it listed 154 of 194
+    tracked files (migrations 007–012 absent) and 44 of those entries no longer matched
+    their content, so 112 files were truthfully represented while the file read like an
+    integrity guarantee — and `release-evidence.sh` was already generating a correct
+    `source.sha256` per run, a second and fresher authority over the same fact.
+    `scripts/source-manifest.sh {write,check}` now exists, `static-verify.sh` runs `check`,
+    and the four control arms (missing entry, flipped hex, zero enumerated files, freshly
+    written manifest) were exercised in a scratch repository.
 
 ## Not verified: the 500-user capacity gate
 
@@ -109,29 +174,63 @@ vCPU / 6 GiB total — below `COST_OPTIMIZED_500_CONCURRENCY.md`'s own recommend
 16 GiB host. **No parameter change is justified by this data, and the 500-user claim remains
 unproven**; it needs a host matching the profile (or CI's larger runner).
 
-Also noted for the owner, deliberately not "fixed" by loosening a control:
-`LOGIN_RATE_LIMIT_PER_MINUTE` defaults to 10 logins/minute **per IP**, which is strict enough
-to 429 sequential test suites here and would throttle legitimate users behind one shared
-egress address. The drills now back off instead.
+Also noted for the owner, deliberately not "fixed" by loosening a control — and
+**correcting what an earlier revision of this file asserted**: `LOGIN_RATE_LIMIT_PER_MINUTE`
+(default 10) is keyed on `login:sha256(email)`, i.e. **per account, not per IP**, so the
+worried-about "users behind one egress IP throttling each other" scenario does not exist
+here. Measured against the running API instead: the 11th attempt to one address is refused,
+and because the throttle script calls `EXPIRE 60` on **every** increment — including the ones
+it refuses — a client that keeps knocking every 30 s stayed locked for 90 s and only
+recovered after 75 s of silence. So the control neither does what its name implies
+("per minute" is a sliding window that the traffic itself extends) nor bounds distributed
+credential stuffing across many accounts, while anyone who knows one address can keep that
+account unable to sign in. The one-line remedy (`EXPIRE` only when the counter is created,
+making it a true fixed window) is an authentication-side security change and is left to the
+owner rather than applied here; what was fixed is the test harness, which had been retrying
+inside the window and could therefore be starved by its own retries.
 
 ## Scope of the external-tooling review, and what was skipped
 
 Per project practice, new or large components are compared against mature implementations
-before being built. The one such comparison this round was for the load generator, and it is
-recorded with sources in `COST_OPTIMIZED_500_CONCURRENCY.md` (verdict: keep the in-repo
-tester; the shortfall measured was host capacity, not tooling).
+before being built. Two such comparisons were made this round, both from material actually
+retrieved in this session; retrieval limits are named rather than papered over.
 
-The remaining changes were deliberately **not** given an external survey, for the stated
-reason that each is a scope-clear local fix or a test-only addition, and each reuses a
-pattern that already exists in this repository rather than inventing one:
+### Load generator (earlier this day)
 
-- the cross-tenant, contention, race, reconciliation and regression suites are tests, using
-  the existing acceptance/drill harnesses and the same httpx/psql conventions;
-- the reservation guard was placed in a `SECURITY DEFINER` migration function because
-  `reserve_marketplace_offer` already establishes exactly that pattern for the same two
-  tables — the alternative (application-side writes) is what silently matched zero rows;
-- apt-over-TLS, the two host-port variables, and the `static-verify.sh` directory pruning
-  are single-line-scale environment robustness fixes with no design surface.
+Recorded with sources in `COST_OPTIMIZED_500_CONCURRENCY.md`. Verdict: keep the in-repo
+tester; the shortfall measured was host capacity, not tooling.
+
+### Browser accessibility gate (this commit)
+
+Metadata for five candidates was fetched from `registry.npmjs.org` (version, licence, last
+modified): axe-core 4.13.0 MPL-2.0 (2026-09-23), pa11y 10.0.0 LGPL-3.0-only (2026-08-28),
+Lighthouse 13.5.0 Apache-2.0 (2026-09-19), Playwright 1.63.0 Apache-2.0 (2026-09-25),
+@axe-core/playwright 4.13.0 MPL-2.0 (2026-09-02). GitHub page fetches timed out in this
+environment, so no repository README is claimed as read for axe-core or Lighthouse; the
+pa11y README **was** read, from its npm tarball.
+
+| candidate | fit | licence | activity | risk | quality | adaptation cost |
+|---|---|---|---|---|---|---|
+| Playwright + axe-core (chosen) | one authenticated session walks 15 SPA views, phone viewport, and the non-axe assertions this gate needs (CSP-blocked inline styles, computed-style settle, keyboard reach, overflow) | Apache-2.0 + MPL-2.0 | both current | test-only; axe fetched by pinned sha256 | first-party browser driver | new node-free dep in the existing Python drill convention |
+| pa11y / pa11y-ci | one URL per run; its `actions` do support form login (`set field #username …`, `click element #submit` — README example), but each tested view is a fresh invocation | LGPL-3.0-only | current | 15 invocations ≈ 15 logins, which runs straight into the measured per-account throttle (10/min, sliding) | mature, wraps axe + htmlcs | lowest: config file + one command |
+| Lighthouse | performance/PWA categories this gate does not assert; scripted navigation between authenticated views is not its shape | Apache-2.0 | current | heavier output than needed | axe under the hood | medium |
+
+**Correction, stated plainly because it is in the git log:** the message of commit
+`f2d8c38` asserts pa11y "authenticates with headers, not a login form, so it would only
+ever see the sign-in screen". Reading its README showed that claim to be false — form
+interaction is documented. The choice of Playwright stands, but for the reasons in the row
+above (one session covering fifteen views without paying the login throttle; assertions
+that are not axe's job), not for the one in that commit message.
+
+**What was deliberately not surveyed**: the remaining changes are scope-clear local fixes
+reusing a pattern already in this repository — the reservation and refund guards follow
+`reserve_marketplace_offer`'s existing `SECURITY DEFINER` shape (application-side writes are
+what silently matched zero rows); apt-over-TLS, the two host-port variables and the
+`static-verify.sh` directory pruning are environment robustness with no design surface; the
+cross-tenant, contention, race, reconciliation and regression suites are tests built on the
+existing acceptance/drill harnesses and httpx/psql conventions; and the manifest checker
+mirrors `release-evidence.sh`'s existing `source.sha256` rather than inventing a second
+scheme.
 
 ## Requires external commercial evidence
 

@@ -2,9 +2,10 @@
 
 状态口径（2026-09-25 实测更新）：
 
-- `[x]` = 本轮在真实 Compose 环境执行并通过，证据落盘于 `release-evidence/acceptance-20260925T144245Z/`（commit `82f2ffe`，2026-09-25T14:42:45Z → 14:54:14Z，`acceptance-all.sh` 全 14 步 PASS）。
+- `[x]` = 本轮在真实 Compose 环境执行并通过，权威运行是 `scripts/acceptance-all.sh` 在全新数据库上的 **15 步全 PASS + 1 步按开关跳过**（commit `28deafc`，2026-09-25T18:18:23Z → 18:26:14Z，证据 `release-evidence/acceptance-20260925T181823Z/`；浏览器验收另见 `release-evidence/browser-a11y-20260925T182515Z/report.json`，同一 commit）。第 16 行 `capacity-gate-500` 只有 `CAPACITY=1` 才执行，本轮记为 SKIPPED，其状态见 `FINAL_RELEASE_STATUS.md`（本机实测判红，属主机容量）。
 - `[ ]` = 未通过或**无法在源码环境内完成**，每条都写明缺的是哪一份外部事实。
 - 以往"本机无 Docker daemon，需在部署主机执行"的说法已失效：本轮 Docker 可用，跨容器验收已在真实 Compose 栈上跑通，本文按执行结果改写。
+- 引用本次运行的文档提交晚于被证明的代码提交，且只改 `docs/`；被验收的树以 `git_commit=28deafc` 为准。
 
 ## G9 Verified Beta
 
@@ -19,7 +20,7 @@
 ## G10 Commercial Launch
 
 - [ ] 正式 Payment/KYC/Tax/Invoice；
-- [x] 支付、退款、账本和 Provider 成本日终对账；→ **部分**：`scripts/reconcile_market.py` 已把订单/许可证/交付/分账/支出对拉成 13 条不变量（DB 为权威、API 为展示，两路读同一事实，任一侧漂都会红），Provider 实际成本与平台费的日终对账仍需真实账单。
+- [x] 支付、退款、账本和 Provider 成本日终对账；→ **部分**：`scripts/reconcile_market.py` 已把订单/许可证/交付/分账/支出对拉成 15 条不变量（本轮 15/15，DB 为权威、API 为展示，两路读同一事实，任一侧漂都会红），且分账守恒另有数据库自己的约束兜底（见"附带发现·已澄清"第 1 条）。仍缺的是**外部账单**：Provider 实际成本与平台费的日终对账需要真实 Processor/Provider 结算单才能比对。
 - [ ] MFA、Secret Manager、WAF、限流和 SIEM；→ 已有应用层限流，真实值机与告警接入在目标环境。
 - [ ] 内容审核、病毒扫描、投诉和 Legal Hold；
 - [ ] 数据保护、隐私和用户删除/导出；→ 资产导出（`/assets/{id}/export`）与许可交付导出已实测可下载且字节稳定；面向用户的数据删除/可携带导出流程尚未实现。
@@ -32,13 +33,13 @@
 - [ ] Master Conversion 达标；
 - [ ] W4 Retention 和复购证据；
 - [ ] 质量分与真人选择校准；→ 28 维打分引擎的**确定性**已实测（同输入两次得分一致），与真人偏好的一致性仍需人工标注样本。
-- [ ] Studio 浏览器/移动端/无障碍测试；→ 无障碍此前只做了静态属性计数，未在真实浏览器点验。
+- [x] Studio 浏览器/移动端/无障碍测试；→ 此前只做过 `aria-`/`role=` 的**源码计数**（`ITERATION_CHANGES_PHASE3.md` 明确记为"无浏览器，仅静态硬化"），真实浏览器一点就发现静态计数看不见的东西。现由 `scripts/browser_a11y.py` 用 Playwright + axe-core 4.13.0（sha256 固定）在真实栈上跑：登录→建项目→跑 28 维质量→出报价→开版本历史对话框→四个主视图＋市场四个页签→管理后台五个视图，桌面 1440 与手机 390 两档，共 36 次 axe 扫描、62 个视图记录，结果 **critical 0 / serious 0**，moderate 48 项集中在 `heading-order`、`landmark-one-main`、`region` 三条（未达本 Gate 判据，作为后续项列出，不算已修）。同轮还量到并修掉：管理后台工作区 `<select>` 无可访问名（axe 判 critical）、顶栏 grid 项在 390px 下把页面撑到 435px、以及下面"附带发现"第 3 条那类被自家 CSP 静默作废的内联样式。判据本身带牙：`--self-test` 会植入一张无 alt 的图（axe 报 critical）、一面强制 `script-src 'self'` 的 meta（浏览器必须拒绝内联脚本）、一段 3 秒色彩过渡（采样器必须拒绝判为已稳定），另有 12 条单测钉住判决函数的必红/必绿两侧。
 - [ ] 团队协作和审批稳定。
 
 ## G12 Asset & Market OS
 
 - [ ] Rights-ready Rate 达标；→ 经营指标。
-- [x] License/Delivery/Refund/Payout 对账；→ `market-reconciliation` 步骤 PASS（13/13）。含"退款必须同时把订单/许可证/交付/支出四条一起翻"的链路断言，以及 8 条纯函数 85/15 策略的必红/必绿单测。
+- [x] License/Delivery/Refund/Payout 对账；→ `market-reconciliation` 步骤 PASS（15/15）。含"退款必须同时把订单/许可证/交付/支出四条一起翻"的链路断言、独家上架/售出/退款撤架的状态断言，以及 8 条纯函数 85/15 策略的必红/必绿单测。
 - [x] 商业许可试点和争议演练；→ **仅合成契约测试范围内**：授权→上架→购买→交付→退款撤销全链路已在真实栈上跑通。真实许可谈判与争议处理仍是线下事项。
 - [x] 独家 Reservation 并发测试；→ 新增 `scripts/reservation_race.py` 驱动"甲预留→乙被拒→甲预留过期→乙购入并付款→甲再付旧单"，**实测到重复出售**（同一独家资产出现 2 张 active 许可证），已修复：`db/migrations/011` 的 `SECURITY DEFINER` 确认函数 + 来源态谓词。修复后同一驱动为 1 张许可证、落败方订单停在 `payment_pending` 且无许可证。
   - 顺带修正了一个更隐蔽的问题：原先 `market.py` 在买方事务里直接 `UPDATE offer_reservations/asset_offers`，而这两张表受租户 RLS 保护、买方看不到卖方行，所以那两条语句**一直匹配 0 行且不报错**——独家资产售出后从未真的被置为 `sold`。
@@ -48,8 +49,24 @@
 
 任何 Gate 的 Blocker 未解决时不得以"代码已完成"为由上线。
 
-## 本轮附带发现（尚未处理，需属主决策）
+## 本轮附带发现
 
-1. `LOGIN_RATE_LIMIT_PER_MINUTE` 缺省 10 次/分钟且**按 IP** 计。真实部署里同一 NAT/出口 IP 后的正常用户会互相挤爆登录；本轮多个演练脚本正是被它挡住过（HTTP 429），当前做法是让脚本退避重试而没有放宽这个安全控制。
-2. `record_license_revenue`（`db/migrations/002`）只写 `revenue_splits` 与 `payouts`，平台 15% 服务费**在积分账本里没有分录**。这不是 bug——积分账本按 credit 计量、服务费是货币——但 G10 的"日终对账"要真正闭环，需要一组货币计量的结算科目，而不是把分往 credit 余额里塞。
-3. `reverse_license_revenue` / 退款回写里仍有同类"买方事务直接改卖方行"的语句（如 `market.py` 退款分支把独家 offer 置 `paused`），与上面第 2 条 G12-a 的成因同源，可能同样是静默 0 行；本轮只修了被实测到的售出确认路径，未一并改动退款路径。
+### 已修（含复现证据）
+
+1. **自家 CSP 把自家 UI 静默作废。** `services/web/nginx.conf` 发的是 `style-src 'self'`，而 `app.js` 有 6 处 `el.style.x=` 和 4 处模板内联 `style="…"`——浏览器会**整条拒绝**内联样式，于是 28 维雷达的分组色点 `getComputedStyle` 实测为 `rgba(0,0,0,0)`、数据多边形丢填充、hover 提示不移动、试听进度条不动，而源码里"确实设了背景色"。真实浏览器渲染雷达时喷出 10 条 CSP 违规，且**没有任何测试工具在页面里**（先跑一遍无 axe 的同流程才把"应用的"和"扫描器的"两类留痕分开）。改法是不用内联样式：分组色走 tone class、提示走 SVG `transform` 属性、进度走原生 `<progress value>`。验收脚本保留一道常驻断言：按出厂 CSP 加载，被拦下的内联样式数必须为 0。
+2. **UI 代理把 API 的死地址钉住了。** `proxy_pass http://api:8000` 里的字面主机名只在配置加载时解析一次，api 容器一旦被重建（本轮商业覆层 `up` 就重建了），nginx 仍连旧 IP：日志实录 `connect() failed (111) while connecting to upstream http://172.19.0.8:8000`，而 api 当时在 `172.19.0.7`，Studio/后台每个 `/api/` 调用都 502，API 本身却是健康的。改用 Docker 内嵌 resolver + 变量后强制换址复验（.7 → .13，web 容器全程不重启）：连点三次登录均 200。
+3. **错误路径把真因吃掉了。** 两个前端都先 `response.json()` 再在 `catch` 里 `response.text()`——流已被读干，第二次抛 `body stream already read`，用户看到的就是这句 TypeError。改成读一次再按需解析后，同一界面立刻报出真因 `"too many login attempts"`，上面第 2 条与下面"待决"第 1 条都是靠这个才定位到的。
+4. **退款路径的静默 0 行**（上一版本文列为"未一并改动"）：`market.py` 退款分支在买方事务里直接把独家 offer 置 `paused`，与 G12-a 的成因同源；实测复现 14/15，`db/migrations/012` 换成 `SECURITY DEFINER` 的 `pause_marketplace_offer_on_refund` 后 15/15，退款后 offer 状态实测为 `paused`。
+5. **交付清单撒谎。** `SOURCE_MANIFEST.sha256` 是被引用为发布证据的入库文件，却没人校验：194 个跟踪文件里只列了 154（migration 007–012 全部缺席），列出的 154 条里 44 条哈希已对不上内容——等于只有 112 个文件被如实描述，而文件本身看起来像一道完整性校验。现在 `static-verify.sh` 会调 `scripts/source-manifest.sh check`，源码改了却没刷新清单 CI 就红；`write` 仍是独立命令，否则这道闸永远不会红。四侧对照已在临时仓库验过：漏一条、翻一个十六进制字符、枚举到 0 个文件都判红，刚写好的清单与历史 `./path` 写法判绿。
+
+### 已澄清（上一版记为"需属主决策"，读码 + 实测后确认不是缺口）
+
+1. **平台 15% 服务费不是"没有分录"。** 上一版本文说它在账本里没有分录，一半说对了、一半说错了：`ledger_accounts` 里 15 个账户的 `currency` **全部是 `CREDIT`**——积分账本按 credit 计量，货币收入本就不该往这里塞；货币侧分录在 `revenue_splits`，`record_license_revenue` 为每张许可证写一对 `(workspace 8500, platform 1500)`，实测库里 6 张许可证正好 6+6 行、合计 60000bp。更硬的一层是数据库自己：`revenue_split_total_must_balance` 约束触发器要求同一 subject 的分账和恰为 10000bp，两向探针实测——成对插入被接受（`INSERT 0 2`，sum=10000），只插 9000 被拒 `revenue split total must equal 10000 basis points, got 9000`，探针全部回滚、残留 0 行。所以 G10 这条剩下的只是"拿真实结算单比对"，不是"补一套货币科目"。
+
+### 待属主定值（不自行放宽安全控制）
+
+1. **登录限流是按账号，且"拒绝也算一次"。** 先前本文写成"按 IP"是错的（那句 429 的症状被误读成按 IP）。读码 + 实测：键是 `login:sha256(email)`（`services/api/app/main.py:157`），第 11 次尝试起 429；随后每 30 秒试一次，连着 90 秒都进不去，直到**完全静默 75 秒**才恢复——因为 Lua 对每次 INCR 都无条件 `EXPIRE 60`，被拒的请求也会续期，窗口会随敲门的频率滑动。后果两面：同一出口 IP 的正常用户互不影响（原担忧不成立）；但任何人只要知道某个邮箱，就能持续把该账号挡在登录门外（无验证码、无 IP 维度），而对多账号分散撞库没有任何总闸。修法只需一行（只在 `n == 1` 时 `EXPIRE`，变成真正的固定窗口），但那是在改一条认证侧的安全控制，留给属主定夺；本轮只把**测试客户端**的退避改成实测可恢复的 75 秒以上（含 `browser_a11y.py` 与 `e2e_client.py`），没有动服务端缺省值。
+2. **导航在 boot 完成前点了没反应。** `#app` 去掉 `hidden` 早于 `bindNavigation()`（它在首屏数据加载完之后才绑），所以首屏刚出来点顶栏按钮会被静默丢弃。验收脚本用"重试直到视图真的切换"绕过，但用户在慢网络下点到的就是没反应的按钮——要么把事件绑定提前到 DOMContentLoaded，要么在绑定完成前给出禁用态。
+3. **两个前端共用一条会话 Cookie。** `localhost:4173` 与 `:4174` 同主机不同端口，Cookie 不分端口，所以 Studio 点"退出"会连带把管理后台会话一起作废（脚本里表现为后台首屏 401 留痕）。生产若把控制面放到同主机的另一端口，这就是一个真实的联动；需要域或路径隔离才算定案。
+4. **匿名首屏把预期内的 401 记成 console error。** `init()` 里 `/api/auth/me` 未登录时返回 401 属正常流程，却被 `console.error` 记录（本轮 16 条 console 留痕里除了 CSP 全是它）。不影响功能，但会污染浏览器端的错误监控。
+5. **axe 还有 48 项 moderate**（`heading-order` / `landmark-one-main` / `region`），未达本 Gate 的判据线（critical/serious），但属于 WCAG 可达性问题，排后续轮次。
