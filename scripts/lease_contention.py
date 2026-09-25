@@ -19,6 +19,7 @@ import time
 import uuid
 from pathlib import Path
 
+import e2e_login
 import httpx
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -29,10 +30,7 @@ TERMINAL = {"completed", "partial", "failed", "dead_letter", "cancelled"}
 
 
 def login():
-    r = httpx.post(ROOT + "/auth/login", json={"email": "owner@example.local", "password": "demo-owner"}, timeout=20)
-    r.raise_for_status()
-    data = r.json()
-    return data["access_token"], data["workspaces"][0]["id"]
+    return e2e_login.login(ROOT, "owner@example.local", "demo-owner")
 
 
 def request(method, path, token, workspace, **kwargs):

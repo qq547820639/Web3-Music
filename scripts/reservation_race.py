@@ -25,6 +25,7 @@ import subprocess
 import time
 import uuid
 
+import e2e_login
 import httpx
 
 BASE = "http://localhost:8000/api"
@@ -42,9 +43,7 @@ def fail(msg: str):
 
 
 def login(creds):
-    r = httpx.post(BASE + "/auth/login", json={"email": creds[0], "password": creds[1]}, timeout=20)
-    r.raise_for_status()
-    return r.json()["access_token"], r.json()["workspaces"][0]["id"]
+    return e2e_login.login(BASE, creds[0], creds[1])
 
 
 def call(method, path, sess, expect=(200, 201, 202, 204), **kwargs):

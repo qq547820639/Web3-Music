@@ -29,6 +29,7 @@ import sys
 import time
 import uuid
 
+import e2e_login
 import httpx
 
 BASE = "http://localhost:8000/api"
@@ -40,9 +41,7 @@ CREDIT_PACK = 100
 
 
 def login():
-    r = httpx.post(BASE + "/auth/login", json={"email": "owner@example.local", "password": "demo-owner"}, timeout=20)
-    r.raise_for_status()
-    return r.json()["access_token"], r.json()["workspaces"][0]["id"]
+    return e2e_login.login(BASE, "owner@example.local", "demo-owner")
 
 
 TOKEN, WS = login()

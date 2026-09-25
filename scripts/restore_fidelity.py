@@ -19,6 +19,7 @@ import sys
 import zipfile
 from pathlib import Path
 
+import e2e_login
 import httpx
 
 ROOT = "http://localhost:8000"
@@ -34,10 +35,7 @@ ASSET_OWNERS = {"seller"}
 
 
 def login(email, password):
-    r = httpx.post(BASE + "/auth/login", json={"email": email, "password": password}, timeout=20)
-    r.raise_for_status()
-    data = r.json()
-    return data["access_token"], data["workspaces"][0]["id"]
+    return e2e_login.login(BASE, email, password)
 
 
 def get(path, token, workspace, binary=False, timeout=90):

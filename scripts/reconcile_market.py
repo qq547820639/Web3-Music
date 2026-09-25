@@ -18,6 +18,7 @@ import time
 import uuid
 from decimal import Decimal
 
+import e2e_login
 import httpx
 
 BASE = "http://localhost:8000/api"
@@ -41,9 +42,7 @@ def psql_rows(sql: str):
 
 
 def login(creds):
-    r = httpx.post(BASE + "/auth/login", json={"email": creds[0], "password": creds[1]}, timeout=20)
-    r.raise_for_status()
-    return r.json()["access_token"], r.json()["workspaces"][0]["id"]
+    return e2e_login.login(BASE, creds[0], creds[1])
 
 
 def get(path, sess):
