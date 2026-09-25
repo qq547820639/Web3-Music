@@ -1,0 +1,1147 @@
+{
+  "generated_at": "2026-09-25T17:03:36Z",
+  "web_url": "http://localhost:4173",
+  "admin_url": "http://localhost:4174",
+  "axe_core": "4.13.0",
+  "axe_sha256": "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1",
+  "blocking_impacts": [
+    "critical",
+    "serious"
+  ],
+  "views_scanned": 36,
+  "violations_by_impact": {
+    "moderate": 48,
+    "serious": 6,
+    "critical": 10
+  },
+  "content_security_policy": {
+    "http://localhost:4173": "default-src 'self'; connect-src 'self'; media-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+    "http://localhost:4174": "default-src 'self'; connect-src 'self'; media-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+  },
+  "console_errors": [
+    "desktop-admin: Error: \"authentication required\"\n    at api (http://localhost:4174/admin.js:208:11)\n    at async init (http://localhost:4174/admin.js:241:16)",
+    "desktop-admin: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "desktop-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-35MqGtgFCLNsV2dDZJZcQExLu7nTyMe+eJdPkVxUEOY='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "desktop-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-CieOzhzumG8ptuipYd1kjLLlfposDBuU608qPjfb8YU='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "desktop-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-MG4TFp7wDOZcEVWZfHSqBvFmhnVjo0j8vN99yuInKkM='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "desktop-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-YHnZ+YlbXnVuvjgLUysJyHWBGUQU9YwIDBpJUgGgSOQ='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "desktop-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-lIZ+iFIDd4mwillseosBbU5SYdfxsFyHH/Hx/ZLTFuY='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "desktop-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-t9JFFNN8qANAex64cAjF+zXAmkEtFoMjuX20Q1vjaqo='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "desktop-studio: Error: authentication required\n    at api (http://localhost:4173/app.js:294:15)\n    at async init (http://localhost:4173/app.js:340:16)",
+    "desktop-studio: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "mobile-admin: Error: \"authentication required\"\n    at api (http://localhost:4174/admin.js:208:11)\n    at async init (http://localhost:4174/admin.js:241:16)",
+    "mobile-admin: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "mobile-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-35MqGtgFCLNsV2dDZJZcQExLu7nTyMe+eJdPkVxUEOY='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "mobile-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-CieOzhzumG8ptuipYd1kjLLlfposDBuU608qPjfb8YU='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "mobile-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-MG4TFp7wDOZcEVWZfHSqBvFmhnVjo0j8vN99yuInKkM='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "mobile-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-YHnZ+YlbXnVuvjgLUysJyHWBGUQU9YwIDBpJUgGgSOQ='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "mobile-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-lIZ+iFIDd4mwillseosBbU5SYdfxsFyHH/Hx/ZLTFuY='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "mobile-studio: Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-t9JFFNN8qANAex64cAjF+zXAmkEtFoMjuX20Q1vjaqo='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.",
+    "mobile-studio: Error: authentication required\n    at api (http://localhost:4173/app.js:294:15)\n    at async init (http://localhost:4173/app.js:340:16)",
+    "mobile-studio: Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  ],
+  "scans": [
+    {
+      "label": "login",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "landmark-one-main",
+          "impact": "moderate",
+          "help": "Document should have one main landmark",
+          "node_count": 1,
+          "targets": [
+            "html"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-login.png"
+    },
+    {
+      "label": "studio-create-dialog",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-studio-create-dialog.png"
+    },
+    {
+      "label": "studio-project",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            ".conversation-panel > .panel-head > div > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-studio-project.png"
+    },
+    {
+      "label": "studio-quality",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            ".conversation-panel > .panel-head > div > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-studio-quality.png"
+    },
+    {
+      "label": "studio-quote",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            ".conversation-panel > .panel-head > div > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-studio-quote.png"
+    },
+    {
+      "label": "studio-dialog",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-studio-dialog.png"
+    },
+    {
+      "label": "mainNav-资产",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            "#assetDetail > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-mainNav-资产.png"
+    },
+    {
+      "label": "market-credits",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            "article:nth-child(1) > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-market-credits.png"
+    },
+    {
+      "label": "market-音乐许可",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "node_count": 1,
+          "targets": [
+            "button[data-market=\"credits\"]"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-market-音乐许可.png"
+    },
+    {
+      "label": "market-品牌任务",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "node_count": 2,
+          "targets": [
+            "button[data-market=\"offers\"]",
+            "button[data-market=\"briefs\"]"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-market-品牌任务.png"
+    },
+    {
+      "label": "market-订单与交付",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "node_count": 2,
+          "targets": [
+            "button[data-market=\"briefs\"]",
+            "button[data-market=\"orders\"]"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-market-订单与交付.png"
+    },
+    {
+      "label": "account",
+      "viewport": "desktop",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            ".panel:nth-child(1) > .panel-head > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-account.png"
+    },
+    {
+      "label": "login",
+      "viewport": "desktop",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "landmark-one-main",
+          "impact": "moderate",
+          "help": "Document should have one main landmark",
+          "node_count": 1,
+          "targets": [
+            "html"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-login.png"
+    },
+    {
+      "label": "admin-overview",
+      "viewport": "desktop",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "help": "Select element must have an accessible name",
+          "node_count": 1,
+          "targets": [
+            "#workspace"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-admin-overview.png"
+    },
+    {
+      "label": "adminNav-任务",
+      "viewport": "desktop",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "help": "Select element must have an accessible name",
+          "node_count": 1,
+          "targets": [
+            "#workspace"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-adminNav-任务.png"
+    },
+    {
+      "label": "adminNav-财务",
+      "viewport": "desktop",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "help": "Select element must have an accessible name",
+          "node_count": 1,
+          "targets": [
+            "#workspace"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-adminNav-财务.png"
+    },
+    {
+      "label": "adminNav-信任与支持",
+      "viewport": "desktop",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "help": "Select element must have an accessible name",
+          "node_count": 1,
+          "targets": [
+            "#workspace"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-adminNav-信任与支持.png"
+    },
+    {
+      "label": "adminNav-发布证据",
+      "viewport": "desktop",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "help": "Select element must have an accessible name",
+          "node_count": 1,
+          "targets": [
+            "#workspace"
+          ]
+        }
+      ],
+      "scroll_width": 1440,
+      "client_width": 1440,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/desktop-adminNav-发布证据.png"
+    },
+    {
+      "label": "login",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "landmark-one-main",
+          "impact": "moderate",
+          "help": "Document should have one main landmark",
+          "node_count": 1,
+          "targets": [
+            "html"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 390,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-login.png"
+    },
+    {
+      "label": "studio-create-dialog",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-studio-create-dialog.png"
+    },
+    {
+      "label": "studio-project",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            ".conversation-panel > .panel-head > div > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-studio-project.png"
+    },
+    {
+      "label": "studio-quality",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            ".conversation-panel > .panel-head > div > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-studio-quality.png"
+    },
+    {
+      "label": "studio-quote",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            ".conversation-panel > .panel-head > div > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-studio-quote.png"
+    },
+    {
+      "label": "studio-dialog",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-studio-dialog.png"
+    },
+    {
+      "label": "mainNav-资产",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            "#assetDetail > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-mainNav-资产.png"
+    },
+    {
+      "label": "market-credits",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            "article:nth-child(1) > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-market-credits.png"
+    },
+    {
+      "label": "market-音乐许可",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "node_count": 2,
+          "targets": [
+            "button[data-market=\"credits\"]",
+            "button[data-market=\"offers\"]"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-market-音乐许可.png"
+    },
+    {
+      "label": "market-品牌任务",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "node_count": 2,
+          "targets": [
+            "button[data-market=\"offers\"]",
+            "button[data-market=\"briefs\"]"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-market-品牌任务.png"
+    },
+    {
+      "label": "market-订单与交付",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "node_count": 2,
+          "targets": [
+            "button[data-market=\"briefs\"]",
+            "button[data-market=\"orders\"]"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-market-订单与交付.png"
+    },
+    {
+      "label": "account",
+      "viewport": "mobile",
+      "url": "http://localhost:4173/#main",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "heading-order",
+          "impact": "moderate",
+          "help": "Heading levels should only increase by one",
+          "node_count": 1,
+          "targets": [
+            ".panel:nth-child(1) > .panel-head > h3"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 6,
+          "targets": [
+            ".login-art",
+            "#loginForm > .eyebrow",
+            "#loginForm > h2"
+          ]
+        }
+      ],
+      "scroll_width": 435,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-account.png"
+    },
+    {
+      "label": "login",
+      "viewport": "mobile",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "landmark-one-main",
+          "impact": "moderate",
+          "help": "Document should have one main landmark",
+          "node_count": 1,
+          "targets": [
+            "html"
+          ]
+        },
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        }
+      ],
+      "scroll_width": 390,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-login.png"
+    },
+    {
+      "label": "admin-overview",
+      "viewport": "mobile",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "help": "Select element must have an accessible name",
+          "node_count": 1,
+          "targets": [
+            "#workspace"
+          ]
+        }
+      ],
+      "scroll_width": 390,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-admin-overview.png"
+    },
+    {
+      "label": "adminNav-任务",
+      "viewport": "mobile",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "help": "Select element must have an accessible name",
+          "node_count": 1,
+          "targets": [
+            "#workspace"
+          ]
+        }
+      ],
+      "scroll_width": 390,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-adminNav-任务.png"
+    },
+    {
+      "label": "adminNav-财务",
+      "viewport": "mobile",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "help": "Select element must have an accessible name",
+          "node_count": 1,
+          "targets": [
+            "#workspace"
+          ]
+        }
+      ],
+      "scroll_width": 390,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-adminNav-财务.png"
+    },
+    {
+      "label": "adminNav-信任与支持",
+      "viewport": "mobile",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "help": "Select element must have an accessible name",
+          "node_count": 1,
+          "targets": [
+            "#workspace"
+          ]
+        }
+      ],
+      "scroll_width": 390,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-adminNav-信任与支持.png"
+    },
+    {
+      "label": "adminNav-发布证据",
+      "viewport": "mobile",
+      "url": "http://localhost:4174/",
+      "axe_version": "4.13.0",
+      "audited": true,
+      "violations": [
+        {
+          "id": "region",
+          "impact": "moderate",
+          "help": "All page content should be contained by landmarks",
+          "node_count": 5,
+          "targets": [
+            "#loginForm > .eyebrow",
+            "#loginForm > h1",
+            "#loginForm > p:nth-child(3)"
+          ]
+        },
+        {
+          "id": "select-name",
+          "impact": "critical",
+          "help": "Select element must have an accessible name",
+          "node_count": 1,
+          "targets": [
+            "#workspace"
+          ]
+        }
+      ],
+      "scroll_width": 390,
+      "client_width": 390,
+      "screenshot": "release-evidence/browser-a11y-20260925T170315Z/mobile-adminNav-发布证据.png"
+    }
+  ],
+  "failures": [
+    "market-音乐许可: color-contrast (serious) on 1 node(s); first target button[data-market=\"credits\"]",
+    "market-品牌任务: color-contrast (serious) on 2 node(s); first target button[data-market=\"offers\"]",
+    "market-订单与交付: color-contrast (serious) on 2 node(s); first target button[data-market=\"briefs\"]",
+    "admin-overview: select-name (critical) on 1 node(s); first target #workspace",
+    "adminNav-任务: select-name (critical) on 1 node(s); first target #workspace",
+    "adminNav-财务: select-name (critical) on 1 node(s); first target #workspace",
+    "adminNav-信任与支持: select-name (critical) on 1 node(s); first target #workspace",
+    "adminNav-发布证据: select-name (critical) on 1 node(s); first target #workspace",
+    "market-音乐许可: color-contrast (serious) on 2 node(s); first target button[data-market=\"credits\"]",
+    "market-品牌任务: color-contrast (serious) on 2 node(s); first target button[data-market=\"offers\"]",
+    "market-订单与交付: color-contrast (serious) on 2 node(s); first target button[data-market=\"briefs\"]",
+    "admin-overview: select-name (critical) on 1 node(s); first target #workspace",
+    "adminNav-任务: select-name (critical) on 1 node(s); first target #workspace",
+    "adminNav-财务: select-name (critical) on 1 node(s); first target #workspace",
+    "adminNav-信任与支持: select-name (critical) on 1 node(s); first target #workspace",
+    "adminNav-发布证据: select-name (critical) on 1 node(s); first target #workspace",
+    "studio-create-dialog: horizontal overflow 435px > 390px",
+    "studio-project: horizontal overflow 435px > 390px",
+    "studio-quality: horizontal overflow 435px > 390px",
+    "studio-quote: horizontal overflow 435px > 390px",
+    "studio-dialog: horizontal overflow 435px > 390px",
+    "mainNav-资产: horizontal overflow 435px > 390px",
+    "market-credits: horizontal overflow 435px > 390px",
+    "market-音乐许可: horizontal overflow 435px > 390px",
+    "market-品牌任务: horizontal overflow 435px > 390px",
+    "market-订单与交付: horizontal overflow 435px > 390px",
+    "account: horizontal overflow 435px > 390px"
+  ]
+}
