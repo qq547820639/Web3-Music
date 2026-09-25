@@ -9,20 +9,26 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database, **15 steps PASS and
-1 recorded as skipped**, commit `1d8534e`, 2026-09-25T18:39:55Z → 18:48:49Z, evidence in
-`release-evidence/acceptance-20260925T183955Z/` (per-step logs, `SUMMARY.txt`, full
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (volumes removed before
+start, host load 6.3 at launch), **16 steps PASS and 1 recorded as skipped**, commit
+`01e61d1`, 2026-09-25T23:08:19Z → 23:16:28Z, evidence in
+`release-evidence/acceptance-20260925T230819Z/` (per-step logs, `SUMMARY.txt`, full
 `compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
-machine-readable record at `release-evidence/browser-a11y-20260925T184749Z/report.json`
+machine-readable record at `release-evidence/browser-a11y-20260925T231538Z/report.json`
 (stamped with the same commit). The same suite was green one commit earlier as well
 (`28deafc`, `release-evidence/acceptance-20260925T181823Z/`), so the pass is reproducible
-rather than a single lucky run. Three earlier runs on this day are kept as discovery
+rather than a single lucky run. Five earlier runs on this day are kept as discovery
 records, not as the headline: `acceptance-20260925T161532Z` proved 14 steps while the
 refund fix was still uncommitted, `acceptance-20260925T162746Z` is a genuine **FAIL** at
 commit `7b187dc` where lease-contention hit an unfunded tenant,
 `acceptance-20260925T174204Z` is the **FAIL** in `browser-a11y` that led to the proxy
-defect below, and `browser-a11y-20260925T170315Z` is the 27-finding audit that surfaced
-the CSP, contrast and overflow defects. Docs that cite this section are committed after the
+defect below, `browser-a11y-20260925T170315Z` is the 27-finding audit that surfaced
+the CSP, contrast and overflow defects, `acceptance-20260925T223656Z` is a step-1 red
+that records launcher state rather than code (the manifest was written before its four
+new files were staged, so `tracked=193 listed=189 missing=4`), and
+`acceptance-20260925T223811Z` is the **FAIL** at commit `1f8010e` where
+`provider-regression-100` finished 87/100 while the archived postgres log shows one
+checkpoint taking 221.210 s to write 1569 buffers — the run that exposed defect 14. Docs that cite this section are committed after the
 tested tree; the only later commits touching tooling are followed by a fresh run.
 
 Host: Docker 29.5.2 on a Colima VM with **4 vCPU / 6 GiB**, Compose v5.4.0. The same suite
@@ -64,9 +70,11 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
 - **100-run generation regression** (new): `100/100 completed, error rate 0.0%`, per-job
   ready count, 64-hex media hash, sampled real download, `settled_credits == quoted price`,
   and a ledger that moved by exactly the summed settlement with no dangling hold.
-  In the two pipeline runs recorded above: **p50 6.25s / p95 8.31s** and **p50 8.53s /
-  p95 13.64s** across 100 finished jobs, 1000 credits settled each time — so the timing
-  reading moves with host load and must be quoted per run, not as a property of the code.
+  Across the green pipeline runs: **p50 6.25s / p95 8.31s**, **p50 8.53s / p95 13.64s**
+  and **p50 5.195s / p95 9.89s** (the authoritative run), each 100/100 with 1000 credits
+  settled; the red run at `1f8010e` read p50 31.88s / p95 81.81s on the same code path
+  with 87/100 finished. The timing reading moves with host I/O, so it must be quoted per
+  run, not as a property of the code.
 - **Real-browser walkthrough + axe audit** (new): Playwright driving axe-core 4.13.0
   (pinned by sha256, fetched at run time, test-only) against the live stack —
   **62 view records, 36 axe scans across desktop 1440 and phone 390, 0 critical and 0
@@ -89,8 +97,8 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
   subtracts every foreign key in the live schema that points at `users(id)`. That check was
   shown to bite — a throwaway `tmp_probe_link(user_id REFERENCES users(id))` table made it name
   `tmp_probe_link.user_id` and fail, and dropping the table made it pass again.
-- Static verification and unit tests: 70 unit tests (previously recorded here as 23, then 54,
-  then 66).
+- Static verification and unit tests: 78 unit tests (previously recorded here as 23, then
+  54, then 66, then 70).
 
 ## Defects found and fixed by that execution
 
@@ -189,6 +197,24 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
     `POST /api/events` (`services/api/app/routers/creation.py:211`), and no suite had ever
     called it, so the export's event list was an untested branch on an empty table. The drill
     records a `candidate_played` event as its fixture and requires it back in the export.
+
+14. **A terminal job failure could be recorded with no reason at all.** The red run listed 13
+   of 15 failed jobs with `error = NULL`: `worker.py` copied only the *provider* payload into
+   that column, while the actual cause — `audio decode validation failed: Command '['ffprobe',
+   ...]' timed out after 15 seconds` — was written on the `audio_candidates` row by the ingest
+   handler, reachable only by a manual join. Attribution of the red itself is measured, not
+   assumed: the same archived log shows the checkpoint above and shows a single-row read of
+   `generation_jobs` exceeding the 15 s `DB_STATEMENT_TIMEOUT_MS` (`main` sets it in
+   `services/api/app/settings.py:50`, `services/worker/worker.py:63` passes it for the worker),
+   i.e. the I/O subsystem stalled rather than any query being pathological. **No timeout was
+   loosened**; `services/worker/outcomes.py::terminal_error` now composes the reason at
+   settlement (provider payload when present, otherwise a code derived from the counters, plus
+   up to three per-candidate causes), verified live on the rebuilt stack — a `partial_success`
+   job reports `incomplete_candidate_set` with `ready/failed/requested` and the failing ordinal,
+   a `failed` job keeps `provider_generation_error` and gains the same. Guarded by 8 unit tests
+   scored against the reverted semantics (5 of 8 turn red, real module 8/8 green) and by a new
+   live assertion in `provider_regression.py` that fails any job ending
+   `partial/failed/dead_letter` without a stored reason (exercised in both polarities).
 
 ## Not verified: the 500-user capacity gate
 

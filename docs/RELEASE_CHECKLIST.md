@@ -2,10 +2,10 @@
 
 状态口径（2026-09-25 实测更新）：
 
-- `[x]` = 本轮在真实 Compose 环境执行并通过，权威运行是 `scripts/acceptance-all.sh` 在全新数据库上的 **15 步全 PASS + 1 步按开关跳过**（commit `1d8534e`，2026-09-25T18:39:55Z → 18:48:49Z，证据 `release-evidence/acceptance-20260925T183955Z/`；上一提交 `28deafc` 同套件亦全绿，说明可复现；浏览器验收另见 `release-evidence/browser-a11y-20260925T184749Z/report.json`，同一 commit）。第 16 行 `capacity-gate-500` 只有 `CAPACITY=1` 才执行，本轮记为 SKIPPED，其状态见 `FINAL_RELEASE_STATUS.md`（本机实测判红，属主机容量）。
+- `[x]` = 本轮在真实 Compose 环境执行并通过，权威运行是 `scripts/acceptance-all.sh` 在**全新数据库（起栈前 down -v）+ 启动时宿主负载 6.3**上的 **16 步全 PASS + 1 步按开关跳过**（commit `01e61d1`，2026-09-25T23:08:19Z → 23:16:28Z，证据 `release-evidence/acceptance-20260925T230819Z/`；上一提交 `28deafc`/`1d8534e` 同套件亦全绿，说明可复现；浏览器验收另见 `release-evidence/browser-a11y-20260925T231538Z/report.json`，同一 commit）。本轮之前同一套件有两次判红被留作发现记录：`acceptance-20260925T223656Z`（第 1 步红，原因是清单写在新文件入库之前，属启动子状态而非被测代码）与 `acceptance-20260925T223811Z`（第 15 步 87/100 判红，归因见 `FINAL_RELEASE_STATUS.md` 缺陷 14）。第 16 行 `capacity-gate-500` 只有 `CAPACITY=1` 才执行，本轮记为 SKIPPED，其状态见 `FINAL_RELEASE_STATUS.md`（本机实测判红，属主机容量）。
 - `[ ]` = 未通过或**无法在源码环境内完成**，每条都写明缺的是哪一份外部事实。
 - 以往"本机无 Docker daemon，需在部署主机执行"的说法已失效：本轮 Docker 可用，跨容器验收已在真实 Compose 栈上跑通，本文按执行结果改写。
-- 被验收的树以 `SUMMARY.txt` 里的 `git_commit=1d8534e` 为准；记录它的文档提交在其后，若文档之后再改动被测脚本，会重跑并改指新运行，而不是沿用旧读数。
+- 被验收的树以 `SUMMARY.txt` 里的 `git_commit=01e61d1` 为准；记录它的文档提交在其后，若文档之后再改动被测脚本，会重跑并改指新运行，而不是沿用旧读数。
 
 ## G9 Verified Beta
 
@@ -72,4 +72,5 @@
 2. **导航在 boot 完成前点了没反应。** `#app` 去掉 `hidden` 早于 `bindNavigation()`（它在首屏数据加载完之后才绑），所以首屏刚出来点顶栏按钮会被静默丢弃。验收脚本用"重试直到视图真的切换"绕过，但用户在慢网络下点到的就是没反应的按钮——要么把事件绑定提前到 DOMContentLoaded，要么在绑定完成前给出禁用态。
 3. **两个前端共用一条会话 Cookie。** `localhost:4173` 与 `:4174` 同主机不同端口，Cookie 不分端口，所以 Studio 点"退出"会连带把管理后台会话一起作废（脚本里表现为后台首屏 401 留痕）。生产若把控制面放到同主机的另一端口，这就是一个真实的联动；需要域或路径隔离才算定案。
 4. **匿名首屏把预期内的 401 记成 console error。** `init()` 里 `/api/auth/me` 未登录时返回 401 属正常流程，却被 `console.error` 记录（本轮 16 条 console 留痕里除了 CSP 全是它）。不影响功能，但会污染浏览器端的错误监控。
-5. **axe 还有 48 项 moderate**（`heading-order` / `landmark-one-main` / `region`），未达本 Gate 的判据线（critical/serious），但属于 WCAG 可达性问题，排后续轮次。
+5. **axe 还有 48 项 moderate**（权威运行实测分布：`region` 32、`heading-order` 12、`landmark-one-main` 4），未达本 Gate 的判据线（critical/serious），但属于 WCAG 可达性问题，排后续轮次。
+6. **删除权与 Legal Hold 的先后关系要谁定。** 法律保留在本仓库是真实生效的机制：`moderation_cases.legal_hold`（`db/migrations/002_creation_asset_market_os.sql:122`）会挡住市场上架（同文件 :568）、offer 创建（:680）与品牌中标（`004_brand_award_commercial_flow.sql:25`、`009_prepare_brand_award_ambiguous_column.sql:26`），对 project 开保留还会把状态改成 `legal_hold`（`services/api/app/routers/assets.py:247-248`）。但 `erase_user_identity` 完全不看这些：一个自己的 project 正被保留调查的主体仍可自助删除并被假名化。GDPR Art.17(3)(e)（为法律主张而保留）是否要在自助通道里落地、以及"谁的保留算数"（保留由员工 `opened_by` 开立，与被删主体往往不是同一人），是法务/产品判断而不是代码缺口；本轮只把它连同可核验的路径写清楚，不替属主装一条猜出来的守卫。
