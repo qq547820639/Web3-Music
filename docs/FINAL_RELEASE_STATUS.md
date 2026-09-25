@@ -10,17 +10,20 @@ was actually executed.
 ## Executed on a real Compose stack
 
 Authoritative run: `scripts/acceptance-all.sh` on a fresh database, **15 steps PASS and
-1 recorded as skipped**, commit `28deafc`, 2026-09-25T18:18:23Z → 18:26:14Z, evidence in
-`release-evidence/acceptance-20260925T181823Z/` (per-step logs, `SUMMARY.txt`, full
+1 recorded as skipped**, commit `1d8534e`, 2026-09-25T18:39:55Z → 18:48:49Z, evidence in
+`release-evidence/acceptance-20260925T183955Z/` (per-step logs, `SUMMARY.txt`, full
 `compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
-machine-readable record at `release-evidence/browser-a11y-20260925T182515Z/report.json`
-(stamped with the same commit). The two earlier runs on this day are kept as discovery
+machine-readable record at `release-evidence/browser-a11y-20260925T184749Z/report.json`
+(stamped with the same commit). The same suite was green one commit earlier as well
+(`28deafc`, `release-evidence/acceptance-20260925T181823Z/`), so the pass is reproducible
+rather than a single lucky run. Three earlier runs on this day are kept as discovery
 records, not as the headline: `acceptance-20260925T161532Z` proved 14 steps while the
 refund fix was still uncommitted, `acceptance-20260925T162746Z` is a genuine **FAIL** at
-commit `7b187dc` where lease-contention hit an unfunded tenant, and
-`browser-a11y-20260925T170315Z` is the run that found the CSP, contrast and overflow
-defects listed below. Docs that cite this section are committed after the tested tree;
-they change `docs/` only.
+commit `7b187dc` where lease-contention hit an unfunded tenant,
+`acceptance-20260925T174204Z` is the **FAIL** in `browser-a11y` that led to the proxy
+defect below, and `browser-a11y-20260925T170315Z` is the 27-finding audit that surfaced
+the CSP, contrast and overflow defects. Docs that cite this section are committed after the
+tested tree; the only later commits touching tooling are followed by a fresh run.
 
 Host: Docker 29.5.2 on a Colima VM with **4 vCPU / 6 GiB**, Compose v5.4.0. The same suite
 also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-acceptance`,
@@ -61,9 +64,9 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
 - **100-run generation regression** (new): `100/100 completed, error rate 0.0%`, per-job
   ready count, 64-hex media hash, sampled real download, `settled_credits == quoted price`,
   and a ledger that moved by exactly the summed settlement with no dangling hold.
-  In this pipeline run: **p50 6.25s / p95 8.31s** across 100 finished jobs, 1000 credits
-  settled. Standalone timings on an idle stack have been as low as p50 4.145s — the number
-  follows host load, so the pipeline reading is the one to quote.
+  In the two pipeline runs recorded above: **p50 6.25s / p95 8.31s** and **p50 8.53s /
+  p95 13.64s** across 100 finished jobs, 1000 credits settled each time — so the timing
+  reading moves with host load and must be quoted per run, not as a property of the code.
 - **Real-browser walkthrough + axe audit** (new): Playwright driving axe-core 4.13.0
   (pinned by sha256, fetched at run time, test-only) against the live stack —
   **62 view records, 36 axe scans across desktop 1440 and phone 390, 0 critical and 0

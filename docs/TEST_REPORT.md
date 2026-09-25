@@ -119,13 +119,13 @@ docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml \
 
 上文各表是当次打包的静态/单元记录，保留原文不再改写。本轮 Docker 可用，验收已在真实 Compose 栈执行：
 
-- 权威运行：`scripts/acceptance-all.sh`，全新数据库，**15 步 PASS + 1 步按开关跳过**，commit `28deafc`，2026-09-25T18:18:23Z → 18:26:14Z，逐步日志与 compose 日志见 `release-evidence/acceptance-20260925T181823Z/`（此前 14 步的 `82f2ffe` 运行保留为发现记录）。
+- 权威运行：`scripts/acceptance-all.sh`，全新数据库，**15 步 PASS + 1 步按开关跳过**，commit `1d8534e`，2026-09-25T18:39:55Z → 18:48:49Z，逐步日志与 compose 日志见 `release-evidence/acceptance-20260925T183955Z/`（上一提交 `28deafc` 亦全绿，可复现）（此前 14 步的 `82f2ffe` 运行保留为发现记录）。
 - 单元测试：28 → 54 → **66**（新增跨租户、市场对账策略、浏览器验收判决函数等）。
 - 跨容器常驻用例：默认栈 11 项（备份恢复后复跑再次通过）；商业覆层 11 项（1 项商业全链路 + 10 项跨租户隔离）。
 - 契约测试 4 项；Worker Kill-9 恢复通过；双 Worker Lease 竞争通过（8 任务 / 2 claimant / 160 credits 结算一次）。
 - 备份恢复：绝对指纹校验通过（本轮读数 `2 workspaces, 2 assets byte-identical, ledgers unchanged`，计数随库里资产数变化，判据含零分母拒绝），并已用「删除 master 对象 → 判据转红 → 恢复 → 转绿」证明该校验有牙。
-- 100 次生成回归：`100/100 completed, error rate 0.0%`，本轮 p50 6.25s / p95 8.31s、1000 credits 结算，逐任务校验哈希、结算额与账本守恒。
-- **真实浏览器验收（新增，第 15 步）**：Playwright + axe-core 4.13.0，桌面 1440 与手机 390 两档共 62 个视图记录 / 36 次 axe 扫描，**critical 0 / serious 0**（moderate 48 项列为后续项），并附 CSP、键盘可达、390px 横向溢出与非捕获异常断言；机器可读结果 `release-evidence/browser-a11y-20260925T182515Z/report.json`。判据自身有牙：`--self-test` 三类注入对照 + 12 条判决函数单测。
+- 100 次生成回归：`100/100 completed, error rate 0.0%`，两次流水线读数分别为 p50 6.25s / p95 8.31s 与 p50 8.53s / p95 13.64s、各 1000 credits 结算（计时随主机负载浮动，按次引用），逐任务校验哈希、结算额与账本守恒。
+- **真实浏览器验收（新增，第 15 步）**：Playwright + axe-core 4.13.0，桌面 1440 与手机 390 两档共 62 个视图记录 / 36 次 axe 扫描，**critical 0 / serious 0**（moderate 48 项列为后续项），并附 CSP、键盘可达、390px 横向溢出与非捕获异常断言；机器可读结果 `release-evidence/browser-a11y-20260925T184749Z/report.json`。判据自身有牙：`--self-test` 三类注入对照 + 12 条判决函数单测。
 - 执行中实测到并修复的真实缺陷（详表见 `docs/FINAL_RELEASE_STATUS.md` 与 `docs/RELEASE_CHECKLIST.md` 的"附带发现"）：独家资产可被重复售出、`GET /orders` 把分页行数当金额、退款后独家商品卡在 `sold`、自家 CSP 静默作废雷达配色/提示/进度条、UI 代理把重建后 API 的死地址钉住导致全量 502、错误路径重复读流导致真因被吞、管理后台工作区下拉无可访问名、390px 视口被顶栏撑到 435px、以及入库交付清单 `SOURCE_MANIFEST.sha256` 只有 110/188 个文件被如实描述（现由 `scripts/source-manifest.sh check` 进 `static-verify` 把关）。
 
 仍未取得有效证据的只有一项：**500 并发容量 Gate**。本机 4 vCPU / 6 GiB 低于 `docker-compose.capacity500.yml` 自身对 api/worker 各 4 CPU / 4 GiB 的请求，Gate 在 500 用户下实测判红（p95 4197ms 与 9832ms 两次，错误率 0%），并发扫描与结论见 `docs/COST_OPTIMIZED_500_CONCURRENCY.md`。因此上面那句「需部署主机的运行日志才算证据」依然成立——只是现在有了真实的失败读数，而不是缺失读数。

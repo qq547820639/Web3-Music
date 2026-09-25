@@ -2,10 +2,10 @@
 
 状态口径（2026-09-25 实测更新）：
 
-- `[x]` = 本轮在真实 Compose 环境执行并通过，权威运行是 `scripts/acceptance-all.sh` 在全新数据库上的 **15 步全 PASS + 1 步按开关跳过**（commit `28deafc`，2026-09-25T18:18:23Z → 18:26:14Z，证据 `release-evidence/acceptance-20260925T181823Z/`；浏览器验收另见 `release-evidence/browser-a11y-20260925T182515Z/report.json`，同一 commit）。第 16 行 `capacity-gate-500` 只有 `CAPACITY=1` 才执行，本轮记为 SKIPPED，其状态见 `FINAL_RELEASE_STATUS.md`（本机实测判红，属主机容量）。
+- `[x]` = 本轮在真实 Compose 环境执行并通过，权威运行是 `scripts/acceptance-all.sh` 在全新数据库上的 **15 步全 PASS + 1 步按开关跳过**（commit `1d8534e`，2026-09-25T18:39:55Z → 18:48:49Z，证据 `release-evidence/acceptance-20260925T183955Z/`；上一提交 `28deafc` 同套件亦全绿，说明可复现；浏览器验收另见 `release-evidence/browser-a11y-20260925T184749Z/report.json`，同一 commit）。第 16 行 `capacity-gate-500` 只有 `CAPACITY=1` 才执行，本轮记为 SKIPPED，其状态见 `FINAL_RELEASE_STATUS.md`（本机实测判红，属主机容量）。
 - `[ ]` = 未通过或**无法在源码环境内完成**，每条都写明缺的是哪一份外部事实。
 - 以往"本机无 Docker daemon，需在部署主机执行"的说法已失效：本轮 Docker 可用，跨容器验收已在真实 Compose 栈上跑通，本文按执行结果改写。
-- 引用本次运行的文档提交晚于被证明的代码提交，且只改 `docs/`；被验收的树以 `git_commit=28deafc` 为准。
+- 被验收的树以 `SUMMARY.txt` 里的 `git_commit=1d8534e` 为准；记录它的文档提交在其后，若文档之后再改动被测脚本，会重跑并改指新运行，而不是沿用旧读数。
 
 ## G9 Verified Beta
 
