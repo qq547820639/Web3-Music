@@ -157,6 +157,40 @@ jobs:
       - if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml down -v --remove-orphans
 
+  browser-a11y:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -r scripts/requirements-browser.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: cp .env.example .env
+      - name: Start stack (with diagnostics)
+        shell: bash
+        run: |
+          if ! docker compose up --build -d > /tmp/up-a11y.log 2>&1; then
+            echo "::error title=compose-up::$(tail -50 /tmp/up-a11y.log | tr -d '\r' | tr '\n' ' ' | head -c 2500)"
+            exit 1
+          fi
+      - name: Audit must be able to fail
+        run: python scripts/browser_a11y.py --self-test
+      - name: Real-browser walkthrough and axe audit (with diagnostics)
+        shell: bash
+        run: |
+          if ! python scripts/browser_a11y.py > /tmp/a11y.log 2>&1; then
+            echo "::error title=browser-a11y::$(grep -E '^  - |^FAIL' /tmp/a11y.log | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
+            tail -40 /tmp/a11y.log
+            exit 1
+          fi
+          cat /tmp/a11y.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: browser-a11y-report, path: release-evidence/browser-a11y-*/report.json, if-no-files-found: ignore}
+      - if: always()
+        run: docker compose down -v --remove-orphans
+
   capacity-500:
     runs-on: ubuntu-latest
     timeout-minutes: 30

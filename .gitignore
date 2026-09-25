@@ -22,3 +22,9 @@ release-evidence/*
 !release-evidence/acceptance-*/
 release-evidence/acceptance-*/*
 !release-evidence/acceptance-*/SUMMARY.txt
+!release-evidence/browser-a11y-*/
+release-evidence/browser-a11y-*/*
+!release-evidence/browser-a11y-*/report.json
+
+# Pinned third-party audit script cached by scripts/browser_a11y.py.
+.cache/

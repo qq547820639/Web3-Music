@@ -4,8 +4,10 @@
 #
 # 在部署主机（具备 Docker + Compose v2）上运行，按固定顺序串联现有的验证脚本：
 #   static-verify → compose 起栈 → acceptance(test.sh) → contract-test →
-#   chaos-worker-recovery → backup → restore(带确认) → 复跑 acceptance →
-#   commercial-flow(commercial-test 覆层) → capacity-gate-500(可选, CAPACITY=1)
+#   chaos-worker-recovery → lease-contention → restore-fidelity → backup/restore →
+#   复跑 acceptance → commercial-flow(commercial-test 覆层) → reservation-race →
+#   market-reconciliation → provider-regression → browser-a11y(BROWSER=1) →
+#   capacity-gate-500(CAPACITY=1)
 #
 # 每步打印醒目的分节与时间戳；任一步失败即打印诊断并 exit 1。
 # 全部通过后，将步骤摘要与 `docker compose logs --no-color` 归档到
@@ -181,6 +183,12 @@ step_reconcile_market() {
   python scripts/reconcile_market.py
 }
 
+step_browser_a11y() {
+  # The self-test arm proves the audit can fire before its verdict is trusted.
+  python scripts/browser_a11y.py --self-test
+  python scripts/browser_a11y.py
+}
+
 step_capacity() {
   # 容量 Gate 会用 capacity500 覆层重起整套栈；先把商业/主栈停掉以释放宿主机端口。
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml down --remove-orphans >/dev/null 2>&1 || true
@@ -203,6 +211,15 @@ run_step "commercial-flow" step_commercial
 run_step "reservation-race" step_reservation_race
 run_step "market-reconciliation" step_reconcile_market
 run_step "provider-regression-100" step_provider_regression
+
+if [ "${BROWSER:-0}" = "1" ]; then
+  run_step "browser-a11y" step_browser_a11y
+else
+  step "browser-a11y (skipped)"
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  printf '%s | %s | %s | %s\n' "browser-a11y" "SKIPPED (BROWSER=1 才执行)" "$now" "$now" >> "$RESULTS_FILE"
+  echo "提示：真实浏览器验收默认跳过；如需执行请设置 BROWSER=1（需要 playwright + Chromium，见 scripts/requirements-browser.txt）。"
+fi
 
 if [ "${CAPACITY:-0}" = "1" ]; then
   run_step "capacity-gate-500" step_capacity
