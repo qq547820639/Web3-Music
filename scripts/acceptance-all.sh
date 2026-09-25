@@ -17,6 +17,20 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# 环境预检：缺少解释器或 Docker 时直接退出，且不生成证据目录。
+# 早先版本让第 1 步自己失败，于是落盘一份「static-verify FAIL」的证据，
+# 它记录的是跑错 shell（venv 不在 PATH）而不是被测代码，容易被误读成验收结论。
+for tool in python node docker; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "预检失败：PATH 上没有可执行的 $tool。请先激活运行环境，把 venv 的 bin 目录放到 PATH 前面再运行。" >&2
+    exit 2
+  }
+done
+docker info >/dev/null 2>&1 || {
+  echo "预检失败：docker daemon 不可访问，跨容器验收无法执行。" >&2
+  exit 2
+}
+
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 EVIDENCE_DIR="release-evidence/acceptance-${STAMP}"
 RESULTS_FILE="${EVIDENCE_DIR}/SUMMARY.txt"
