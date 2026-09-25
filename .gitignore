@@ -11,3 +11,8 @@ release-evidence/*/
 
 # WorkBuddy agent data (not part of source)
 .workbuddy/
+
+# Drill runtime state (scripts/restore_fidelity.py, scripts/lease_contention.py)
+.restore-fidelity.json
+.lease-contention-state.json
+.chaos-state.json

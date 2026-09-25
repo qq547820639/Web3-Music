@@ -10,7 +10,10 @@ services:
   acceptance-commercial:
     profiles: ["commercial-test"]
     build: ./services/acceptance
-    command: ["pytest", "-q", "test_commercial.py"]
+    # The tenant-isolation suite needs an approved commercial provider capability to reach
+    # offers/licenses/deliveries/payouts, which the default stack deliberately blocks
+    # (its emulator snapshot is commercial_rights: blocked), so it runs alongside here.
+    command: ["pytest", "-q", "-s", "test_commercial.py", "test_tenant_isolation.py"]
     environment:
       API_BASE_URL: http://api:8000
     volumes:

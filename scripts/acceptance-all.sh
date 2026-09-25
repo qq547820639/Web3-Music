@@ -128,6 +128,18 @@ step_chaos() {
   ./scripts/chaos-worker-recovery.sh
 }
 
+step_lease_contention() {
+  ./scripts/lease-contention.sh
+}
+
+step_fidelity_snapshot() {
+  python scripts/restore_fidelity.py snapshot
+}
+
+step_fidelity_compare() {
+  python scripts/restore_fidelity.py compare
+}
+
 step_backup_restore() {
   ./scripts/backup.sh acceptance
   RESTORE_CONFIRM=YES ./scripts/restore.sh backups/acceptance
@@ -155,7 +167,10 @@ run_step "compose-up" step_stack_up
 run_step "acceptance" step_acceptance
 run_step "contract-test" step_contract_test
 run_step "chaos-worker-recovery" step_chaos
+run_step "lease-contention" step_lease_contention
+run_step "restore-fidelity-snapshot" step_fidelity_snapshot
 run_step "backup-restore" step_backup_restore
+run_step "restore-fidelity-compare" step_fidelity_compare
 run_step "acceptance-rerun" step_acceptance_rerun
 run_step "commercial-flow" step_commercial
 

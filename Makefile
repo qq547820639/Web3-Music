@@ -1,4 +1,4 @@
-.PHONY: up down reset test commercial-test contracts verify capacity-500 logs openapi backup restore
+.PHONY: up down reset test commercial-test contracts verify capacity-500 contention logs openapi backup restore
 up:
 	./scripts/up.sh
 down:
@@ -15,6 +15,8 @@ verify:
 	./scripts/static-verify.sh
 capacity-500:
 	./scripts/capacity-gate-500.sh
+contention:
+	./scripts/lease-contention.sh
 logs:
 	docker compose logs -f api worker payment-emulator provider-emulator
 openapi:

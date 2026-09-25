@@ -156,10 +156,17 @@ services:
       retries: 40
 
 
+  # Second live Worker for the lease contention drill (release gate G9-2). Defined here rather
+  # than in an override file because `extends` only resolves within a single Compose document.
+  # Inert until --profile contention is passed, so the default stack still runs one Worker.
+  worker-b:
+    extends: worker
+    profiles: ["contention"]
+
   prometheus:
     image: prom/prometheus:v3.5.0
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
-    ports: ["9090:9090"]
+    ports: ["${PROMETHEUS_PORT:-9090}:9090"]
     volumes:
       - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -191,7 +198,7 @@ services:
 
   gateway:
     build: ./services/gateway
-    ports: ["8080:80"]
+    ports: ["${GATEWAY_PORT:-8080}:80"]
     depends_on:
       api: {condition: service_healthy}
       web: {condition: service_healthy}
