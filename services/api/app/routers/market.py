@@ -373,7 +373,7 @@ async def payment_webhook(provider: str, request: Request, x_payment_signature: 
                     cur.execute("UPDATE deliveries SET status='revoked' WHERE order_id=%s", (order_id,))
                     cur.execute("UPDATE subscriptions SET status='cancelled',cancel_at_period_end=false,updated_at=now() WHERE order_id=%s", (order_id,))
                     cur.execute("UPDATE offer_reservations SET status='released',updated_at=now() WHERE order_id=%s", (order_id,))
-                    cur.execute("UPDATE asset_offers SET status='paused',updated_at=now() WHERE id=(SELECT subject_id::uuid FROM orders WHERE id=%s AND subject_type='asset_offer') AND exclusive=true", (order_id,))
+                    cur.execute("SELECT pause_marketplace_offer_on_refund(%s)", (order_id,))
                     cur.execute("SELECT reverse_license_revenue(%s)", (order_id,))
                     cur.execute("SELECT order_type,metadata FROM orders WHERE id=%s", (order_id,))
                     refunded_order = cur.fetchone()

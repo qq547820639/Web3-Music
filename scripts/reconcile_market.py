@@ -52,7 +52,7 @@ def get(path, sess):
     return r.json()
 
 
-def make_sale(seller, buyer):
+def make_sale(seller, buyer, exclusive=False):
     """Drive one complete exclusive-free licence sale so the invariants have a subject."""
     project = httpx.post(BASE + "/projects", json={"title": "Reconcile " + uuid.uuid4().hex[:6]},
                          headers=_h(seller), timeout=40).json()
@@ -90,7 +90,7 @@ def make_sale(seller, buyer):
     offer = httpx.post(BASE + "/offers",
                        json={"asset_snapshot_id": asset_id, "title": "Reconcile offer", "price_amount": price,
                              "currency": "USD", "territory": "worldwide", "duration_days": 30,
-                             "exclusive": False, "status": "active"},
+                             "exclusive": exclusive, "status": "active"},
                        headers=_h(seller), timeout=40).json()
     order = httpx.post(BASE + f"/marketplace/offers/{offer['id']}/purchase",
                        json={"licensee_name": "Reconcile buyer"}, headers=_h(buyer), timeout=40).json()
@@ -100,7 +100,7 @@ def make_sale(seller, buyer):
     while time.time() < end:
         row = next((x for x in get("/orders", buyer).get("items", []) if x["id"] == order["id"]), None)
         if row and row["status"] == "fulfilled":
-            return order["id"], price
+            return order["id"], price, offer["id"]
         time.sleep(.5)
     raise SystemExit("reconciliation order never fulfilled")
 
@@ -143,9 +143,15 @@ def check(name, ok, detail=""):
         print(f"RECONCILE FAIL [{name}]: {detail}", flush=True)
 
 
+def offer_status(offer_id):
+    if not UUID_RE.match(str(offer_id)):
+        raise SystemExit(f"unexpected offer id {offer_id!r}")
+    return psql_rows(f"SELECT status FROM asset_offers WHERE id='{offer_id}'")[0][0]
+
+
 def main():
     seller, buyer = login(SELLER), login(BUYER)
-    order_id, price = make_sale(seller, buyer)
+    order_id, price, offer_id = make_sale(seller, buyer)
     for value in (order_id,):
         if not UUID_RE.match(str(value)):
             raise SystemExit(f"unexpected identifier {value!r}")
@@ -214,6 +220,25 @@ def main():
     check("refund reverses the whole chain together",
           after[0] == "refunded" and after[1] == "refunded" and after[2] == "revoked" and after[3] == "reversed",
           f"order={after[0]} licence={after[1]} delivery={after[2]} payout={after[3]}")
+
+    # Second subject: an exclusive listing, whose own state machine only moves for
+    # exclusive offers, so the non-exclusive sale above cannot detect drift in it.
+    ex_order, _ex_price, ex_offer = make_sale(seller, buyer, exclusive=True)
+    check("paid exclusive offer is marked sold", offer_status(ex_offer) == "sold",
+          f"offer after fulfilment = {offer_status(ex_offer)}")
+    httpx.post(BASE + f"/orders/{ex_order}/refunds",
+               headers={**_h(buyer), "Idempotency-Key": "rec-ex-refund-" + uuid.uuid4().hex},
+               json={"reason": "exclusive refund"}, timeout=40).raise_for_status()
+    deadline = time.time() + 40
+    while time.time() < deadline:
+        if psql_rows(f"SELECT status FROM orders WHERE id='{ex_order}'")[0][0] == "refunded":
+            break
+        time.sleep(.5)
+    # market.py:376 is the write that lifts a sold exclusive listing off the shelf again.
+    after_refund = offer_status(ex_offer)
+    check("refunded exclusive offer is lifted out of the sold state", after_refund == "paused",
+          f"offer still '{after_refund}' after the licence was refunded; the buyer's transaction "
+          f"cannot see the seller's asset_offers row under RLS, so that UPDATE matches zero rows")
 
     recon = get("/admin/v12/reconciliation", seller)
     check("admin reconciliation endpoint passes for the seller",
