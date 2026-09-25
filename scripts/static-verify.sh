@@ -5,6 +5,9 @@ find . -type d \( -name __pycache__ -o -name .pytest_cache \) -prune -exec rm -r
 python -m compileall -q services tests scripts
 find services -name '*.js' -print0 | xargs -0 -r -n1 node --check
 find scripts -name '*.sh' -print0 | xargs -0 -r -n1 sh -n
+# The tracked delivery manifest must describe the tree it ships beside. Regenerating
+# it is a separate command on purpose, so this check can genuinely fail.
+./scripts/source-manifest.sh check
 python - <<'PY'
 import json,pathlib,yaml
 from jsonschema import Draft202012Validator
