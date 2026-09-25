@@ -199,11 +199,14 @@ async function api(path, opt = {}, retry = true) {
     if (refreshed.ok) return api(path, opt, false);
   }
   if (!r.ok) {
-    let x;
+    // Read once: the previous json()-then-text() fallback consumed the stream
+    // twice, so the user saw "body stream already read" instead of the server's reason.
+    const body = await r.text();
+    let x = body;
     try {
-      x = await r.json();
+      x = JSON.parse(body);
     } catch {
-      x = await r.text();
+      // not JSON; keep the raw text
     }
     throw new Error(typeof x === 'string' ? x : JSON.stringify(x.detail ?? x));
   }

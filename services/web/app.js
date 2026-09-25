@@ -285,11 +285,15 @@ async function api(path, options = {}, retry = true) {
     if (refreshed.ok) return api(path, options, false);
   }
   if (!response.ok) {
-    let detail;
+    // Read once: response.json() consumes the stream, so the previous
+    // json()-then-text() fallback replaced every real server message with
+    // "body stream already read".
+    const body = await response.text();
+    let detail = body;
     try {
-      detail = await response.json();
+      detail = JSON.parse(body);
     } catch {
-      detail = await response.text();
+      // not JSON (a proxy error page, plain text); keep the raw body
     }
     const e = new Error(humanizeError(response.status, detail));
     e.status = response.status;
