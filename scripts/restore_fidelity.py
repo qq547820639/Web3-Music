@@ -19,7 +19,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-import e2e_login
+import e2e_client
 import httpx
 
 ROOT = "http://localhost:8000"
@@ -35,7 +35,7 @@ ASSET_OWNERS = {"seller"}
 
 
 def login(email, password):
-    return e2e_login.login(BASE, email, password)
+    return e2e_client.login(BASE, email, password)
 
 
 def get(path, token, workspace, binary=False, timeout=90):

@@ -19,7 +19,7 @@ import time
 import uuid
 from pathlib import Path
 
-import e2e_login
+import e2e_client
 import httpx
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -30,7 +30,7 @@ TERMINAL = {"completed", "partial", "failed", "dead_letter", "cancelled"}
 
 
 def login():
-    return e2e_login.login(ROOT, "owner@example.local", "demo-owner")
+    return e2e_client.login(ROOT, "owner@example.local", "demo-owner")
 
 
 def request(method, path, token, workspace, **kwargs):
@@ -70,6 +70,10 @@ def claimants(job_ids):
 
 def prepare(job_count: int):
     token, workspace = login()
+    # Every job holds 2 candidates, and the seeded credits are consumed by earlier steps
+    # when the acceptance pipeline runs against a surviving database volume.
+    price = e2e_client.unit_price(ROOT, token, workspace)
+    e2e_client.ensure_credits(ROOT, token, workspace, job_count * 2 * price + price)
     before = request("GET", "/ledger", token, workspace)["balances"]
     jobs = []
     for _ in range(job_count):

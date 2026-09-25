@@ -23,25 +23,22 @@ Usage: python scripts/provider_regression.py [jobs] [concurrency]
 from __future__ import annotations
 
 import concurrent.futures
-import math
 import statistics
 import sys
 import time
 import uuid
 
-import e2e_login
+import e2e_client
 import httpx
 
 BASE = "http://localhost:8000/api"
 DEFAULT_JOBS = 100
 DEFAULT_CONCURRENCY = 6
 MEDIA_DOWNLOAD_SAMPLE = 10
-CREDIT_SKU = "CREDITS_100"
-CREDIT_PACK = 100
 
 
 def login():
-    return e2e_login.login(BASE, "owner@example.local", "demo-owner")
+    return e2e_client.login(BASE, "owner@example.local", "demo-owner")
 
 
 TOKEN, WS = login()
@@ -92,28 +89,12 @@ def run_one(index: int):
 
 
 def unit_price():
-    """Learn the credit price from the quoting engine rather than hardcoding it."""
-    project = call("POST", "/projects", json={"title": "Regression probe " + uuid.uuid4().hex[:6]})
-    quote = call("POST", f"/projects/{project['id']}/quotes", json={"candidate_count": 1, "scenario": "success"})
-    return int(quote["quote"]["total_credits"])
+    return e2e_client.unit_price(BASE, TOKEN, WS)
 
 
 def top_up_credits(needed: float):
     """A batch must not fail because an earlier run drained the demo workspace."""
-    available = float(call("GET", "/ledger")["balances"]["available"])
-    if available >= needed:
-        return
-    packs = math.ceil((needed - available) / CREDIT_PACK)
-    order = call("POST", "/orders/credits", json={"sku": CREDIT_SKU, "quantity": packs})
-    call("POST", f"/orders/{order['id']}/pay", headers={"Idempotency-Key": "reg-topup-" + uuid.uuid4().hex},
-         json={"scenario": "success"})
-    deadline = time.time() + 60
-    while time.time() < deadline:
-        available = float(call("GET", "/ledger")["balances"]["available"])
-        if available >= needed:
-            return
-        time.sleep(1)
-    raise SystemExit(f"credit top-up did not land: have {available}, batch needs {needed}")
+    e2e_client.ensure_credits(BASE, TOKEN, WS, needed)
 
 
 def main(jobs: int, concurrency: int):

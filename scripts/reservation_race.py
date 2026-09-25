@@ -25,7 +25,7 @@ import subprocess
 import time
 import uuid
 
-import e2e_login
+import e2e_client
 import httpx
 
 BASE = "http://localhost:8000/api"
@@ -43,7 +43,7 @@ def fail(msg: str):
 
 
 def login(creds):
-    return e2e_login.login(BASE, creds[0], creds[1])
+    return e2e_client.login(BASE, creds[0], creds[1])
 
 
 def call(method, path, sess, expect=(200, 201, 202, 204), **kwargs):
@@ -135,6 +135,8 @@ def active_licences(asset_id):
 
 def main():
     seller, buyer_one, buyer_two = login(SELLER), login(BUYER_ONE), login(BUYER_TWO)
+    price = e2e_client.unit_price(BASE, *seller)
+    e2e_client.ensure_credits(BASE, *seller, 6 * price)
     asset_id, offer_id = make_exclusive_offer(seller)
 
     order_one = reserve(buyer_one, offer_id, "Buyer One")

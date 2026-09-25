@@ -18,7 +18,7 @@ import time
 import uuid
 from decimal import Decimal
 
-import e2e_login
+import e2e_client
 import httpx
 
 BASE = "http://localhost:8000/api"
@@ -42,7 +42,7 @@ def psql_rows(sql: str):
 
 
 def login(creds):
-    return e2e_login.login(BASE, creds[0], creds[1])
+    return e2e_client.login(BASE, creds[0], creds[1])
 
 
 def get(path, sess):
@@ -151,6 +151,8 @@ def offer_status(offer_id):
 
 def main():
     seller, buyer = login(SELLER), login(BUYER)
+    credit_price = e2e_client.unit_price(BASE, *seller)
+    e2e_client.ensure_credits(BASE, *seller, 6 * credit_price)
     order_id, price, offer_id = make_sale(seller, buyer)
     for value in (order_id,):
         if not UUID_RE.match(str(value)):
