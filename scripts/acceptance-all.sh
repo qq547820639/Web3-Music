@@ -159,6 +159,10 @@ step_reservation_race() {
   python scripts/reservation_race.py
 }
 
+step_provider_regression() {
+  python scripts/provider_regression.py "${REGRESSION_JOBS:-100}" "${REGRESSION_CONCURRENCY:-8}"
+}
+
 step_reconcile_market() {
   python scripts/reconcile_market.py
 }
@@ -184,6 +188,7 @@ run_step "acceptance-rerun" step_acceptance_rerun
 run_step "commercial-flow" step_commercial
 run_step "reservation-race" step_reservation_race
 run_step "market-reconciliation" step_reconcile_market
+run_step "provider-regression-100" step_provider_regression
 
 if [ "${CAPACITY:-0}" = "1" ]; then
   run_step "capacity-gate-500" step_capacity

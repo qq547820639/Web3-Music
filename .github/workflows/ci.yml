@@ -115,6 +115,14 @@ jobs:
             echo "::error title=worker-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color worker 2>/dev/null | tail -40 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
+      - name: 100-run generation regression
+        shell: bash
+        run: |
+          if ! python scripts/provider_regression.py "${REGRESSION_JOBS:-100}" 8 > /tmp/reg.log 2>&1; then
+            echo "::error title=provider-regression::$(tail -20 /tmp/reg.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            exit 1
+          fi
+          cat /tmp/reg.log
       - name: Market reconciliation (with diagnostics)
         shell: bash
         run: |
