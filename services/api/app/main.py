@@ -195,6 +195,71 @@ def logout(request:Request,response:Response,user:UserIdentity=Depends(get_user)
 def me(user:UserIdentity=Depends(get_user)):
     return serialize({"user":user.__dict__,"workspaces":list_memberships(user.user_id)})
 
+# (table, actor column, tenant column) triples derived from the migrations' own
+# REFERENCES users(id) columns, so a new table that stores a person cannot quietly drop out of
+# the export. The tenant column is named per table because the RLS policy guarding each row is
+# written against it and the two are not always the same column: brand_submissions is scoped by
+# submitting_workspace_id (db/migrations/002_creation_asset_market_os.sql:496), not workspace_id.
+# erasure_drill.py checks this list against information_schema, so a migration that adds a user
+# key without adding a triple turns the drill red instead of shipping a silently narrower export.
+PERSONAL_TABLES=(("song_projects","created_by","workspace_id"),("project_branches","created_by","workspace_id"),
+  ("generation_quotes","created_by","workspace_id"),("generation_jobs","created_by","workspace_id"),
+  ("master_selections","selected_by","workspace_id"),("project_comments","created_by","workspace_id"),
+  ("project_comments","resolved_by","workspace_id"),("rights_evidence","submitted_by","workspace_id"),
+  ("rights_evidence","reviewed_by","workspace_id"),("asset_offers","created_by","workspace_id"),
+  ("orders","customer_user_id","workspace_id"),("refunds","created_by","workspace_id"),
+  ("brand_briefs","created_by","workspace_id"),("brand_submissions","submitted_by","submitting_workspace_id"),
+  ("support_tickets","opened_by","workspace_id"),("support_tickets","assigned_to","workspace_id"),
+  ("moderation_cases","assigned_to","workspace_id"),("audit_events","actor_id","workspace_id"),
+  ("ledger_transactions","created_by","workspace_id"))
+# Every store the export reads, as table.column, declared in the payload so coverage is a fact a
+# caller (and the drill) can check rather than an implication of which keys happened to come back.
+EXPORT_COVERAGE=tuple(f"{table}.{column}" for table,column,_ in PERSONAL_TABLES)+(
+  "users.id","auth_sessions.user_id","user_preferences.user_id","product_events.user_id","workspace_members.user_id")
+
+@app.get("/api/account/export")
+def account_export(user:UserIdentity=Depends(get_user)):
+    """Subject access request: everything the platform links to this account."""
+    memberships=list_memberships(user.user_id)
+    bundle={"exported_at":datetime.now(timezone.utc),"account":fetch_one(
+        "SELECT id,email,display_name,status,is_platform_admin,created_at,erased_at FROM users WHERE id=%s",(user.user_id,)),
+      "coverage":list(EXPORT_COVERAGE),
+      "workspaces":memberships,
+      "sessions":fetch_all("SELECT id,created_at,last_seen_at,expires_at,revoked_at,revoke_reason,user_agent_hash,ip_hash FROM auth_sessions WHERE user_id=%s ORDER BY created_at",(user.user_id,)),
+      "preferences":[],
+      "events":[],"records":{}}
+    for membership in memberships:
+        # user_preferences and product_events are FORCE ROW LEVEL SECURITY tables, so an
+        # unscoped read of them returns zero rows and raises nothing (measured: the export
+        # answered 200 with an empty preferences list while the row was in the table). Every
+        # RLS-guarded store in this endpoint is therefore read under its own membership, the
+        # same trap 011 and 012 had to solve on the write side.
+        bundle["preferences"]+=fetch_all("SELECT workspace_id,scope,project_id,preferences,learning_enabled,updated_at FROM user_preferences WHERE user_id=%s ORDER BY updated_at",(user.user_id,),membership["id"])
+        bundle["events"]+=fetch_all("SELECT workspace_id,event_name,event_version,project_id,asset_snapshot_id,properties,occurred_at FROM product_events WHERE user_id=%s ORDER BY occurred_at",(user.user_id,),membership["id"])
+        rows={}
+        for table,column,tenant in PERSONAL_TABLES:
+            found=fetch_all(f"SELECT * FROM {table} WHERE {tenant}=%s AND {column}::text=%s",(membership["id"],user.user_id),membership["id"])
+            if found: rows[table+"."+column]=found
+        if rows: bundle["records"][membership["id"]]=rows
+    return serialize(bundle)
+
+class ErasureBody(BaseModel):
+    confirmation:str
+
+@app.post("/api/account/erasure")
+def account_erasure(body:ErasureBody,request:Request,user:UserIdentity=Depends(get_user)):
+    """Right to erasure: identity is anonymised and access is cut, while the accounting
+    record the platform is obliged to keep survives under a non-identifying actor id."""
+    actor=Actor(user.user_id,user.email,user.display_name,user.is_platform_admin,user.session_id,None,"self")
+    with transaction() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        try:
+            cur.execute("SELECT erase_user_identity(%s,%s) AS result",(user.user_id,body.confirmation))
+            result=cur.fetchone()["result"]
+        except psycopg2.errors.RaiseException as exc:
+            raise HTTPException(409,str(exc).strip().splitlines()[0]) from exc
+        audit(cur,actor,"privacy.account.erase","user",user.user_id,{"result":result},request.state.request_id)
+    return serialize({"status":"erased","detail":result})
+
 @app.get("/api/bootstrap")
 def bootstrap(actor:Actor=Depends(get_actor)):
     with transaction(actor.workspace_id) as conn,conn.cursor() as cur: b=ledger_balances(cur,actor.workspace_id)

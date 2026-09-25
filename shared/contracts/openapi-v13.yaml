@@ -120,6 +120,75 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/account/export:
+    get:
+      summary: Account Export
+      description: 'Subject access request: everything the platform links to this
+        account.'
+      operationId: account_export_api_account_export_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/account/erasure:
+    post:
+      summary: Account Erasure
+      description: 'Right to erasure: identity is anonymised and access is cut, while
+        the accounting
+
+        record the platform is obliged to keep survives under a non-identifying actor
+        id.'
+      operationId: account_erasure_api_account_erasure_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErasureBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/bootstrap:
     get:
       summary: Bootstrap
@@ -222,6 +291,22 @@ paths:
           minimum: 0
           default: 0
           title: Offset
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Q
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
       - name: X-Workspace-Id
         in: header
         required: false
@@ -1595,6 +1680,22 @@ paths:
           minimum: 0
           default: 0
           title: Offset
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Q
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
       - name: X-Workspace-Id
         in: header
         required: false
@@ -2050,6 +2151,22 @@ paths:
           minimum: 0
           default: 0
           title: Offset
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Q
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
       - name: X-Workspace-Id
         in: header
         required: false
@@ -2460,6 +2577,22 @@ paths:
           minimum: 0
           default: 0
           title: Offset
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Q
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
       - name: X-Workspace-Id
         in: header
         required: false
@@ -2998,6 +3131,22 @@ paths:
           minimum: 0
           default: 0
           title: Offset
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Q
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
       - name: X-Workspace-Id
         in: header
         required: false
@@ -3703,6 +3852,15 @@ components:
       required:
       - sku
       title: CreditOrderCreate
+    ErasureBody:
+      properties:
+        confirmation:
+          type: string
+          title: Confirmation
+      type: object
+      required:
+      - confirmation
+      title: ErasureBody
     EvidenceCreate:
       properties:
         evidence_type:

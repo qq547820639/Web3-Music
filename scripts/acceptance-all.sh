@@ -165,6 +165,10 @@ step_acceptance_rerun() {
   docker compose --profile test run --rm acceptance
 }
 
+step_erasure_drill() {
+  python scripts/erasure_drill.py
+}
+
 step_commercial() {
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial
@@ -207,6 +211,7 @@ run_step "restore-fidelity-snapshot" step_fidelity_snapshot
 run_step "backup-restore" step_backup_restore
 run_step "restore-fidelity-compare" step_fidelity_compare
 run_step "acceptance-rerun" step_acceptance_rerun
+run_step "erasure-drill" step_erasure_drill
 run_step "commercial-flow" step_commercial
 run_step "reservation-race" step_reservation_race
 run_step "market-reconciliation" step_reconcile_market

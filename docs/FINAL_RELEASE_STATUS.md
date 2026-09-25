@@ -75,7 +75,22 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
   authored by the app (measured 0 after the fix, 10 per radar render before), no uncaught
   exceptions, `script-src 'self'` present on both origins, skip-link and keyboard access
   to the nav, and no horizontal overflow at 390px.
-- Static verification and unit tests: 66 unit tests (previously recorded here as 23, then 54).
+- **Subject access export + right to erasure drill** (new): `scripts/erasure_drill.py` provisions
+  a SQL fixture account (there is no registration endpoint), drives
+  `GET /api/account/export` and `POST /api/account/erasure` over the live API, and checks both
+  polarities of every guard: a wrong confirmation is refused and changes nothing; a sole
+  workspace owner is refused and keeps its session; a platform administrator is refused; the
+  matching confirmation revokes the live session without touching its immutable `expires_at`,
+  removes memberships and preferences, anonymises `email`/`display_name`, and survives a
+  re-run as a no-op. Access is then re-probed (token 401, login 401), retention is re-probed
+  by *attempting* to delete the surviving provenance and requiring the database to refuse
+  (`ERROR: song_spec_revisions is immutable`), and coverage is re-probed against
+  `information_schema`: the export declares the `table.column` stores it reads, and the drill
+  subtracts every foreign key in the live schema that points at `users(id)`. That check was
+  shown to bite — a throwaway `tmp_probe_link(user_id REFERENCES users(id))` table made it name
+  `tmp_probe_link.user_id` and fail, and dropping the table made it pass again.
+- Static verification and unit tests: 70 unit tests (previously recorded here as 23, then 54,
+  then 66).
 
 ## Defects found and fixed by that execution
 
@@ -150,6 +165,30 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
     `release-evidence/` through, which showed up as `stale=6` the moment verdict files were
     committed — so the figures above are the recount *after* that fix, not the first reading
     (which said 194/40/112 and is now wrong in the message of commit `28deafc`).
+11. **The subject export 500s on one table and silently empties two others.** Found by
+    building the erasure drill and running it, not by reading the code:
+    `PERSONAL_TABLES` was derived from the migrations' `REFERENCES users(id)` columns (correct)
+    but queried with a fixed `WHERE workspace_id=…`, and `brand_submissions` is tenant-scoped by
+    `submitting_workspace_id` instead (`db/migrations/002_creation_asset_market_os.sql:496`) —
+    `column "workspace_id" does not exist` took down the whole endpoint. With that fixed, the
+    response was a 200 whose `preferences` key was `[]` while the row existed, because
+    `user_preferences` and `product_events` are `FORCE ROW LEVEL SECURITY` tables and an
+    unscoped read returns nothing and raises nothing — the same RLS trap that produced defects
+    #1 and #5, this time on the read side and invisible to a status code. Both fixed: the list
+    is now `(table, actor column, tenant column)` triples, and every RLS-guarded store is read
+    under each of the caller's own memberships.
+12. **Erasure could not run at all: it tripped its own session-immutability trigger.** The 013
+    function revoked sessions with `expires_at=now()` alongside `revoked_at`, and 005's
+    `guard_auth_session_update` (`db/migrations/005_final_release.sql:44-54`) lists `expires_at`
+    among the immutable columns — so every `POST /api/account/erasure` returned 409
+    `immutable auth session fields cannot change` with the account untouched. `db/migrations/014`
+    drops that one clause; revocation is what the auth path enforces (`auth.py:123/150/178`) and
+    what the app's own rotation and logout already write (`main.py:177`, `main.py:188`). The drill
+    now asserts the revoked state *and* that `expires_at` did not move.
+13. **A read path nothing exercised.** `product_events` has exactly one writer,
+    `POST /api/events` (`services/api/app/routers/creation.py:211`), and no suite had ever
+    called it, so the export's event list was an untested branch on an empty table. The drill
+    records a `candidate_played` event as its fixture and requires it back in the export.
 
 ## Not verified: the 500-user capacity gate
 
@@ -200,7 +239,7 @@ inside the window and could therefore be starved by its own retries.
 ## Scope of the external-tooling review, and what was skipped
 
 Per project practice, new or large components are compared against mature implementations
-before being built. Two such comparisons were made this round, both from material actually
+before being built. Three such comparisons were made this round, all from material actually
 retrieved in this session; retrieval limits are named rather than papered over.
 
 ### Load generator (earlier this day)
@@ -229,6 +268,34 @@ ever see the sign-in screen". Reading its README showed that claim to be false �
 interaction is documented. The choice of Playwright stands, but for the reasons in the row
 above (one session covering fifteen views without paying the login throttle; assertions
 that are not axe's job), not for the one in that commit message.
+
+### Subject access export and right to erasure (this commit)
+
+Candidates looked at through the GitHub search API in this session: **Ethyca Fides**
+(`ethyca/fides`, "The Privacy Engineering & Compliance Framework", 484 stars) and its DSAR
+predecessor (`ethyca/fidesops`, "Privacy as Code for DSAR Orchestration: Privacy Request
+automation to fulfill GDPR, CCPA, and LGPD data subject requests", 49 stars) — **both now
+`archived: true`** (fides last touched 2026-09-22); **PostgreSQL Anonymizer**, whose ecosystem
+was read indirectly through `CuriousLearner/django-postgres-anonymizer` (29 stars, 2025-09) and
+`sendtoshailesh/aws-rds-data-masking-data-anonymization`, whose own description states the
+extension "is not available/compatible with Amazon Aurora or RDS PostgreSQL instances, where
+custom extensions cannot be installed"; and `erichard/awesome-gdpr` (539 stars, updated
+2026-09-24) as the directory. What was **not** read: fides' or the anonymizer's README or docs —
+GitHub page fetches time out in this environment (same limitation noted for axe-core above), so
+the internals of both are described here only as far as their metadata and descriptions say, and
+the load-bearing fact is the archived status, not a code reading.
+
+| candidate | fit | licence | activity | risk | quality | adaptation cost |
+|---|---|---|---|---|---|---|
+| In-repo endpoint + `SECURITY DEFINER` migration function (chosen) | the two rights are one transaction each against **this** schema: 19 user-linked stores, RLS-protected, plus the guards this platform needs (sole owner, platform admin, confirmation-by-email) | n/a, own code | n/a | authority write isolated in a reviewed function, the pattern 011/012 already establish; every guard asserted on both polarities by `erasure_drill.py` | 34 resident checks, coverage re-probed against `information_schema` | lowest available: no new runtime dependency, follows 011/012 |
+| Ethyca Fides / fidesops | purpose-built DSAR orchestration across many external systems (connectors, policy engine, request state machine) — far more than one Postgres cluster needs | per its repo (not re-read this session) | **archived**, which ends "adopt a mature implementation" as an option | would add a second service, its own store of subject data, and its own auth path to a stack whose RLS is the security model | large, mature codebase | highest: multi-service deployment for one endpoint pair |
+| PostgreSQL Anonymizer | rule-based column masking / static anonymisation of a whole table or a role's view — a different axis from "erase one subject, keep the books" | open extension | maintained (integration repos current into 2025-26) | managed-Postgres targets cannot install extensions; this stack runs stock `postgres:16-alpine` (`docker-compose.yml:5`) | purpose-built for its own problem | a custom base image plus `shared_preload_libraries`, and still no export half |
+
+**What was borrowed:** the anonymizer's declarative-rules idea became the export's `coverage`
+declaration (the payload states which `table.column` stores it reads, and the drill subtracts
+every `users(id)` foreign key in the live schema from it), and Fides' "a privacy request leaves
+an audit trail" idea became the `privacy.account.erase` audit row written in the same
+transaction as the erasure itself.
 
 **What was deliberately not surveyed**: the remaining changes are scope-clear local fixes
 reusing a pattern already in this repository — the reservation and refund guards follow

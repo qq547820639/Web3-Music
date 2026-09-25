@@ -89,6 +89,15 @@ jobs:
             exit 1
           fi
       - run: docker compose --profile test run --rm acceptance
+      - name: Subject access export and erasure drill
+        shell: bash
+        run: |
+          if ! python scripts/erasure_drill.py > /tmp/erasure.log 2>&1; then
+            echo "::error title=erasure-drill::$(grep -E '^  - |FAIL|failed' /tmp/erasure.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            tail -40 /tmp/erasure.log
+            exit 1
+          fi
+          tail -5 /tmp/erasure.log
       - if: always()
         run: docker compose logs --no-color > compose.log || true
       - if: always()
