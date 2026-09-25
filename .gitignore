@@ -7,7 +7,6 @@ coverage.xml
 htmlcov/
 .env.generated
 backups/
-release-evidence/*/
 
 # WorkBuddy agent data (not part of source)
 .workbuddy/
@@ -16,3 +15,10 @@ release-evidence/*/
 .restore-fidelity.json
 .lease-contention-state.json
 .chaos-state.json
+
+# Keep each acceptance-all run's step verdicts auditable without committing the
+# multi-megabyte compose logs alongside them.
+release-evidence/*
+!release-evidence/acceptance-*/
+release-evidence/acceptance-*/*
+!release-evidence/acceptance-*/SUMMARY.txt

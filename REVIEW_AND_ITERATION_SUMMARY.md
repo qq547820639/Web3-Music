@@ -11,7 +11,7 @@
 | 层 | 结论 | 证据 |
 |---|---|---|
 | 后端领域能力 | **基本实现（质量中上）** | 创作/资产/市场三 OS、双分录账本、Lease Worker、RLS、SSRF 防护、Provider/Payment 契约、6 个迁移、20 个脚本——均为真实代码，无 TODO |
-| 验证可信度 | **没做完** | `release-evidence` 只有 `28 passed` 的静态/单元 log；CI 编码了完整 E2E 但无通过证据；本机无 Docker，跨容器 E2E 仍无法执行 |
+| 验证可信度 | **已闭环（2026-09-25）** | 跨容器 E2E 已在真实 Compose 栈跑通并留证：`release-evidence/acceptance-20260925T144245Z/`（`acceptance-all.sh` 全 14 步 PASS，commit `82f2ffe`）；单测 28 → 54；详见 `docs/FINAL_RELEASE_STATUS.md` |
 | 前端体验 | **MVP 骨架** | 后端 69 条 API 未在前端对等呈现；原 app.js 32KB 压缩、16 处 `prompt()`、0 loading/aria |
 
 ## 本轮实际落地（14 项）
@@ -24,14 +24,14 @@
 
 ## 诚实标注的边界
 
-1. **E2E 仍未验证**：本机无 Docker（`command not found`），跨容器验收、Chaos、备份恢复、真实 500 并发**本轮无法执行**，与上一版交付的环境限制一致，需在有 Docker 的主机补跑（见 `docs/CODE_WALKTHROUGH.md` T01）。
+1. **E2E 已验证（2026-09-25 补记）**：Docker 在后续环境可用，跨容器验收、契约、Chaos、双 Worker 竞争、备份恢复绝对指纹、商业链路、跨租户隔离、市场对账与 100 次生成回归全部执行通过。唯一仍未取得的是 500 并发容量证据——本机资源低于该 profile 自身声明的请求，Gate 实测判红，未以小规模通过替代。
 2. **前端改动仅语法/结构校验**，未做浏览器点验（本环境无浏览器/Docker）。
 3. 分页是 `limit/offset`（非 cursor），前端分页 UI 尚未接上；admin 控制面列表未纳入本轮。
 4. `SOURCE_MANIFEST.sha256` 因本轮改动已过期，发布前需重新生成。
 
 ## 建议的下一步（按优先级）
 
-1. **在有 Docker 的主机跑 `compose-acceptance` + `commercial-flow` + `chaos-worker-recovery`**，产出并落盘真实 E2E 证据（这是当前唯一 P0）。
+1. ~~在有 Docker 的主机跑 `compose-acceptance` + `commercial-flow` + `chaos-worker-recovery`，产出并落盘真实 E2E 证据（这是当前唯一 P0）。~~ **已完成于 2026-09-25**；剩余 P0 为在达标主机（≥4 vCPU / 16 GiB）或 CI 大规格 runner 上补跑 500-user 容量 Gate。
 2. 前端接上分页 UI + 任务实时化（SSE + 步骤时间线）+ 候选 A/B 对比 + 28 维质量可视化（对应报告 §5.4–5.7）。
 3. 支付侧补「定时对账」兜底（本轮只做了 emulator 超时回调，报告 P0-2 的更彻底方案未实施）。
 4. 引入 Vite 构建 + ESLint + a11y（axe）检查，把前端从"还原后的源码"进一步工程化。

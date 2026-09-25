@@ -31,4 +31,8 @@
 
 ## 未伪造的外部证据
 
-交付环境没有 Docker daemon、正式音乐 Provider、正式支付和目标云账号，因此没有宣称以下证据已通过：跨容器 E2E、真实 500 用户运行压测、500 同时音乐生成、Provider 合同容量、云数据库故障转移和独立渗透测试。对应命令和 Gate 已随包交付，应在目标 Staging 执行后签字。
+本节按下述时间线记录：写作当时交付打包环境没有 Docker daemon，因此跨容器 E2E 未被宣称通过（这一保留是正确的做法，未被用静态验证冒充）。
+
+2026-09-25 更新：跨容器 E2E、Provider/Payment 契约、Worker Kill-9 与双 Worker Lease 竞争、备份恢复绝对指纹、商业全链路、跨租户隔离与 100 次生成回归**已在真实 Compose 栈执行并留证**（`release-evidence/acceptance-20260925T144245Z/`，全 14 步 PASS，见 `docs/FINAL_RELEASE_STATUS.md`）。
+
+仍未取得、也不得以本机结果签字的证据：真实 500 用户压测（本机 4 vCPU / 6 GiB 低于该 profile 自身资源请求，Gate 实测判红，见 `docs/COST_OPTIMIZED_500_CONCURRENCY.md` 实测记录）、500 同时音乐生成、正式 Provider 合同容量、云数据库故障转移、独立渗透测试，以及正式支付与目标云账号相关项。

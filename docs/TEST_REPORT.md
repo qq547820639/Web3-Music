@@ -114,3 +114,17 @@ docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml \
 - 新增 PostgreSQL 连接池、Worker 并行、Provider HTTP 连接复用、presigned 媒体直出、容量索引和容量 Gate 脚本：已完成代码与静态验证。
 
 由于本交付环境没有 Docker daemon，**没有宣称 500 并发已经实测通过**。在部署/预发布 Docker 主机执行 `./scripts/capacity-gate-500.sh` 后，其日志才是 500 并发 Gate 的有效运行证据。
+
+## 2026-09-25 追加：真实执行结果
+
+上文各表是当次打包的静态/单元记录，保留原文不再改写。本轮 Docker 可用，验收已在真实 Compose 栈执行：
+
+- 权威运行：`scripts/acceptance-all.sh`，全新数据库，**全 14 步 PASS**，commit `82f2ffe`，2026-09-25T14:42:45Z → 14:54:14Z，逐步日志与 compose 日志见 `release-evidence/acceptance-20260925T144245Z/`。
+- 单元测试：28 → **54**（新增跨租户/市场对账策略等）。
+- 跨容器常驻用例：默认栈 11 项（备份恢复后复跑再次通过）；商业覆层 11 项（1 项商业全链路 + 10 项跨租户隔离）。
+- 契约测试 4 项；Worker Kill-9 恢复通过；双 Worker Lease 竞争通过（8 任务 / 2 claimant / 160 credits 结算一次）。
+- 备份恢复：绝对指纹校验通过，并已用「删除 master 对象 → 判据转红 → 恢复 → 转绿」证明该校验有牙。
+- 100 次生成回归：`100/100 completed, error rate 0.0%`，逐任务校验哈希、结算额与账本守恒。
+- 执行中实测到并修复两处真实缺陷：独家资产可被重复售出（同一资产 2 张 active 许可证）、`GET /orders` 把分页行数当成订单金额返回（前端据此显示错误价格）。详见 `docs/FINAL_RELEASE_STATUS.md`。
+
+仍未取得有效证据的只有一项：**500 并发容量 Gate**。本机 4 vCPU / 6 GiB 低于 `docker-compose.capacity500.yml` 自身对 api/worker 各 4 CPU / 4 GiB 的请求，Gate 在 500 用户下实测判红（p95 4197ms 与 9832ms 两次，错误率 0%），并发扫描与结论见 `docs/COST_OPTIMIZED_500_CONCURRENCY.md`。因此上面那句「需部署主机的运行日志才算证据」依然成立——只是现在有了真实的失败读数，而不是缺失读数。
