@@ -8,6 +8,7 @@ from psycopg2.pool import ThreadedConnectionPool
 from botocore.client import Config
 from provider import close_http_client as close_provider_http_client, create_adapter
 from ledger import close_hold
+from outcomes import terminal_error
 from metrics import inc as metric_inc, set_gauge, start_server as start_metrics_server
 
 DATABASE_URL=os.getenv("DATABASE_URL","postgresql://music_worker:music_worker@localhost:54329/music")
@@ -276,16 +277,18 @@ async def process(job):
             poll_delay=min(PROVIDER_POLL_MAX_INTERVAL,poll_delay*1.35)
         else:raise Retryable("provider still processing after poll window")
         set_job(job_id,"ingesting",provider_status=result.status);step(job,"media_ingest",f"ingest:{job_id}")
-        ready=0;failed=0
+        ready=0;failed=0;candidate_errors=[]
         for ordinal,candidate in enumerate(result.candidates[:int(job["requested_candidates"])],1):
             with connect() as conn,conn.cursor() as cur:
                 cur.execute("SELECT status,lease_owner FROM generation_jobs WHERE id=%s",(job_id,));live=cur.fetchone()
             if not live or live[0]=="cancel_requested" or live[0]=="cancelled" or live[1]!=WORKER_ID: raise Retryable("job no longer active for this lease")
             clip_id=candidate.get("id") or f"{job['provider_job_id']}-{ordinal}"
             with connect() as conn,conn.cursor() as cur:
-                cur.execute("SELECT status FROM audio_candidates WHERE job_id=%s AND ordinal=%s",(job_id,ordinal));existing=cur.fetchone()
+                cur.execute("SELECT status,metadata->>'ingest_error' FROM audio_candidates WHERE job_id=%s AND ordinal=%s",(job_id,ordinal));existing=cur.fetchone()
             if existing:
-                ready+=1 if existing[0]=="ready" else 0;failed+=1 if existing[0]=="failed" else 0;continue
+                ready+=1 if existing[0]=="ready" else 0;failed+=1 if existing[0]=="failed" else 0
+                if existing[0]=="failed":candidate_errors.append({"ordinal":ordinal,"note":"candidate already recorded failed","ingest_error":json.loads(existing[1]) if existing[1] else None})
+                continue
             if candidate.get("audio_url") and str(candidate.get("status","completed")).lower() not in {"failed","error"}:
                 tmp=None
                 try:
@@ -295,25 +298,26 @@ async def process(job):
                         cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,media_asset_id,recipe,metadata) VALUES(%s,%s,%s,%s,'ready',%s,%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,clip_id,media["id"],psycopg2.extras.Json(recipe),psycopg2.extras.Json(candidate)));conn.commit();ready+=1
                 except Exception as exc:
                     with connect() as conn,conn.cursor() as cur:
-                        cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,recipe,metadata) VALUES(%s,%s,%s,%s,'failed',%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,clip_id,psycopg2.extras.Json({"provider":provider_name}),psycopg2.extras.Json({**candidate,"ingest_error":{"type":type(exc).__name__,"message":str(exc)}})));conn.commit();failed+=1
+                        cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,recipe,metadata) VALUES(%s,%s,%s,%s,'failed',%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,clip_id,psycopg2.extras.Json({"provider":provider_name}),psycopg2.extras.Json({**candidate,"ingest_error":{"type":type(exc).__name__,"message":str(exc)}})));conn.commit();failed+=1;candidate_errors.append({"ordinal":ordinal,"type":type(exc).__name__,"message":str(exc)})
                 finally:
                     if tmp:Path(tmp).unlink(missing_ok=True)
             else:
                 with connect() as conn,conn.cursor() as cur:
-                    cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,recipe,metadata) VALUES(%s,%s,%s,%s,'failed',%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,clip_id,psycopg2.extras.Json({"provider":provider_name}),psycopg2.extras.Json(candidate)));conn.commit();failed+=1
+                    cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,recipe,metadata) VALUES(%s,%s,%s,%s,'failed',%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,clip_id,psycopg2.extras.Json({"provider":provider_name}),psycopg2.extras.Json(candidate)));conn.commit();failed+=1;candidate_errors.append({"ordinal":ordinal,"code":"provider_candidate_failed","provider_status":candidate.get("status") or "no_audio_url"})
         # Missing provider candidates are explicit failures.
         for ordinal in range(len(result.candidates)+1,int(job["requested_candidates"])+1):
             with connect() as conn,conn.cursor() as cur:
-                cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,recipe,metadata) VALUES(%s,%s,%s,%s,'failed',%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,f"missing-{ordinal}",psycopg2.extras.Json({"provider":provider_name}),psycopg2.extras.Json({"error":{"code":"missing_provider_candidate"}})));conn.commit();failed+=1
+                cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,recipe,metadata) VALUES(%s,%s,%s,%s,'failed',%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,f"missing-{ordinal}",psycopg2.extras.Json({"provider":provider_name}),psycopg2.extras.Json({"error":{"code":"missing_provider_candidate"}})));conn.commit();failed+=1;candidate_errors.append({"ordinal":ordinal,"code":"missing_provider_candidate"})
         step(job,"media_ingest",f"ingest:{job_id}","completed",{"ready":ready,"failed":failed})
         settle=ready*int(job["unit_credits"]);final="completed" if ready==job["requested_candidates"] else "partial" if ready else "failed"
+        job_error=terminal_error(final,result.raw.get("error"),ready,failed,int(job["requested_candidates"]),candidate_errors)
         with connect() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT * FROM generation_jobs WHERE id=%s FOR UPDATE",(job_id,));current=cur.fetchone()
             if current["status"]=="cancelled":conn.commit();return
             if current["lease_owner"]!=WORKER_ID: raise Retryable("lease ownership changed before settlement")
             settled,released,hold_status=close_hold(cur,str(job["workspace_id"]),str(job["hold_id"]),settle,job_id)
             cost=job_adapter.reconcile_cost(result,ready)
-            cur.execute("UPDATE generation_jobs SET status=%s,settled_credits=%s,actual_provider_cost=%s,completed_at=now(),lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=now(),error=%s WHERE id=%s",(final,settled,cost,psycopg2.extras.Json(result.raw.get("error")) if result.raw.get("error") else None,job_id))
+            cur.execute("UPDATE generation_jobs SET status=%s,settled_credits=%s,actual_provider_cost=%s,completed_at=now(),lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=now(),error=%s WHERE id=%s",(final,settled,cost,psycopg2.extras.Json(job_error) if job_error else None,job_id))
             cur.execute("UPDATE generation_attempts SET outcome=%s,ended_at=now(),payload=%s WHERE job_id=%s AND attempt=%s",(final,psycopg2.extras.Json({"ready":ready,"failed":failed,"released":released}),job_id,job["attempt_count"]));emit(cur,job["workspace_id"],"GenerationSettled" if ready else "GenerationFailed",job_id,{"status":final,"ready":ready,"settled":settled,"released":released,"hold_status":hold_status});conn.commit()
             metric_inc("ai_music_worker_jobs_terminal_total",status=final);metric_inc("ai_music_worker_candidates_total",ready, status="ready");metric_inc("ai_music_worker_candidates_total",failed, status="failed")
     except Exception as exc:

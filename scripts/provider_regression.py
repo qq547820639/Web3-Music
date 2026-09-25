@@ -78,6 +78,12 @@ def run_one(index: int):
         record["candidates"] = len(ready)
         record["settled"] = int(detail["job"]["settled_credits"]) if detail.get("job") else None
         record["hashes_ok"] = bool(ready) and all(len(c.get("sha256") or "") == 64 for c in ready)
+        # A terminal failure that stores no reason is a defect in its own right: on 2026-09-25
+        # 13 of 15 failed jobs read back as error=NULL because the worker only copied the
+        # provider payload, while the real cause lived on the candidate rows. Checked on every
+        # job the batch produces, so the property cannot silently regress.
+        if record["status"] in {"partial", "failed", "dead_letter"} and not detail["job"].get("error"):
+            raise AssertionError(f"job {job['id']} ended {record['status']} with no reason stored")
         if ready and index % max(1, DEFAULT_JOBS // MEDIA_DOWNLOAD_SAMPLE) == 0:
             token = call("POST", f"/candidates/{ready[0]['id']}/media-token")
             audio = CLIENT.get(BASE.replace("/api", "") + token["url"], timeout=60)

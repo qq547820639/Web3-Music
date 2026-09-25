@@ -1,0 +1,24 @@
+Resonance AI Music Asset Platform — E2E Acceptance
+started_at=2026-09-25T22:38:11Z
+evidence_dir=release-evidence/acceptance-20260925T223811Z
+host=Mac
+git_commit=1f8010ed0f62d1c37746ac7e4b417e0f75a4d0aa
+
+STEP | RESULT | STARTED_AT | FINISHED_AT
+static-verify | PASS | 2026-09-25T22:38:11Z | 2026-09-25T22:38:15Z
+compose-up | PASS | 2026-09-25T22:38:15Z | 2026-09-25T22:38:31Z
+acceptance | PASS | 2026-09-25T22:38:31Z | 2026-09-25T22:39:00Z
+contract-test | PASS | 2026-09-25T22:39:00Z | 2026-09-25T22:39:05Z
+chaos-worker-recovery | PASS | 2026-09-25T22:39:05Z | 2026-09-25T22:39:46Z
+lease-contention | PASS | 2026-09-25T22:39:46Z | 2026-09-25T22:40:20Z
+restore-fidelity-snapshot | PASS | 2026-09-25T22:40:20Z | 2026-09-25T22:40:21Z
+backup-restore | PASS | 2026-09-25T22:40:21Z | 2026-09-25T22:40:59Z
+restore-fidelity-compare | PASS | 2026-09-25T22:40:59Z | 2026-09-25T22:41:00Z
+acceptance-rerun | PASS | 2026-09-25T22:41:00Z | 2026-09-25T22:41:28Z
+erasure-drill | PASS | 2026-09-25T22:41:28Z | 2026-09-25T22:41:32Z
+commercial-flow | PASS | 2026-09-25T22:41:32Z | 2026-09-25T22:42:10Z
+reservation-race | PASS | 2026-09-25T22:42:10Z | 2026-09-25T22:43:38Z
+market-reconciliation | PASS | 2026-09-25T22:43:38Z | 2026-09-25T22:43:56Z
+provider-regression-100 | FAIL | 2026-09-25T22:43:56Z | 2026-09-25T22:51:20Z
+
+finished_at=2026-09-25T22:51:20Z
