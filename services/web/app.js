@@ -59,7 +59,7 @@ function toast(message, type = 'info') {
   const el = $('#toast');
   el.textContent = message;
   el.hidden = false;
-  el.style.borderColor = type === 'error' ? 'var(--danger)' : type === 'ok' ? 'var(--ok)' : 'var(--line)';
+  el.className = `toast${type === 'error' ? ' toast-error' : type === 'ok' ? ' toast-ok' : ''}`;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => el.hidden = true, 4200);
 }
@@ -527,9 +527,9 @@ function renderJobSteps(steps) {
 
 // ---- 28-dimension radar (B3, native SVG, zero deps) ----
 const RADAR_GROUP_META = {
-  Core: { label: '核心维度', color: 'var(--primary)' },
-  Important: { label: '重要维度', color: 'var(--blue)' },
-  Auxiliary: { label: '辅助维度', color: 'var(--warn)' }
+  Core: { label: '核心维度', tone: 'primary' },
+  Important: { label: '重要维度', tone: 'blue' },
+  Auxiliary: { label: '辅助维度', tone: 'warn' }
 };
 const CRITICAL_DIM = {
   CriticalPenalty_TSMI: 'V27',
@@ -559,8 +559,8 @@ function radarChart(group, dims, criticalCodes) {
     const r = Math.max(0, Math.min(1, (Number(d.raw) || 0) / 5)) * radius;
     return pt(i, r).map(v => v.toFixed(1)).join(',');
   }).join(' ');
-  const color = RADAR_GROUP_META[group].color;
-  parts.push(`<polygon points="${dataPts}" class="radar-data" style="fill:${color}"></polygon>`);
+  const meta = RADAR_GROUP_META[group];
+  parts.push(`<polygon points="${dataPts}" class="radar-data tone-${meta.tone}"></polygon>`);
   dims.forEach((d, i) => {
     const [x, y] = pt(i, radius);
     const lx = cx + (radius + 16) * Math.cos(angle(i));
@@ -570,7 +570,10 @@ function radarChart(group, dims, criticalCodes) {
     parts.push(`<circle class="radar-point${crit ? ' critical' : ''}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.4" tabindex="0" role="img" aria-label="${escapeHtml(d.code)} ${escapeHtml(d.name)}：${raw} / ${d.max || 5}" data-radar-point data-code="${escapeHtml(d.code)}" data-name="${escapeHtml(d.name)}" data-group="${group}" data-val="${raw}" data-max="${d.max || 5}" data-note="${escapeHtml(d.note || '')}"></circle>`);
     parts.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" class="radar-label" text-anchor="middle" dominant-baseline="middle">${escapeHtml(d.code)}</text>`);
   });
-  return `<div class="radar-chart"><div class="radar-chart-head"><span class="radar-dot" style="background:${color}"></span><b>${RADAR_GROUP_META[group].label}</b><span class="muted">${n} 维</span></div><svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="${RADAR_GROUP_META[group].label} 雷达图（${n} 维）">${parts.join('')}</svg></div>`;
+  // The hover/focus tip is positioned with SVG attributes: the shipped CSP pins
+  // style-src to 'self', so writing element.style.left would be silently blocked.
+  parts.push(`<g class="radar-tip" aria-hidden="true" transform="translate(0,0)"><rect class="radar-tip-bg" width="168" height="48" rx="7"></rect><text class="radar-tip-title" x="9" y="17"></text><text class="radar-tip-value" x="9" y="31"></text><text class="radar-tip-note" x="9" y="43"></text></g>`);
+  return `<div class="radar-chart"><div class="radar-chart-head"><span class="radar-dot tone-${meta.tone}"></span><b>${meta.label}</b><span class="muted">${n} 维</span></div><svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="${meta.label} 雷达图（${n} 维）">${parts.join('')}</svg></div>`;
 }
 function asObj(v) {
   if (v === null || v === undefined) return v;
@@ -595,37 +598,27 @@ function renderRadar(dims, vars) {
     return gd.length ? radarChart(g, gd, criticalCodes) : '';
   }).join('');
   const dimsList = dims.length ? `<details class="radar-dims"><summary>维度列表（${dims.length} 维，含分值明细）</summary><ul>${dims.map(d => `<li><b>${escapeHtml(d.code)}</b> ${escapeHtml(d.name)} · ${escapeHtml(d.priority || '')} · 分值 ${Number(d.raw) || 0}/${d.max || 5}${d.note ? ` · ${escapeHtml(d.note)}` : ''}</li>`).join('')}</ul></details>` : '';
-  box.innerHTML = `${charts}${dimsList}<div class="radar-legend muted">${groups.map(g => `<span><i class="radar-dot" style="background:${RADAR_GROUP_META[g].color}"></i>${RADAR_GROUP_META[g].label}</span>`).join('')}${criticalCodes.size ? '<span class="radar-critical">红点 = CriticalPenalty 命中</span>' : ''}</div>`;
+  box.innerHTML = `${charts}${dimsList}<div class="radar-legend muted">${groups.map(g => `<span><i class="radar-dot tone-${RADAR_GROUP_META[g].tone}"></i>${RADAR_GROUP_META[g].label}</span>`).join('')}${criticalCodes.size ? '<span class="radar-critical">红点 = CriticalPenalty 命中</span>' : ''}</div>`;
   $$('#radarGrid [data-radar-point]').forEach(el => {
-    el.addEventListener('mousemove', e => moveRadarTip(e, el));
-    el.addEventListener('mouseleave', hideRadarTip);
-    el.addEventListener('focus', () => showRadarTipFor(el));
-    el.addEventListener('blur', hideRadarTip);
+    el.addEventListener('mouseenter', () => setRadarTip(el, true));
+    el.addEventListener('mouseleave', () => setRadarTip(el, false));
+    el.addEventListener('focus', () => setRadarTip(el, true));
+    el.addEventListener('blur', () => setRadarTip(el, false));
   });
 }
-function radarTipHtml(el) {
-  return `<b>${escapeHtml(el.dataset.code)} ${escapeHtml(el.dataset.name)}</b><br><span class="muted">${escapeHtml(el.dataset.group)}</span> · 分值 <b>${escapeHtml(el.dataset.val)}</b> / ${escapeHtml(el.dataset.max)}${el.dataset.note ? `<br><span class="muted">${escapeHtml(el.dataset.note)}</span>` : ''}`;
-}
-function moveRadarTip(e, el) {
-  const tip = $('#radarTip');
+function setRadarTip(point, show) {
+  const svg = point.closest('svg');
+  const tip = svg && svg.querySelector('.radar-tip');
   if (!tip) return;
-  tip.innerHTML = radarTipHtml(el);
-  tip.hidden = false;
-  tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 250) + 'px';
-  tip.style.top = (e.clientY + 14) + 'px';
-}
-function showRadarTipFor(el) {
-  const tip = $('#radarTip');
-  if (!tip) return;
-  tip.innerHTML = radarTipHtml(el);
-  tip.hidden = false;
-  const r = el.getBoundingClientRect();
-  tip.style.left = Math.min(r.left + 14, window.innerWidth - 250) + 'px';
-  tip.style.top = (r.top + 14) + 'px';
-}
-function hideRadarTip() {
-  const tip = $('#radarTip');
-  if (tip) tip.hidden = true;
+  tip.classList.toggle('show', show);
+  if (!show) return;
+  const size = Number(svg.getAttribute('width')) || 200;
+  const x = Math.max(0, Math.min(Number(point.getAttribute('cx')) + 8, size - 172));
+  const y = Math.max(0, Math.min(Number(point.getAttribute('cy')) + 8, size - 52));
+  tip.setAttribute('transform', `translate(${x.toFixed(1)},${y.toFixed(1)})`);
+  tip.querySelector('.radar-tip-title').textContent = `${point.dataset.code} ${point.dataset.name}`;
+  tip.querySelector('.radar-tip-value').textContent = `${point.dataset.group} · 分值 ${point.dataset.val} / ${point.dataset.max}`;
+  tip.querySelector('.radar-tip-note').textContent = point.dataset.note || '';
 }
 
 // Creation OS
@@ -973,14 +966,14 @@ async function renderCandidates(candidates) {
         const token = await api(`/api/candidates/${c.id}/media-token`, {
           method: 'POST'
         });
-        card.innerHTML += `<audio controls preload="none" src="${token.url}" aria-label="${candLabel} 试听"></audio><div class="play-progress"><div class="play-progress-fill"></div></div><div class="row candidate-meta"><span class="muted duration">${fmtDuration(c.duration_ms)}</span>${qualityBadge ? `<span class="tag neutral">${escapeHtml(qualityBadge)}</span>` : ''}</div><div class="row"><button class="master-btn" data-candidate="${c.id}" data-revision="${c.spec_revision}" aria-label="将${candLabel}设为 Master">设为 Master</button><button class="secondary comment-candidate" data-candidate="${c.id}" aria-label="对${candLabel}添加时间点评论">时间点评论</button></div>`;
+        card.innerHTML += `<audio controls preload="none" src="${token.url}" aria-label="${candLabel} 试听"></audio><progress class="play-progress" value="0" max="100" aria-label="试听进度"></progress><div class="row candidate-meta"><span class="muted duration">${fmtDuration(c.duration_ms)}</span>${qualityBadge ? `<span class="tag neutral">${escapeHtml(qualityBadge)}</span>` : ''}</div><div class="row"><button class="master-btn" data-candidate="${c.id}" data-revision="${c.spec_revision}" aria-label="将${candLabel}设为 Master">设为 Master</button><button class="secondary comment-candidate" data-candidate="${c.id}" aria-label="对${candLabel}添加时间点评论">时间点评论</button></div>`;
         const audio = card.querySelector('audio');
-        const fill = card.querySelector('.play-progress-fill');
+        const fill = card.querySelector('.play-progress');
         const dur = card.querySelector('.duration');
         audio.addEventListener('timeupdate', () => {
           const d = audio.duration || (c.duration_ms ? c.duration_ms / 1000 : 0);
           const pct = d ? Math.min(100, (audio.currentTime / d) * 100) : 0;
-          if (fill) fill.style.width = pct + '%';
+          if (fill) fill.value = pct;
         });
         audio.addEventListener('loadedmetadata', () => {
           if (dur) dur.textContent = fmtDuration(audio.duration ? audio.duration * 1000 : c.duration_ms);
@@ -1122,7 +1115,7 @@ async function selectAsset(id) {
   const latest = data.rights_manifests.at(-1);
   const caps = latest?.manifest?.capabilities || {};
   const role = state.memberships.find(w => w.id === state.workspace)?.role;
-  $('#assetDetail').innerHTML = `<p class="eyebrow">ASSET DETAIL</p><h2>${escapeHtml(data.project.title)}</h2><p>Revision ${data.asset.spec_revision} · Rights v${latest?.version || 0}</p><p class="hash">${escapeHtml(data.asset.snapshot_hash)}</p><h3>权利能力</h3><div class="capabilities">${Object.entries(caps).map(([k, v]) => `<span class="cap ${v.status}" title="${escapeHtml(v.reason || '')}">${escapeHtml(k)} · ${escapeHtml(v.status)}</span>`).join('')}</div><h3>来源链</h3><div class="provenance-list"><div class="provenance-item">媒体 SHA-256<br><span class="hash">${escapeHtml(data.candidate.sha256)}</span></div><div class="provenance-item">生成任务<br>${escapeHtml(data.candidate.job_id)}</div><div class="provenance-item">人类贡献事件<br>${data.contributions.length} 条</div><div class="provenance-item">权利证据<br>${data.rights_evidence.length} 条</div></div><div class="row" style="margin-top:16px"><button id="downloadAsset">导出资产包</button><button id="addEvidence" class="secondary">添加证据</button></div><div class="row" style="margin-top:8px"><button id="createOfferFromAsset" class="secondary">创建许可报价</button>${['owner', 'admin', 'legal'].includes(role) ? '<button id="legalReview" class="secondary">权利复核</button>' : ''}</div>`;
+  $('#assetDetail').innerHTML = `<p class="eyebrow">ASSET DETAIL</p><h2>${escapeHtml(data.project.title)}</h2><p>Revision ${data.asset.spec_revision} · Rights v${latest?.version || 0}</p><p class="hash">${escapeHtml(data.asset.snapshot_hash)}</p><h3>权利能力</h3><div class="capabilities">${Object.entries(caps).map(([k, v]) => `<span class="cap ${v.status}" title="${escapeHtml(v.reason || '')}">${escapeHtml(k)} · ${escapeHtml(v.status)}</span>`).join('')}</div><h3>来源链</h3><div class="provenance-list"><div class="provenance-item">媒体 SHA-256<br><span class="hash">${escapeHtml(data.candidate.sha256)}</span></div><div class="provenance-item">生成任务<br>${escapeHtml(data.candidate.job_id)}</div><div class="provenance-item">人类贡献事件<br>${data.contributions.length} 条</div><div class="provenance-item">权利证据<br>${data.rights_evidence.length} 条</div></div><div class="row gap-lg"><button id="downloadAsset">导出资产包</button><button id="addEvidence" class="secondary">添加证据</button></div><div class="row gap-sm"><button id="createOfferFromAsset" class="secondary">创建许可报价</button>${['owner', 'admin', 'legal'].includes(role) ? '<button id="legalReview" class="secondary">权利复核</button>' : ''}</div>`;
   $('#downloadAsset').onclick = () => downloadAsset(id);
   $('#addEvidence').onclick = () => addRightsEvidence(id);
   $('#createOfferFromAsset').onclick = () => createOffer(id);
