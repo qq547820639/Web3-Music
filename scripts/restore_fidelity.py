@@ -27,6 +27,10 @@ STATE = Path(".restore-fidelity.json")
 
 TENANTS = (("owner@example.local", "demo-owner", "seller"),
            ("viewer@other.local", "demo-viewer", "buyer"))
+# Only the seller creates asset_snapshots; a buyer holds deliveries and is fingerprinted
+# through its ledger here, so demanding an asset from every tenant would be the wrong
+# denominator (and did fail, correctly, on a clean database).
+ASSET_OWNERS = {"seller"}
 
 
 def login(email, password):
@@ -86,11 +90,17 @@ def take():
         broken = [a for a, v in entry["assets"].items() if "error" in v]
         if broken:
             raise SystemExit(f"{label}: cannot fingerprint assets {broken}; fix the stack before snapshotting")
-        if not entry["assets"]:
-            raise SystemExit(f"{label}: snapshot has zero assets, so the asset check would prove nothing")
+        if not entry["ledger"]:
+            raise SystemExit(f"{label}: snapshot has no ledger accounts, so the balance check would prove nothing")
+        if label in ASSET_OWNERS and not entry["assets"]:
+            raise SystemExit(f"{label}: expected asset fingerprints but the tenant owns no assets")
     total = sum(len(v["assets"]) for v in state.values())
+    if total == 0:
+        raise SystemExit("snapshot covers zero assets across all tenants; nothing to compare")
     STATE.write_text(json.dumps(state, indent=2, sort_keys=True))
-    print(f"restore-fidelity snapshot written for {len(state)} workspaces, {total} assets", flush=True)
+    counts = ", ".join(f"{label}={len(v['assets'])} assets/{len(v['ledger'])} accounts"
+                       for label, v in sorted(state.items()))
+    print(f"restore-fidelity snapshot written: {total} assets across {len(state)} workspaces ({counts})", flush=True)
 
 
 def compare():
