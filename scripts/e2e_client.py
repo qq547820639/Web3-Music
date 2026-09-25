@@ -1,8 +1,12 @@
 """Shared client for the host-side drills: login, price lookup and credit funding.
 
-The API rate-limits logins per IP (LOGIN_RATE_LIMIT_PER_MINUTE, default 10), and several
-drills run back to back inside one acceptance minute, so a legitimate 429 is expected, not
-a defect. Retry with backoff rather than weakening the control.
+The API throttles logins per **account** (key login:sha256(email),
+LOGIN_RATE_LIMIT_PER_MINUTE, default 10), and several drills authenticate the same
+owner back to back, so a legitimate 429 is expected, not a defect. Retry instead of
+weakening the control — and wait longer than the window: measured against the live
+API, every attempt refreshes the 60s TTL, including the ones that are refused, so
+retrying at 12s or 30s intervals keeps the account locked indefinitely. Only 75s of
+silence was observed to recover it.
 """
 from __future__ import annotations
 
@@ -16,10 +20,10 @@ CREDIT_SKU = "CREDITS_100"
 CREDIT_PACK = 100
 
 
-def login(base: str, email: str, password: str, attempts: int = 8, timeout: int = 30):
+def login(base: str, email: str, password: str, attempts: int = 5, timeout: int = 30):
     """Return (access_token, workspace_id), waiting out the login rate limiter."""
     last = None
-    for attempt in range(attempts):
+    for _ in range(attempts):
         r = httpx.post(base + "/auth/login", json={"email": email, "password": password}, timeout=timeout)
         if r.status_code == 200:
             data = r.json()
@@ -27,9 +31,7 @@ def login(base: str, email: str, password: str, attempts: int = 8, timeout: int 
         last = f"{r.status_code} {r.text[:200]}"
         if r.status_code != 429:
             r.raise_for_status()
-        # The window is per minute, so a short sleep is enough for the first retry or two;
-        # back off further if the bucket is already saturated by neighbouring steps.
-        time.sleep(min(70, 12 * (attempt + 1)))
+        time.sleep(75)
     raise SystemExit(f"login for {email} kept getting rate limited: {last}")
 
 

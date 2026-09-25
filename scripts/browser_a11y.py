@@ -233,17 +233,41 @@ class Auditor:
         return counts
 
 
-def login(page, base: str, auditor: Auditor, viewport: str):
+RATE_LIMITED = re.compile(r"too many login attempts|429", re.I)
+
+
+def login_error(page) -> str:
+    return page.evaluate(
+        "() => { const e = document.querySelector('#loginError') || document.querySelector('#error');"
+        " return e ? e.textContent.trim() : ''; }"
+    )
+
+
+def login(page, base: str, auditor: Auditor, viewport: str, tries: int = 5):
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
     response = page.goto(base, wait_until="networkidle")
     auditor.record_headers(base, response)
     auditor.scan(page, "login", viewport, require="#loginForm")
-    page.fill("#email", EMAIL)
-    page.fill("#password", PASSWORD)
-    page.press("#password", "Enter")
-    page.wait_for_selector("#app:not([hidden])", timeout=20000)
-    page.wait_for_function(
-        "() => { const pill = document.querySelector('#creditPill'); return !pill || /\\d/.test(pill.textContent); }",
-        timeout=20000)
+    detail = ""
+    for attempt in range(tries):
+        page.fill("#email", EMAIL)
+        page.fill("#password", PASSWORD)
+        page.press("#password", "Enter")
+        try:
+            page.wait_for_selector("#app:not([hidden])", timeout=10000)
+            page.wait_for_function(
+                "() => { const pill = document.querySelector('#creditPill'); return !pill || /\\d/.test(pill.textContent); }",
+                timeout=20000)
+            return
+        except PlaywrightTimeout:
+            detail = login_error(page)
+            # The limiter is per account (login:sha256(email), limit 10), and this suite
+            # authenticates the same owner eight times. Measured against the live API,
+            # every attempt — refused ones included — refreshes the 60s window, so the
+            # wait has to exceed it; a 12s or 30s retry never gets back in.
+            page.wait_for_timeout(75000 if RATE_LIMITED.search(detail) else 3000)
+    raise SystemExit(f"login never succeeded after {tries} attempts: {detail or 'no error text'}")
 
 
 def press_until(page, button, expect: str, what: str, tries: int = 12):
