@@ -154,6 +154,11 @@ step_commercial() {
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial
 }
 
+step_reservation_race() {
+  # Needs the commercial overlay still up: an exclusive offer requires approved rights.
+  python scripts/reservation_race.py
+}
+
 step_capacity() {
   # 容量 Gate 会用 capacity500 覆层重起整套栈；先把商业/主栈停掉以释放宿主机端口。
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml down --remove-orphans >/dev/null 2>&1 || true
@@ -173,6 +178,7 @@ run_step "backup-restore" step_backup_restore
 run_step "restore-fidelity-compare" step_fidelity_compare
 run_step "acceptance-rerun" step_acceptance_rerun
 run_step "commercial-flow" step_commercial
+run_step "reservation-race" step_reservation_race
 
 if [ "${CAPACITY:-0}" = "1" ]; then
   run_step "capacity-gate-500" step_capacity

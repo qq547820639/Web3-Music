@@ -72,6 +72,14 @@ jobs:
             exit 1
           fi
       - run: ./scripts/chaos-worker-recovery.sh
+      - name: Two-worker lease contention
+        shell: bash
+        run: |
+          if ! ./scripts/lease-contention.sh > /tmp/contention.log 2>&1; then
+            echo "::error title=lease-contention::$(tail -25 /tmp/contention.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            exit 1
+          fi
+          cat /tmp/contention.log
       - run: ./scripts/backup.sh ci
       - name: Restore from backup (with diagnostics)
         shell: bash
@@ -94,6 +102,9 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install httpx
       - run: cp .env.example .env
       - name: Start commercial stack (with diagnostics)
         shell: bash
@@ -104,6 +115,15 @@ jobs:
             echo "::error title=worker-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color worker 2>/dev/null | tail -40 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
+      - name: Exclusive-offer reservation race (with diagnostics)
+        shell: bash
+        run: |
+          if ! python scripts/reservation_race.py > /tmp/race.log 2>&1; then
+            echo "::error title=reservation-race::$(tail -25 /tmp/race.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color api 2>/dev/null | tail -30 | sed 's/^/::error title=api::/' || true
+            exit 1
+          fi
+          cat /tmp/race.log
       - name: Run commercial acceptance (with diagnostics)
         shell: bash
         run: |

@@ -13,6 +13,14 @@ for p in (root/'docker-compose.yml',root/'docker-compose.commercial-test.yml',ro
     value=yaml.safe_load(p.read_text(encoding='utf-8'))
     assert isinstance(value,dict) and 'services' in value,p
 for p in root.rglob('*.json'):
+    if not p.is_file():
+        continue
+    # Backup and drill output lands in ignored directories, and MinIO stores object metadata
+    # in directories whose names end in .json — walking them made this gate crash, not fail.
+    if any(part.startswith('.') or part in {'backups','release-evidence','capacity-results',
+                                            'node_modules','__pycache__','.venv','venv'}
+           for part in p.parts[:-1]):
+        continue
     json.loads(p.read_text(encoding='utf-8'))
 for p in (root/'shared/contracts').rglob('*.schema.json'):
     Draft202012Validator.check_schema(json.loads(p.read_text(encoding='utf-8')))

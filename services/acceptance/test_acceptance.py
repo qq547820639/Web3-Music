@@ -119,6 +119,10 @@ def test_v12_credit_payment_refund_and_payment_idempotency():
     started=call("POST",f"/orders/{order['id']}/pay",headers={"Idempotency-Key":key},json={"scenario":"success"}).json()
     assert started["order_id"]==order["id"]
     fulfilled=wait_order(order["id"],{"fulfilled"});assert fulfilled["status"]=="fulfilled"
+    # The list endpoint once aliased its window count as "total" and clobbered orders.total,
+    # so the web UI rendered the page row count as the amount paid (app.js:1501).
+    assert str(fulfilled["total"])==str(order["total"]),f"orders list changed the money total: {fulfilled['total']} != {order['total']}"
+    assert int(fulfilled["total"])==sum(int(line["total"]) for line in fulfilled["items"]),"order total does not equal the sum of its line items"
     retry=call("POST",f"/orders/{order['id']}/pay",headers={"Idempotency-Key":key},json={"scenario":"success"}).json();assert retry["id"]==started["id"]
     conflict=requests.post(BASE+f"/orders/{order['id']}/pay",headers=headers(extra={"Idempotency-Key":key}),json={"scenario":"failed"},timeout=20);assert conflict.status_code==409
     after_purchase=float(call("GET","/ledger").json()["balances"]["available"]);assert after_purchase==before+100

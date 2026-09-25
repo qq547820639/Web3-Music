@@ -127,6 +127,22 @@ def _create_order(cur, actor: Actor, order_type: str, currency: str, subtotal: i
     return order
 
 
+def _confirm_offer_reservation(cur, workspace_id: str, order_id: str, offer_id: str):
+    """Promote the reservation that actually still holds the offer, and only that one.
+
+    reserve_marketplace_offer serializes reserving, but nothing serialized *paying*: a buyer
+    whose reservation had already been taken over by someone else could still pay a stale
+    order and be issued a second licence for the same exclusive asset. The check has to live
+    in the database (db/migrations/011) because offer_reservations and asset_offers are
+    tenant-protected and the payer is not the seller's tenant. scripts/reservation_race.py
+    drives that interleaving.
+    """
+    try:
+        cur.execute("SELECT confirm_marketplace_offer_reservation(%s,%s,%s)", (offer_id, order_id, workspace_id))
+    except Exception as exc:
+        raise HTTPException(409, f"offer is no longer yours to buy: {exc}")
+
+
 def _fulfill_paid_order(cur, workspace_id: str, order_id: str, payment_id: str):
     cur.execute("SELECT * FROM orders WHERE id=%s AND workspace_id=%s FOR UPDATE", (order_id, workspace_id))
     order = cur.fetchone()
@@ -172,8 +188,7 @@ def _fulfill_paid_order(cur, workspace_id: str, order_id: str, payment_id: str):
             (workspace_id, order_id, license_id, ends),
         )
         if order["order_type"] == "license":
-            cur.execute("UPDATE offer_reservations SET status='confirmed',updated_at=now() WHERE order_id=%s AND buyer_workspace_id=%s", (order_id, workspace_id))
-            cur.execute("UPDATE asset_offers SET status='sold',updated_at=now() WHERE id=%s AND exclusive=true", (metadata["offer_id"],))
+            _confirm_offer_reservation(cur, workspace_id, order_id, metadata["offer_id"])
         else:
             cur.execute("SELECT * FROM set_brand_submission_status(%s,'awarded')", (metadata["submission_id"],))
             cur.execute("UPDATE brand_briefs SET status='awarded',updated_at=now() WHERE id=%s AND workspace_id=%s", (metadata["brief_id"], workspace_id))
@@ -214,10 +229,16 @@ def list_orders(limit: int = Query(default=PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIM
         params.append(status)
     params += [limit, offset]
     rows = fetch_all(
-        f"SELECT o.*,COALESCE(json_agg(i ORDER BY i.description) FILTER (WHERE i.id IS NOT NULL),'[]') items,COUNT(*) OVER()::int AS total FROM orders o LEFT JOIN order_items i ON i.order_id=o.id WHERE {where} GROUP BY o.id ORDER BY o.created_at DESC LIMIT %s OFFSET %s",
+        f"SELECT o.*,COALESCE(json_agg(i ORDER BY i.description) FILTER (WHERE i.id IS NOT NULL),'[]') items,COUNT(*) OVER()::int AS row_total FROM orders o LEFT JOIN order_items i ON i.order_id=o.id WHERE {where} GROUP BY o.id ORDER BY o.created_at DESC LIMIT %s OFFSET %s",
         tuple(params), actor.workspace_id,
     )
-    return serialize({"items": rows, "total": rows[0]["total"] if rows else 0, "limit": limit, "offset": offset})
+    # The window count must not be aliased `total`: `o.*` already carries the orders.total
+    # money column, and a colliding alias silently replaced every row's amount with the page
+    # row count, which services/web/app.js:1501 then rendered as the price paid.
+    total_count = rows[0].pop("row_total") if rows else 0
+    for row in rows[1:]:
+        row.pop("row_total", None)
+    return serialize({"items": rows, "total": total_count, "limit": limit, "offset": offset})
 
 
 @router.post("/orders/{order_id}/pay", status_code=202)
