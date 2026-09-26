@@ -11,10 +11,10 @@ was actually executed.
 
 Authoritative run: `scripts/acceptance-all.sh` on a fresh database (volumes removed
 before start), **19 steps PASS and 1 recorded as skipped** across 20 rows, commit
-`3da3920`, 2026-09-26T03:59:11Z → 2026-09-26T04:10:38Z, evidence in
-`release-evidence/acceptance-20260926T035911Z/` (per-step logs, `SUMMARY.txt`, full
+`93b4984`, 2026-09-26T07:56:59Z → 2026-09-26T08:10:12Z, evidence in
+`release-evidence/acceptance-20260926T075659Z/` (per-step logs, `SUMMARY.txt`, full
 `compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
-machine-readable record at `release-evidence/browser-a11y-20260926T040732Z/report.json` (stamped with the same commit).
+machine-readable record at `release-evidence/browser-a11y-20260926T080723Z/report.json` (stamped with the same commit).
 What is version-controlled from that directory is only `SUMMARY.txt` (per-step verdicts and timestamps) and the
 browser run's `report.json`; the per-step logs and the two compose log files stay on the host that ran the pipeline.
 So a clone can re-check the step ledger and the whole browser reading (views, scans, violations per impact, CSP,
@@ -22,9 +22,9 @@ So a clone can re-check the step ledger and the whole browser reading (views, sc
 below come from per-step logs that exist only on that host -- re-running the pipeline is how a reader verifies those.
 The pipeline is 20 rows wide now: `mfa-drill` joined at step 12 and `member-drill` at step 13, which
 is also where the erasure drill's step 11 reading comes from.
-Eight green runs precede it on this host
-(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b` — older → newer, at
-15/15/16/16/17/18/19/20 rows with `FAIL=0` in every `SUMMARY.txt`), so the pass is reproducible rather
+Nine green runs precede it on this host
+(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920` — older → newer, at
+15/15/16/16/17/18/19/20/20 rows with `FAIL=0` in every `SUMMARY.txt`), so the pass is reproducible rather
 than a single lucky run. The pipeline widened as steps were added, so what those runs share is "each
 passed every row that existed then", not "the same 20 rows seven times".
 Two discovery records from today are kept because each is the evidence for a defect that is now fixed:
@@ -69,10 +69,10 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
 - **100-run generation regression** (new): `100/100 completed, error rate 0.0%`, per-job
   ready count, 64-hex media hash, sampled real download, `settled_credits == quoted price`,
   and a ledger that moved by exactly the summed settlement with no dangling hold.
-  Across all nine green runs, in run order: **p50 8.18s / p95 20.77s**, **p50 7.615s / p95 11.37s**,
+  Across all ten green runs, in run order: **p50 8.18s / p95 20.77s**, **p50 7.615s / p95 11.37s**,
   **p50 6.25s / p95 8.31s**, **p50 8.525s / p95 13.64s**, **p50 5.195s / p95 9.89s**,
-  **p50 7.18s / p95 15.66s**, **p50 5.09s / p95 5.37s**, **p50 4.09s / p95 5.33s** and
-  **p50 5.06s / p95 5.26s** (the authoritative run, step 17) -- every one of them `100/100 completed, error rate 0.0%` with 1000
+  **p50 7.18s / p95 15.66s**, **p50 5.09s / p95 5.37s**, **p50 4.09s / p95 5.33s**, **p50 5.06s / p95 5.26s**
+  and **p50 6.84s / p95 8.21s** (the authoritative run, step 17) -- every one of them `100/100 completed, error rate 0.0%` with 1000
   credits settled, so the count is constant while the timing spans 4-21s;
   the red run at `1f8010e` read p50 31.88s / p95 81.81s on the same code path with 87/100
   finished. The timing reading moves with host I/O, so it must be quoted per run, not as a
@@ -83,16 +83,17 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
   `/api/bootstrap` reports that identity (measured both ways: with the overlay off it exits
   `expected provider 'generic_rest', the stack reports 'emulator' ... the overlay did not take
   effect`; with a dead base URL it fails a job and prints the reason the worker stored,
-  `job_error={'type': 'ConnectError', ...}`). The step has run four times and read `25/25 completed,
+  `job_error={'type': 'ConnectError', ...}`). The step has run five times and read `25/25 completed,
   error rate 0.0%, settled 250 credits` every time (p50/p95 5.21s/6.37s at step 16 of `2c3ef7f`,
   4.14s/4.19s at step 17 of `96d5955`, 4.14s/4.18s at step 18 of `b79e70b`, 4.11s/4.2s at step 18 of
-  the authoritative run), so the count is the reading that travels and the timing is not. This is the adapter and contract plumbing, not
+  `3da3920` and 5.14s/6.34s at step 18 of the authoritative run), so the count is the reading that travels
+  and the timing is not. This is the adapter and contract plumbing, not
   a provider: the endpoint behind it is still our emulator, so the gate for 100 *real*
   provider runs stays open.
 - **Real-browser walkthrough + axe audit** (new): Playwright driving axe-core 4.13.0
   (pinned by sha256, fetched at run time, test-only) against the live stack —
-  **76 view records, 50 axe scans across desktop 1440 and phone 390, 0 critical and 0
-  serious**, 76 moderate left as follow-up (`region` 46, `heading-order` 22, `landmark-one-main` 8).
+  **88 view records, 62 axe scans across desktop 1440 and phone 390, 0 critical and 0
+  serious**, 96 moderate left as follow-up (`region` 56, `heading-order` 32, `landmark-one-main` 8).
   It also asserts what axe cannot see: the shipped CSP must block **zero** inline styles
   authored by the app (measured 0 after the fix, 10 per radar render before), no uncaught
   exceptions, `script-src 'self'` present on both origins, skip-link and keyboard access
@@ -125,11 +126,11 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
   from the pyotp the server uses, so a green run cannot be two halves of the same mistake. The four
   assertions that carry weight are listed in the round section below; the drill also waits out the
   fixed challenge window by reading the Redis key TTL instead of sleeping a guess.
-- **Workspace membership drill** (new, step 13): `scripts/member_drill.py` — `33/33 checks`, including
+- **Workspace membership drill** (new, step 13): `scripts/member_drill.py` — `39/39 checks`, including
   two that issue a raw `INSERT` and a self-promoting `UPDATE` as the application role and require the
   database to answer `permission denied`, and the loop that closes the erasure dead end: sole owner →
   erasure refused → transfer → erasure succeeds.
-- Static verification and unit tests: 183 unit tests (176 at the previous authoritative run `b79e70b`, 114 at the one before that; this file had recorded 23, then 54, 66, 70 and 78 in earlier revisions), of which 36 arrived with the provider contract: 26 on the generic
+- Static verification and unit tests: 189 unit tests (183 at the previous authoritative run `3da3920`, 176 at the one before that; this file had recorded 23, then 54, 66, 70 and 78 in earlier revisions), of which 36 arrived with the provider contract: 26 on the generic
   REST adapter's own surface and 10 validating the adapter's payload against the written
   schema.
 
@@ -453,8 +454,11 @@ column cannot slip past:
 write it -- `music_app` has SELECT only, so an application-side UPDATE matches zero rows and raises
 nothing, the shape 011 and 012 exist because of. Migration 017 carries add/change/remove/transfer as
 `SECURITY DEFINER` functions; the last-owner rule is the same predicate the eraser uses, transfer
-promotes before it demotes so no intermediate state is ownerless, and the legal role names are not
-restated but left to the `CHECK` constraint. This also removes a dead end that had shipped twice:
+promotes before it demotes so no intermediate state is ownerless -- and, contrary to what this file said when
+the migration shipped, the legal role names *are* restated: `workspace_role_error()` spells all eight, and every
+function calls it first, so that second list is what decides legality today. The roster work made that load-bearing
+(see the round below), and the fix was a resident three-way agreement check rather than a plpgsql rewrite -- 017 is
+applied, and an applied migration's checksum is frozen. This also removes a dead end that had shipped twice:
 since 014 the eraser has refused a sole owner with the instruction "transfer ownership first", and
 until now nothing in the repository could do that. `scripts/member_drill.py` (33 assertions) includes
 two that issue a raw `INSERT` and a self-promoting `UPDATE` as `music_app` and require the database to
@@ -557,3 +561,42 @@ every `console.error` call site. Each criterion was shown to bite on the real tr
 eight mutations (renamed download path, loosened confirmation guard, planted `innerHTML`, renamed element id,
 dropped `role`, erasure added to the CSRF exemption, guard reverted, `status` assignment removed) all fired,
 and the restored tree is green.
+
+## 2026-09-26 the roster gets a panel, and the panel finds a real a11y defect
+
+The membership write path had been shipped, drilled 33/33 and unit-guarded, and still needed curl: an owner could
+not add, re-role, remove or hand over anyone from the product. The 团队协作 panel closes that, and it closed nothing
+honestly until the browser walked it -- which is how the round's two real findings surfaced.
+
+**Where the role names come from.** A select box needs the legal role names, and three places already hold them: the
+CHECK constraint at `001:24`, `workspace_role_error()` inside `017`, and this file's prose. The migration's own
+comment claims the functions do not restate the list -- reading `017` again showed they do, exactly, and that the
+validator is what refuses first. Rather than add a fourth copy in JavaScript, the API now returns the names parsed
+out of `pg_get_constraintdef(workspace_members_role_check)`, a static guard forbids a literal role name anywhere in
+that function (proven by planting one), and `member_drill` compares all three representations on every run and posts
+one add per name so the vocabulary is shown to be accepted, not merely listed. 33/33 became 39/39. The mismatch
+itself is not silently tolerated: an applied migration cannot be edited (checksum), so the guarantee is now the
+resident agreement check, and the docs' claim is corrected here rather than left pretty.
+
+**Contrast that axe could never see until a UI enabled it.** `button.danger` painted white on `var(--danger)`
+= #ff6b6b -- 2.78:1, serious under WCAG -- in both stylesheets, undetected for every prior run because the only
+danger controls in scanned states were disabled and axe skips disabled nodes. The roster put an always-enabled one
+in a scanned view and the gate went red on six findings (`browser-a11y-20260926T074554Z`, kept). Both apps now
+carry `--danger-solid: #b3261e` (6.54:1 measured) for filled danger controls, `--danger` stays a foreground token,
+and the ratio is computed from the stylesheets by a resident test -- palette drift is caught without waiting for
+some future panel to expose it.
+
+**Fixture hygiene.** Two walks that aborted mid-run left three probe accounts in the demo workspace roster, because
+cleanup sat on a line after the browser loop. Cleanup is now registered at creation via `atexit`, per-table and
+tolerant, and the hook's reachability was proven rather than assumed: a control that raises `SystemExit` confirms
+the callback still runs. The roster walk itself refuses to click unless the panel is displaying the probe's own
+e-mail as the erasure/ownership target, which is what makes "the gate cannot delete the demo account" a property of
+the code rather than of care.
+
+**Readings from the authoritative run** (`acceptance-20260926T075659Z`, commit `93b4984`): 19 steps PASS + capacity
+skipped; 189 unit tests; member drill 39/39; erasure 46/46; mfa 52/52; reconciliation 15/15; 100-run regression
+p50 6.84s / p95 8.21s; generic-REST 25/25 at p50 5.14s / p95 6.34s; browser 88 view records over 62 axe scans,
+critical 0 / serious 0, 96 moderate (`region` 56, `heading-order` 32, `landmark-one-main` 8), zero uncaught
+exceptions, 10 console entries all from the network layer (8 expected 401s, 2 expected 409s from the roster
+refusal), and the two walks reporting `2 exports downloaded and parsed, 2 probe accounts erased` and
+`2 roster walks with add/re-role/remove exercised`.

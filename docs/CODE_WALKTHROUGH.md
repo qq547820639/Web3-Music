@@ -371,7 +371,7 @@ graph TD
 
 ### 附：关键证据索引
 
-- 前端体量：`wc -c services/web/app.js` = 80057；`services/admin/admin.js` = 18990；`services/web/index.html` = 16141；`services/web/styles.css` = 25060（压缩单文件；数字随界面增量变动，命令一并写出以便复核）。
+- 前端体量：`wc -c services/web/app.js` = 87764；`services/admin/admin.js` = 18990；`services/web/index.html` = 17153；`services/web/styles.css` = 25270（压缩单文件；数字随界面增量变动，命令一并写出以便复核）。
 - UX 信号：`app.js` 中 `prompt(` 16 次、`confirm(` 4 次、`loading`/`spinner` 0 次、`aria-` 0 次、`tabindex` 0 次。
 - 验证证据：`release-evidence/20260810T000459Z/static-verify.log` = `28 passed in 3.62s`；`environment.txt` = `git_commit=unavailable`。
 - 测试形态：`tests/unit/test_v13_final.py:7-16` 用 psycopg2 stub 规避 DB；`test_capacity_package.py` 为字符串包含断言。
