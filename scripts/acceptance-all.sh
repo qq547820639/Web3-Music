@@ -44,12 +44,25 @@ mkdir -p "$EVIDENCE_DIR"
 # 步骤序号，供 step()/run_step() 使用，并在 SUMMARY 中作为证据来源。
 step_num=0
 
+# host_load_reading：把宿主压力写进证据头，这样跨容器步骤的失败可以先归因、再决定是不是代码问题。
+# 必要性是实测出来的：这台机器的 Docker VM 只有 4 个 vCPU，2026-09-26 一次宿主 load 29-36 的运行里，
+# provider emulator 内部 10s 的阻塞被放大成客户端 20s 读超时，同一棵树两次绿、第三次红在同一步骤；
+# 而当时 SUMMARY 里没有任何一行能说明"跑在什么上"。
+host_load_reading() {
+  load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | tr -s ' ' | sed 's/^ //;s/ $//')
+  [ -n "$load" ] || load=$(awk '{print $1, $2, $3}' /proc/loadavg 2>/dev/null)
+  host_cpus=$( (sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null) )
+  docker_cpus=$(docker info --format '{{.NCPU}}' 2>/dev/null)
+  echo "host_load=\"$load\" host_cpus=${host_cpus:-unknown} docker_cpus=${docker_cpus:-unknown}"
+}
+
 # 初始化 SUMMARY 头。
 {
   echo "Resonance AI Music Asset Platform — E2E Acceptance"
   echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "evidence_dir=$EVIDENCE_DIR"
   echo "host=$(hostname 2>/dev/null || echo unknown)"
+  echo "$(host_load_reading)"
   echo "git_commit=$(git rev-parse HEAD 2>/dev/null || echo unavailable)"
   echo ""
   echo "STEP | RESULT | STARTED_AT | FINISHED_AT"
@@ -92,6 +105,8 @@ run_step() {
   echo ""
   echo "STEP ${step_num} RESULT: ${result}"
   if [ "$result" = FAIL ]; then
+    # 冒号而非竖线：SUMMARY 的表格行按 ' | ' 四列被读数脚本解析，失败行不能混进那个分母。
+    printf 'failed_step_env: %s\n' "$(host_load_reading)" >> "$RESULTS_FILE"
     echo "该步骤失败，日志在 ${log}（证据目录 ${EVIDENCE_DIR}）" >&2
     finish_evidence
     exit 1
@@ -107,6 +122,7 @@ finish_evidence() {
   {
     echo ""
     echo "finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    host_load_reading
   } >> "$RESULTS_FILE"
   if docker compose logs --no-color > "$COMPOSE_LOG" 2>&1; then
     echo "已归档 compose 日志: $COMPOSE_LOG"
