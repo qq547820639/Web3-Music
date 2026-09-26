@@ -11,10 +11,10 @@ was actually executed.
 
 Authoritative run: `scripts/acceptance-all.sh` on a fresh database (volumes removed
 before start), **19 steps PASS and 1 recorded as skipped** across 20 rows, commit
-`1f19952`, 2026-09-26T09:58:44Z → 2026-09-26T10:16:39Z, evidence in
-`release-evidence/acceptance-20260926T095844Z/` (per-step logs, `SUMMARY.txt`, full
+`414752d`, 2026-09-26T12:29:43Z → 2026-09-26T12:46:47Z, host load "22.05 22.50 23.10" on a 4-cpu Docker VM, evidence in
+`release-evidence/acceptance-20260926T122943Z/` (per-step logs, `SUMMARY.txt`, full
 `compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
-machine-readable record at `release-evidence/browser-a11y-20260926T101104Z/report.json` (stamped with the same commit —
+machine-readable record at `release-evidence/browser-a11y-20260926T124244Z/report.json` (stamped with the same commit —
 this round the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the
 tree that was actually tested rather than HEAD-plus-staged-changes).
 What is version-controlled from that directory is only `SUMMARY.txt` (per-step verdicts and timestamps) and the
@@ -126,7 +126,7 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
   subtracts every foreign key in the live schema that points at `users(id)`. That check was
   shown to bite — a throwaway `tmp_probe_link(user_id REFERENCES users(id))` table made it name
   `tmp_probe_link.user_id` and fail, and dropping the table made it pass again.
-- **Second-factor drill** (new, step 12): `scripts/mfa_drill.py` — `54/54 checks` in the authoritative
+- **Second-factor drill** (new, step 12): `scripts/mfa_drill.py` — `56/56 checks` in the authoritative
   run, and the codes come from `scripts/e2e_client.py`'s own stdlib RFC 6238 implementation rather than
   from the pyotp the server uses, so a green run cannot be two halves of the same mistake. The four
   assertions that carry weight are listed in the round section below; the drill also waits out the
@@ -721,14 +721,81 @@ and every recovery code cannot reach erasure, but it also cannot log in to ask, 
 lockout. The admin console still has no member view. And a per-action password means an armed account types a code
 per destructive action -- a deliberate trade against the three-hour window that was rejected above.
 
-**Readings from the authoritative run** (`acceptance-20260926T095844Z`, commit `1f19952`, fresh database created by
+**Readings from the authoritative run** (`acceptance-20260926T122943Z`, commit `414752d`, fresh database created by
 `down -v` before start, 09:58:44Z → 10:16:39Z): 19 steps PASS + capacity skipped across 20 rows; 210 unit tests;
 `authority matrix agrees with the code: 89 routes, 48 writes` with 5 step-up routes; acceptance 11 passed twice;
 contract 5; chaos; lease 8 jobs / 2 workers / 160 credits once; fidelity 2 workspaces and 2 assets byte-identical
-with ledgers unchanged; erasure 53/53; mfa 54/54; member 47/47; reconciliation 15/15; 100-run provider regression
+with ledgers unchanged; erasure 53/53; mfa 56/56; member 47/47; reconciliation 15/15; 100-run provider regression
 100/100 at p50 6.35s / p95 7.9s settling 1000 credits; generic-REST 25/25 at p50 5.17s / p95 6.31s settling 250;
 browser 96 view records over 70 axe scans with critical 0 / serious 0 and 52 moderate, zero uncaught errors, 12
 console entries (8 expected 401 network lines, 2 expected 409 from the roster refusal, 2 expected 403 from the
 wrong-password attempt), 4 privacy states / 8 roster states / 5 second-factor states, 2 exports of 2614 and 2613
 bytes and 2 probe accounts erased. The run that found the `[hidden]` defect is kept as a discovery record
 (`acceptance-20260926T093142Z`, step 19 FAIL, with `browser-a11y-20260926T094118Z/report.json`).
+
+
+## 2026-09-26 enrolment hands over a QR, and two reds turn out to be about who is answering the port
+
+Authoritative run `acceptance-20260926T122943Z` (commit `414752d`, fresh database, 2026-09-26T12:29:43Z → 2026-09-26T12:46:47Z,
+20 rows with 19 PASS and capacity skipped by switch, host load "22.05 22.50 23.10" on a
+4-cpu Docker VM). Unit ladder 229. `scripts/mfa_drill.py` 56/56,
+`scripts/erasure_drill.py` 53/53, `scripts/member_drill.py` 47/47, reconciliation
+15/15. The 100-run provider batch came back at 100/100 completed, error rate 0.0%, p50 4.14s, p95 5.5s, settled 1000 credits across 100 finished jobs
+where the previous round measured p50 6.35s / p95 7.9s on the same fixture; the generic-REST batch is
+25/25 completed, error rate 0.0%, p50 4.12s, p95 4.29s, settled 250 credits across 25 finished jobs. Browser: browser-a11y-20260926T124244Z, 96 views /
+70 axe scans, critical 0 / serious 0 / moderate 52,
+918 elements marked `hidden` with 0 of them still rendering,
+2 exports downloaded and parsed, 2 probe accounts erased (a11y-erasure-desktop-0926T124431Z@example.local, a11y-erasure-mobile-0926T124631Z@example.local).
+
+**Enrolment now renders the provisioning URI as a QR the drill scans back.** Until today the panel
+printed an `otpauth://` string and asked a human to type a base32 seed into an authenticator.
+Candidates compared (all three links opened this session):
+
+| candidate | licence | signal |
+|---|---|---|
+| `segno 1.6.6` (chosen) | BSD-3-Clause, read from the endorsement clause in the `LICENSE` shipped inside the installed dist-info; PyPI classifier "OSI Approved :: BSD License". Pure Python, zero dependencies | renders PNG data URIs directly (`png_data_uri`), so nothing is written to disk and nothing is injected into the DOM |
+| `python-qrcode 8.2` | not installed here and its `LICENSE` was not opened, so no licence claim is made for it | the usual answer, but it pulls a second package (`pypng`) to do what segno does inline |
+| a vendored JS encoder in the browser | n/a | would move secret material into client code and re-open the CSP question for inline script |
+| a hosted QR image service | n/a | rejected outright: the provisioning URI *is* the second factor's seed, and sending it to a third party is the threat, not the feature |
+
+The decode side is `zxing-cpp 3.1.1` (Apache-2.0 per its installed metadata), which is a drill
+requirement only -- `scripts/requirements-drill.txt`, installed in no image, so the release artefact
+still ships segno and nothing else.
+
+The shipped CSP (`nginx.conf`, `img-src 'self' data:`) allows a data URI and forbids inline script, so
+the server hands back `qr_png_data_uri` and `app.js` assigns it to `img.src` -- no `innerHTML`.
+Proof comes from the receiving end: `scripts/e2e_client.py` grew a stdlib PNG reader (chunk walk with
+CRC verification, all five filters, 1-bit unpack written from the PNG chunk/filter model of ISO/IEC 15948) and the drill
+decodes the response with `zxing-cpp 3.1.1`, requiring the decoded text to equal the provisioning URI
+byte for byte. An error level M symbol at scale 4 is asserted against `symbol_size()` so the raster and
+the model cannot drift apart. 13 unit guards in `tests/unit/test_mfa_qr.py`, and the browser walk
+rasterises the panel and asserts the alt text and the data URI shape.
+
+**Red one, kept: `acceptance-20260926T112458Z` (step 10).** `test_provider_emulator_contract` blew its
+20s read timeout on `POST /v1/jobs`. `create_job` is an `async def`, and its idempotency-replay branch
+called `resolve()`, which synthesised every missing clip inline -- measured 9.98s for an eight-candidate
+replay, with an unrelated `GET /health` queued behind it at 9.95s and an 86-second hole in the emulator's
+access log. Clip synthesis costs 0.75-1.0s per candidate in that container, so one client's poll stopped
+the whole process; host load (29-36 on a 4-cpu VM) is what turned 10s into a timeout, which is why the
+same tree had passed this step twice. Generation moved off the request path, publishing stays ordered
+(`results_json` is written only after every clip exists, because a caller that sees `completed` fetches
+`audio_url` immediately), a generator that raises publishes failed candidates instead of hanging, and a
+clip lands by rename so a killed process cannot leave a torn file that `if not path.exists()` reads as
+done. Bytes are unchanged: three clips written by the pre-fix code hash the same as the same call now.
+The guard injects a 0.5s-per-clip fake `write_wav` so it is deterministic instead of timing-dependent,
+and it was fired against the pre-fix file (`an idempotent replay waited 4.06s`).
+
+**Red two, kept: `acceptance-20260926T115637Z` (step 19) -- and it was never this release's failure.**
+Steps 1-18 were green; the browser gate could not find `#loginForm`. At 12:04Z a *different project on
+this machine* started `vite preview`, which bound port 4173 on IPv6, and `localhost` prefers `::1`: from
+12:10Z the gate was driving that other site. `127.0.0.1:4173` still answered with this repo's page (it
+contains `id="loginForm"`), `[::1]:4173` answered with a `/vite.svg` app. A red there is honest, but a
+green under the same collision would have issued this release's accessibility certificate for somebody
+else's page. Two changes: every host-side default under `scripts/` now uses a literal address (14 sites,
+pinned by `tests/unit/test_host_side_endpoints.py` with a denominator and a planted-shape control), and
+`browser_a11y.py` refuses to walk until each origin's first paint is byte-identical to the `index.html`
+the image `COPY`s -- fetched through the browser's own request context, because the first version used
+`urllib`, took the IPv4 path, and *passed* while Chromium was still reaching the intruder. The check
+also catches an image built from a different tree. Both arms were fired against the live collision: on
+`localhost` it exits naming the foreign `<title>` and both hashes; on the default it verifies studio and
+control plane byte for byte and completes the walk.

@@ -76,6 +76,14 @@ docker compose up --build
 ./scripts/contract-test.sh
 ```
 
+宿主机侧脚本（`browser_a11y.py` 与各演练）默认用字面地址 `http://127.0.0.1:<port>` 而不是
+`localhost`：这台开发机是双栈的，`localhost` 会优先解析到 `::1`，而 `::1` 上的 4173 可能被**另一个项目**
+的 dev/preview server 占走（2026-09-26 真发生过，见 `FINAL_RELEASE_STATUS.md` 同日一节）。
+浏览器门禁在走任何状态之前会先取一次本站首屏，与镜像逐字 COPY 的 `services/web/index.html` /
+`services/admin/index.html` 做 sha256 比对，不符就带着对方的 `<title>` 退出——这条既防端口被抢，
+也防"镜像不是从被认证的树构建的"。要指向别处仍然用 `WEB_URL` / `ADMIN_URL` / `API_BASE_URL` 覆盖，
+只是覆盖值请写 IP 或写你确认过的名字。
+
 商业许可合成测试：
 
 ```bash
