@@ -407,6 +407,48 @@ def main() -> int:
         check("and so is which roster was read",
               sql(f"SELECT count(*) FROM audit_events WHERE action='admin.workspace.roster.read' "
                   f"AND actor_id='{admin_id}' AND subject_id='{ws}'") != "0")
+
+        # ---- what is actually holding these three tables apart (registered, not assumed) ----------
+        # Every other business table in the schema is protected by row level security, forced, with a
+        # policy per table. users/workspaces/workspace_members have no policy and no relrowsecurity: the
+        # only wall there is that music_app was never granted anything but SELECT, so a write matches
+        # zero rows and raises nothing -- which is why 017/018 exist. Read from the catalogue rather than
+        # from the migrations, because 001 turns RLS on through EXECUTE format over an array of names and
+        # a static reader cannot see any of it.
+        covered = sql("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
+                      "WHERE n.nspname='public' AND c.relrowsecurity")
+        trio_covered = sql("SELECT count(*) FROM pg_class WHERE relname IN "
+                           "('users','workspaces','workspace_members') AND relrowsecurity")
+        trio_policies = sql("SELECT count(*) FROM pg_policies WHERE tablename IN "
+                            "('users','workspaces','workspace_members')")
+        check("row level security is on for part of the schema, so the next two readings mean something",
+            int(covered or 0) > 0, f"relrowsecurity relations: {covered}")
+        check("and the three identity tables are not part of it",
+              trio_covered == "0" and trio_policies == "0",
+              f"enabled={trio_covered} policies={trio_policies} while {covered} relations are covered")
+        privileges = {table: sql(f"SELECT string_agg(DISTINCT privilege_type, '+' ORDER BY privilege_type) "
+                                 f"FROM information_schema.role_table_grants WHERE grantee='music_app' "
+                                 f"AND table_name='{table}'")
+                      for table in ("users", "workspaces", "workspace_members")}
+        check("what keeps them apart is a privilege that was never granted",
+              all(value == "SELECT" for value in privileges.values()), str(privileges))
+
+        # ---- the side effect of a claim-based roster (a ruling item, pinned either way) -------------
+        # 017 resolves the address, so the two answers differ: an unknown e-mail is refused, a known one
+        # is written into the workspace immediately, with no invitation and no confirmation from the
+        # person named. That is a membership oracle for any owner on the platform and an attachment that
+        # happens without consent; docs/RELEASE_CHECKLIST.md registers it as the owner's call. This pins
+        # the current shape so that adding an invite flow cannot slip past unremarked.
+        claim = httpx.post(BASE + "/workspace/members", json={"email": OUTSIDER, "role": "viewer"},
+                           headers=owner_h, timeout=40)
+        ghost = httpx.post(BASE + "/workspace/members", json={"email": f"nobody-{STAMP}-claim@example.local",
+                                                             "role": "viewer"}, headers=owner_h, timeout=40)
+        check("an address that exists here is attached without that account asking",
+              claim.status_code == 200 and role_of(ws, outsider_id) == "viewer",
+              f"{claim.status_code} role={role_of(ws, outsider_id)}")
+        check("while an address that does not exist is refused in different words",
+              ghost.status_code != 200 and "account" in ghost.text.lower(),
+              f"{ghost.status_code} {ghost.text[:160]}")
     finally:
         for user_id in (owner_id, joiner_id, outsider_id, transferee_id):
             sql(f"DELETE FROM auth_sessions WHERE user_id='{user_id}'")
