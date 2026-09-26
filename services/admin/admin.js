@@ -208,7 +208,9 @@ async function api(path, opt = {}, retry = true) {
     } catch {
       // not JSON; keep the raw text
     }
-    throw new Error(typeof x === 'string' ? x : JSON.stringify(x.detail ?? x));
+    const e = new Error(typeof x === 'string' ? x : JSON.stringify(x.detail ?? x));
+    e.status = r.status;
+    throw e;
   }
   return r.status === 204 ? null : r.json();
 }
@@ -258,7 +260,10 @@ async function init() {
     bindNav();
     await refreshAll();
   } catch (e) {
-    console.error(e);
+    // An unauthenticated cold load is the normal first paint of this app: /api/auth/me answering 401
+    // is not an application fault, and logging it as one filled the browser error channel with
+    // expected refusals (the acceptance gate measured these alongside 0 uncaught exceptions).
+    if (e && e.status !== 401) console.error(e);
     $('#login').hidden = false;
     $('#app').hidden = true;
   }

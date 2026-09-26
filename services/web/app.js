@@ -403,9 +403,12 @@ $('#logout').onclick = async () => {
   location.reload();
 };
 async function init() {
+  renderErasedNotice();
   try {
     const me = await api('/api/auth/me');
     state.user = me.user;
+    // A live session means the erased receipt belongs to somebody else's past; keep it off-screen.
+    sessionStorage.removeItem('resonance_erased');
     state.memberships = me.workspaces;
     if (!state.memberships.some(w => w.id === state.workspace)) state.workspace = state.memberships[0]?.id || '';
     const ws = $('#workspace');
@@ -432,7 +435,10 @@ async function init() {
     };
     await navigate('creation');
   } catch (err) {
-    console.error(err);
+    // A signed-out visitor is the normal first paint: /api/auth/me answering 401 is not an
+    // application fault, and logging it as one put an expected 401 into the error channel on every
+    // cold load (the browser gate measured 16 such console entries while uncaught_errors stayed 0).
+    if (err && err.status !== 401) console.error(err);
     setAuthScreen(false);
   }
 }
@@ -1757,11 +1763,132 @@ async function copyText(value, label) {
 $('#copySecret').onclick = () => copyText(mfaPanel.secret || $('#mfaSecret').textContent, '密钥');
 $('#copyRecovery').onclick = () => copyText([...$('#mfaRecoveryList').querySelectorAll('code')].map(c => c.textContent).join('\n'), '恢复码');
 
+// ---- subject rights: export and erasure (the 数据与账户 panel) ---------------------------------
+// Both endpoints existed and were drilled before this panel did; what it adds is a path a subject
+// can actually walk without a terminal. The button unlocks only on an exact match with the signed-in
+// account's email because that is what erase_user_identity() compares (db/migrations/013), but the
+// guard is convenience rather than safety: the database refuses a mismatch with a 409 and leaves the
+// row untouched, which scripts/erasure_drill.py checks on both polarities.
+function privacyTarget() {
+  const email = state.user?.email || '';
+  $('#erasureTarget').textContent = email || '（未登录）';
+  $('#erasureConfirm').value = '';
+  $('#erasureButton').disabled = true;
+  $('#erasureButton').title = email ? '' : '需要先登录';
+}
+
+function renderExportSummary(data) {
+  // Wire data never goes through innerHTML here; every node is built and filled with textContent.
+  const box = $('#privacyCoverage');
+  box.replaceChildren();
+  const line = document.createElement('p');
+  const records = Object.values(data.records || {}).reduce((n, tables) => n + Object.keys(tables).length, 0);
+  line.textContent = `导出时间 ${data.exported_at || '未知'}；工作区 ${(data.workspaces || []).length} 个、`
+    + `会话 ${(data.sessions || []).length} 个、偏好 ${(data.preferences || []).length} 条、`
+    + `事件 ${(data.events || []).length} 条、记录表 ${records} 组。`;
+  box.append(line);
+  const coverage = document.createElement('p');
+  coverage.className = 'muted';
+  coverage.textContent = `覆盖口径 ${(data.coverage || []).length} 项（table.column 逐列点名）。`;
+  box.append(coverage);
+  const excluded = Object.entries(data.excluded || {});
+  if (excluded.length) {
+    const head = document.createElement('h5');
+    head.textContent = '刻意不给出的字段';
+    const list = document.createElement('ul');
+    list.className = 'privacy-list';
+    for (const [name, reason] of excluded) {
+      const item = document.createElement('li');
+      const key = document.createElement('code');
+      key.textContent = name;
+      item.append(key, document.createTextNode(`：${reason}`));
+      list.append(item);
+    }
+    box.append(head, list);
+  }
+}
+
+$('#privacyExport').onclick = async () => {
+  const btn = $('#privacyExport');
+  $('#privacyError').textContent = '';
+  setLoading(btn, true, '导出中…');
+  $('#privacyState').textContent = '导出中…';
+  try {
+    const data = await api('/api/account/export');
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `account-export-${String(data.exported_at || '').slice(0, 10) || 'data'}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    renderExportSummary(data);
+    $('#privacyState').textContent = '已导出';
+  } catch (err) {
+    $('#privacyState').textContent = '导出失败';
+    $('#privacyError').textContent = err.message;
+  } finally {
+    setLoading(btn, false);
+  }
+};
+
+$('#erasureConfirm').oninput = () => {
+  $('#erasureButton').disabled = $('#erasureConfirm').value.trim() !== (state.user?.email || '');
+};
+
+$('#erasureButton').onclick = async () => {
+  const confirmation = $('#erasureConfirm').value.trim();
+  const btn = $('#erasureButton');
+  $('#erasureError').textContent = '';
+  if (confirmation !== (state.user?.email || '')) {
+    $('#erasureError').textContent = '确认文本必须与账户邮箱完全一致。';
+    return;
+  }
+  setLoading(btn, true, '删除中…');
+  try {
+    const result = await api('/api/account/erasure', { method: 'POST', body: JSON.stringify({ confirmation }) });
+    // The session dies with the account, so this receipt is the only thing that survives the reload;
+    // it is written before reload() because sessionStorage does not outlive a page that is torn down.
+    sessionStorage.setItem('resonance_erased', JSON.stringify({ at: new Date().toISOString(), detail: result?.detail || {} }));
+    location.reload();
+  } catch (err) {
+    // 409 keeps the session alive on purpose (sole owner, platform admin, or a mismatched word), so
+    // the user can read the refusal and act on it instead of being logged out by their own mistake.
+    $('#erasureError').textContent = err.message;
+    setLoading(btn, false);
+  }
+};
+
+function renderErasedNotice() {
+  const raw = sessionStorage.getItem('resonance_erased');
+  if (!raw) return;
+  let receipt = null;
+  try {
+    receipt = JSON.parse(raw);
+  } catch {
+    sessionStorage.removeItem('resonance_erased');
+    return;
+  }
+  const d = receipt.detail || {};
+  $('#erasedNoticeText').textContent = '账户已删除：撤销会话 '
+    + `${d.sessions_revoked ?? 0} 个、移除成员关系 ${d.memberships_removed ?? 0} 个、`
+    + `偏好 ${d.preferences_removed ?? 0} 条、第二因子 ${d.second_factor_removed ? '已清除' : '原本未开启'}。`
+    + '账务与溯源记录以不可识别的形式按保留义务留存。';
+  $('#erasedNotice').hidden = false;
+}
+
+$('#erasedDismiss').onclick = () => {
+  sessionStorage.removeItem('resonance_erased');
+  $('#erasedNotice').hidden = true;
+};
+
 async function loadAccount() {
   // First, and on its own: the second-factor panel is the one part of this view that has to render
   // even when the analytics or ledger calls fail, because it is how a user discovers that a factor
   // is armed and how they take it back off.
   await loadMfa();
+  privacyTarget();
   const [analytics, prefs, ledger] = await Promise.all([api('/api/analytics/overview'), api('/api/preferences'), api('/api/ledger')]);
   const m = analytics.metrics;
   const cards = [['28 天生成', m.generations], ['成功任务', m.successful_jobs], ['Master', m.masters], ['Master 转化', `${(Number(m.master_conversion) * 100).toFixed(1)}%`], ['平均质量', Number(m.avg_quality || 0).toFixed(1)], ['许可', m.licenses]];

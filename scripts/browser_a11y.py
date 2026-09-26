@@ -536,6 +536,105 @@ def retire_second_factor(email: str):
         compose_sql(f"DELETE FROM {table} WHERE {column}='{user_id}'")
 
 
+def provision_privacy_probe(email: str) -> dict:
+    """A creator-role account in the demo workspace, armed with nothing but a password.
+
+    It has to be somebody other than EMAIL: the walk ends by exercising self-erasure, and the demo
+    account is what every other drill on this stack signs in with.
+    """
+    user_id = compose_sql(f"""INSERT INTO users(email,display_name,password_hash,is_platform_admin)
+      SELECT '{email}','A11y Erasure Probe',password_hash,false FROM users WHERE email='{EMAIL}' RETURNING id""")
+    if not user_id or email == EMAIL:
+        raise RuntimeError("the erasure probe is not a distinct account")
+    compose_sql("INSERT INTO workspace_members(workspace_id,user_id,role) SELECT m.workspace_id,'%s','creator' "
+                "FROM workspace_members m JOIN users o ON o.id=m.user_id "
+                "WHERE o.email='%s' AND m.role='owner' LIMIT 1" % (user_id, EMAIL))
+    return {"email": email, "user_id": user_id, "exports": []}
+
+
+def walk_privacy(page, auditor: Auditor, viewport: str, probe: dict) -> list[str]:
+    """Panel -> real download -> confirmation gate -> self-erasure -> receipt on the login screen.
+
+    The erasure is the destructive end of the feature and it is really exercised here: the probe
+    account is created for this step and ends anonymised, the same residue scripts/erasure_drill.py
+    documents as append-only by design.
+    """
+    from playwright.sync_api import Error as PlaywrightError
+
+    failures: list[str] = []
+    page.wait_for_selector("#login:not([hidden])", timeout=20000)
+    page.fill("#email", probe["email"])
+    page.fill("#password", PASSWORD)
+    page.press("#password", "Enter")
+    page.wait_for_selector("#app:not([hidden])", timeout=20000)
+    goto_view(page, "数据与账户", "view-account")
+    page.wait_for_selector("#erasureTarget", timeout=20000)
+    auditor.scan(page, "account-privacy-panel", viewport)
+    if not page.locator("#erasureButton").is_disabled():
+        failures.append("erasure was clickable before any confirmation was typed")
+
+    # The download has to be a download: a panel that only renders a summary in the DOM would prove
+    # nothing about the file a subject actually receives.
+    folder = Path(tempfile.mkdtemp(prefix="w3m-privacy-export-"))
+    landing = folder / "export.json"
+    try:
+        with page.expect_download(timeout=30000) as captured:
+            page.get_by_role("button", name="下载我的数据").click()
+        captured.value.save_as(str(landing))
+        name = captured.value.suggested_filename
+    except PlaywrightError as exc:
+        return [f"the export button produced no download: {str(exc).splitlines()[0]}"]
+    if not name.startswith("account-export-"):
+        failures.append(f"export download was named {name!r}, not account-export-*")
+    bundle = json.loads(landing.read_text(encoding="utf-8"))
+    probe["exports"].append({"bytes": landing.stat().st_size, "viewport": viewport})
+    if not bundle.get("coverage"):
+        failures.append("the downloaded export declared no coverage, so its scope was unverifiable")
+    if "password_hash" not in (bundle.get("excluded") or {}):
+        failures.append("the downloaded export did not declare password_hash as excluded")
+    if "password_hash" in (bundle.get("account") or {}):
+        failures.append("the downloaded export carried password_hash despite declaring it excluded")
+    if (bundle.get("account") or {}).get("id") != probe["user_id"]:
+        failures.append("the export a browser session downloaded was not about that session's own account")
+    summary = (page.text_content("#privacyCoverage") or "").strip()
+    if "覆盖口径" not in summary:
+        failures.append("the export summary never rendered, so the coverage declaration is invisible to a subject")
+    auditor.scan(page, "account-privacy-exported", viewport, require="#privacyCoverage p")
+
+    page.fill("#erasureConfirm", probe["email"] + "x")
+    if not page.locator("#erasureButton").is_disabled():
+        failures.append("a confirmation that does not equal the account email still unlocked erasure")
+    page.fill("#erasureConfirm", probe["email"])
+    if page.locator("#erasureButton").is_disabled():
+        return failures + ["the exact account email did not unlock erasure, so no subject can self-delete"]
+    shown = (page.text_content("#erasureTarget") or "").strip()
+    if shown != probe["email"]:
+        return failures + [f"the panel was showing {shown!r} as the erasure target, not the probe"]
+    page.get_by_role("button", name="永久删除我的账户").click()
+    try:
+        page.wait_for_selector("#erasedNotice:not([hidden])", timeout=30000)
+    except PlaywrightError:
+        return failures + ["after a successful erasure the app never showed the receipt on the login screen"]
+    receipt = (page.text_content("#erasedNoticeText") or "").strip()
+    if "账户已删除" not in receipt:
+        failures.append(f"the erasure receipt said something odd: {receipt[:120]!r}")
+    auditor.scan(page, "login-erased-receipt", viewport, require="#erasedNoticeText")
+    # Cookies are host-scoped, not port-scoped: the session cookie the erased probe left behind would
+    # otherwise be handed to the admin origin in this same context, and its first /api/auth/me would
+    # log "session has been revoked or expired" -- real behaviour, but fixture noise, since the two
+    # apps never share a host in a deployment. The cookie is HttpOnly, so only the test can drop it.
+    page.context.clear_cookies()
+
+    # The account is gone, so the same credentials must now be refused on the same form.
+    page.fill("#email", probe["email"])
+    page.fill("#password", PASSWORD)
+    page.press("#password", "Enter")
+    page.wait_for_selector("#loginError:not(:empty)", timeout=20000)
+    if page.locator("#app:not([hidden])").count():
+        failures.append("the erased account signed back in, so access was not actually cut")
+    return failures
+
+
 def walk_mfa(page, auditor: Auditor, viewport: str, probe: "SecondFactor", email: str):
     """Login step -> armed panel -> drop it -> enrolment -> recovery list. Ends armed again."""
     page.wait_for_selector("#login:not([hidden])", timeout=20000)
@@ -602,6 +701,8 @@ def main() -> int:
         probe = probe_email = None
 
     keyboard: list[str] = []
+    privacy: list[str] = []
+    privacy_probes: list[dict] = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         for viewport, size in VIEWPORTS.items():
@@ -623,6 +724,18 @@ def main() -> int:
                 page.wait_for_selector("#login:not([hidden])", timeout=20000)
                 if stage == "axe" and probe:
                     walk_mfa(page, auditor, viewport, probe, probe_email)
+                if stage == "axe":
+                    # Not best-effort: a run that could not provision the erasure probe has not
+                    # exercised the destructive half of the privacy surface, and must say so in red.
+                    try:
+                        privacy_probe = provision_privacy_probe(
+                            f"a11y-erasure-{viewport}-{time.strftime('%m%dT%H%M%SZ', time.gmtime())}@example.local")
+                    except (SystemExit, OSError, ValueError) as exc:
+                        privacy_probe = None
+                        privacy.append(f"erasure probe could not be provisioned: {str(exc)[:160]}")
+                    if privacy_probe:
+                        privacy_probes.append(privacy_probe)
+                        privacy += walk_privacy(page, auditor, viewport, privacy_probe)
                 admin = context.new_page()
                 auditor.arm(admin)
                 auditor.attach_console(admin, f"{viewport}-{stage}-admin")
@@ -638,7 +751,14 @@ def main() -> int:
         retire_second_factor(probe_email)
 
     mobile_scans = sum(1 for s in auditor.scans if s["viewport"] == "mobile")
+    exports = [e for probe in privacy_probes for e in probe["exports"]]
+    expected_walks = 1 if args.desktop_only else 2
+    privacy = privacy + (
+        [] if len(privacy_probes) >= expected_walks else
+        [f"the privacy walk ran on {len(privacy_probes)} of {expected_walks} viewports, "
+         "so self-erasure was not exercised where it was skipped"])
     failures = (gate_failures(auditor.scans)
+                + sorted(set(privacy))
                 + mobile_fit_failures(auditor.scans, require=not args.desktop_only)
                 + keyboard + csp_failures(auditor.security_headers, [WEB_URL, ADMIN_URL])
                 + sorted(set(auditor.crashes)) + sorted(set(auditor.csp_blocks)))
@@ -655,6 +775,10 @@ def main() -> int:
         "second_factor_states": sorted({s["label"] for s in auditor.scans
                                         if "mfa" in s["label"] or "second-factor" in s["label"]}),
         "second_factor_probe": probe_email,
+        "privacy_states": sorted({s["label"] for s in auditor.scans
+                                  if "privacy" in s["label"] or "erased" in s["label"]}),
+        "privacy_exports": exports,
+        "privacy_probe_accounts": sorted(p["email"] for p in privacy_probes),
         "axe_scans": sum(1 for s in auditor.scans if s["axe"]),
         "violations_by_impact": auditor.summary(),
         "content_security_policy": auditor.security_headers,
@@ -667,6 +791,8 @@ def main() -> int:
     (out_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
 
     print(f"scanned {len(auditor.scans)} views with axe-core {AXE_VERSION}")
+    print(f"privacy walk: {len(exports)} exports downloaded and parsed, "
+          f"{len(privacy_probes)} probe accounts erased ({', '.join(p['email'] for p in privacy_probes) or 'none'})")
     for impact, count in sorted(auditor.summary().items()):
         print(f"  {impact}: {count} rule(s)")
     if auditor.errors:

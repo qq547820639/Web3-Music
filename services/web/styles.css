@@ -90,6 +90,27 @@ button:disabled {
   color: var(--danger);
   min-height: 18px;
 }
+.notice {
+  border: 1px solid rgba(215,255,99,.28);
+  border-radius: 10px;
+  background: rgba(215,255,99,.06);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.notice p {
+  margin: 0 0 8px;
+}
+.privacy-meta p, .privacy-meta h5 {
+  margin: 8px 0 0;
+}
+.privacy-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+.privacy-list code {
+  word-break: break-all;
+}
 .row {
   display: flex;
   align-items: center;
