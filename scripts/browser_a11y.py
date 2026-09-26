@@ -846,10 +846,6 @@ def sign_in_as(page, email: str):
     page.wait_for_selector("#app:not([hidden])", timeout=20000)
 
 
-def offer_row(page, address: str):
-    return page.locator("#inviteList .member-row", has_text=address)
-
-
 def pending_offers(page) -> int:
     """How many offers the owner's panel currently counts as live, read off its own state line."""
     match = re.match(r"(\d+) 份待接受", (page.text_content("#inviteState") or "").strip())

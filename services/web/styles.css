@@ -742,6 +742,15 @@ textarea {
   border-radius: 10px;
   align-items: center;
 }
+/* A grid track asked for as `1fr` is really minmax(auto,1fr): its floor is the item's min-content,
+   so one address long enough to be unbreakable (an e-mail, a token) widens the track past the page
+   instead of wrapping. Measured at 390px: an offered address pushed the account grid to 400px. */
+.order-row>*,.ledger-row>*,.ticket-row>*,.member-row>* {
+  min-width: 0;
+}
+.order-row b,.ledger-row b,.ticket-row b,.member-row b {
+  overflow-wrap: anywhere;
+}
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit,minmax(160px,1fr));
@@ -971,7 +980,7 @@ button.loading::after {
     gap: 12px;
   }
   .account-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0,1fr);
   }
   .account-grid>.panel:last-child {
     grid-column: auto;
