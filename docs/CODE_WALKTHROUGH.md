@@ -58,7 +58,7 @@ flowchart LR
 | 应用/API 层 | `services/api/app` | FastAPI：`main.py`（旧式路由）+ `routers/`（模块化路由）+ `domain/`（纯领域逻辑）+ `auth.py`（会话与令牌）+ `mfa.py`（第二因子材料与密封） |
 | 异步执行层 | `services/worker` | PostgreSQL Lease Worker（领取/心跳/重试/死信）、Provider Adapter、媒体入库、结算 |
 | 仿真/测试层 | `services/provider-emulator`、`services/payment-emulator`、`services/acceptance`、`services/loadtest` | 故障实验室、支付模拟、端到端验收、容量压测 |
-| 契约层 | `shared/contracts` | `authority-matrix.json`（89 条路由 / 48 条写操作的权限派生件，与 `docs/AUTHORITY_MATRIX.md` 成对）+ OpenAPI v13（79 paths，含 `/api/account/export`、`/api/account/erasure`、五个 `/api/auth/mfa/*` 与三条 `/api/workspace/members*`）+ JSON Schema |
+| 契约层 | `shared/contracts` | `authority-matrix.json`（89 条路由 / 48 条写操作的权限派生件，其中 5 条写路由另带「当场再交出凭据」这一列，与 `docs/AUTHORITY_MATRIX.md` 成对）+ OpenAPI v13（79 paths，含 `/api/account/export`、`/api/account/erasure`、五个 `/api/auth/mfa/*` 与三条 `/api/workspace/members*`）+ JSON Schema |
 | 数据层 | `db/migrations`（17 个）、`db/bootstrap` | 领域表、RLS、约束/触发器/索引、种子数据、角色 |
 | 基础设施层 | `infrastructure/prometheus`、`infrastructure/kubernetes` | 指标抓取、生产参考部署 |
 | 运维层 | `scripts/`（33 个） | 启动/验证/Chaos/备份恢复/发布证据/容量 Gate/四条常驻演练 |

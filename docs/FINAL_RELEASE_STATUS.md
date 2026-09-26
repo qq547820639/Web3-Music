@@ -11,10 +11,12 @@ was actually executed.
 
 Authoritative run: `scripts/acceptance-all.sh` on a fresh database (volumes removed
 before start), **19 steps PASS and 1 recorded as skipped** across 20 rows, commit
-`99d5847`, 2026-09-26T08:34:02Z → 2026-09-26T08:46:44Z, evidence in
-`release-evidence/acceptance-20260926T083402Z/` (per-step logs, `SUMMARY.txt`, full
+`1f19952`, 2026-09-26T09:58:44Z → 2026-09-26T10:16:39Z, evidence in
+`release-evidence/acceptance-20260926T095844Z/` (per-step logs, `SUMMARY.txt`, full
 `compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
-machine-readable record at `release-evidence/browser-a11y-20260926T084328Z/report.json` (stamped with the same commit).
+machine-readable record at `release-evidence/browser-a11y-20260926T101104Z/report.json` (stamped with the same commit —
+this round the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the
+tree that was actually tested rather than HEAD-plus-staged-changes).
 What is version-controlled from that directory is only `SUMMARY.txt` (per-step verdicts and timestamps) and the
 browser run's `report.json`; the per-step logs and the two compose log files stay on the host that ran the pipeline.
 So a clone can re-check the step ledger and the whole browser reading (views, scans, violations per impact, CSP,
@@ -22,9 +24,9 @@ So a clone can re-check the step ledger and the whole browser reading (views, sc
 below come from per-step logs that exist only on that host -- re-running the pipeline is how a reader verifies those.
 The pipeline is 20 rows wide now: `mfa-drill` joined at step 12 and `member-drill` at step 13, which
 is also where the erasure drill's step 11 reading comes from.
-Ten green runs precede it on this host
-(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984` —
-older → newer, at 15/15/16/16/17/18/19/20/20/20 rows with `FAIL=0` in every `SUMMARY.txt`), so the pass is reproducible rather
+Eleven green runs precede it on this host
+(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847` —
+older → newer, at 15/15/16/16/17/18/19/20/20/20/20 rows with `FAIL=0` in every `SUMMARY.txt`), so the pass is reproducible rather
 than a single lucky run. The pipeline widened as steps were added, so what those runs share is "each
 passed every row that existed then", not "the same 20 rows seven times".
 Two discovery records from today are kept because each is the evidence for a defect that is now fixed:
@@ -86,14 +88,17 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
   `job_error={'type': 'ConnectError', ...}`). The step has run six times and read `25/25 completed,
   error rate 0.0%, settled 250 credits` every time (p50/p95 5.21s/6.37s at step 16 of `2c3ef7f`,
   4.14s/4.19s at step 17 of `96d5955`, 4.14s/4.18s at step 18 of `b79e70b`, 4.11s/4.2s at step 18 of
-  `3da3920`, 5.14s/6.34s at step 18 of `93b4984` and 4.11s/5.23s at step 18 of the authoritative run), so the
+  `3da3920`, 5.14s/6.34s at step 18 of `93b4984`, 4.11s/5.23s at step 18 of `99d5847` and 5.17s/6.31s at step 18 of the authoritative run), so the
   count is the reading that travels and the timing is not. This is the adapter and contract plumbing, not
   a provider: the endpoint behind it is still our emulator, so the gate for 100 *real*
   provider runs stays open.
 - **Real-browser walkthrough + axe audit** (new): Playwright driving axe-core 4.13.0
   (pinned by sha256, fetched at run time, test-only) against the live stack —
-  **88 view records, 62 axe scans across desktop 1440 and phone 390, 0 critical and 0
-  serious**, 96 moderate left as follow-up (`region` 56, `heading-order` 32, `landmark-one-main` 8).
+  **96 view records, 70 axe scans across desktop 1440 and phone 390, 0 critical and 0
+  serious**, 52 moderate left as follow-up (`heading-order` 36, `landmark-one-main` 8, `region` 8 — an earlier
+  revision of this line said 96 moderate with `region` 56, and 48 of those were the shadow of one defect: the login
+  screen kept rendering underneath every signed-in view because `label { display: grid }` outranks the UA's
+  `[hidden]` rule; see the round section at the end of this file).
   It also asserts what axe cannot see: the shipped CSP must block **zero** inline styles
   authored by the app (measured 0 after the fix, 10 per radar render before), no uncaught
   exceptions, `script-src 'self'` present on both origins, skip-link and keyboard access
@@ -121,16 +126,24 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
   subtracts every foreign key in the live schema that points at `users(id)`. That check was
   shown to bite — a throwaway `tmp_probe_link(user_id REFERENCES users(id))` table made it name
   `tmp_probe_link.user_id` and fail, and dropping the table made it pass again.
-- **Second-factor drill** (new, step 12): `scripts/mfa_drill.py` — `52/52 checks` in the authoritative
+- **Second-factor drill** (new, step 12): `scripts/mfa_drill.py` — `54/54 checks` in the authoritative
   run, and the codes come from `scripts/e2e_client.py`'s own stdlib RFC 6238 implementation rather than
   from the pyotp the server uses, so a green run cannot be two halves of the same mistake. The four
   assertions that carry weight are listed in the round section below; the drill also waits out the
-  fixed challenge window by reading the Redis key TTL instead of sleeping a guess.
-- **Workspace membership drill** (new, step 13): `scripts/member_drill.py` — `39/39 checks`, including
+  fixed challenge window by reading the Redis key TTL instead of sleeping a guess. Two of the three new
+  assertions are an ordering property: dropping the factor now needs the password as well, the password is
+  checked *first*, and a refusal at that wall must leave the one-time code unspent — the drill sends the same
+  code twice, sees 403 the first time and 200 the second, which is what makes "the code was not consumed" a
+  measurement rather than an assumption.
+- **Workspace membership drill** (new, step 13): `scripts/member_drill.py` — `47/47 checks`, including
   two that issue a raw `INSERT` and a self-promoting `UPDATE` as the application role and require the
   database to answer `permission denied`, and the loop that closes the erasure dead end: sole owner →
-  erasure refused → transfer → erasure succeeds.
-- Static verification and unit tests: 196 unit tests (189 at the previous authoritative run `93b4984`, 183 at the one before that; this file had recorded 23, then 54, 66, 70 and 78 in earlier revisions), of which 36 arrived with the provider contract: 26 on the generic
+  erasure refused → transfer → erasure succeeds. Eight of those are the step-up wall: a role change without
+  the password is 401 and changes nothing, with a wrong password it is 403 and changes nothing, the
+  credential is spent *before* the workspace rule is consulted, transferring ownership asks for it too, and
+  at the end six wrong passwords on one account make the seventh attempt — with the *correct* password —
+  answer 429, so the wall is on a clock and not on luck.
+- Static verification and unit tests: 210 unit tests (196 at the previous authoritative run `99d5847`, 189 at the one before that `93b4984`, 183 before that; this file had recorded 23, then 54, 66, 70, 78 and 196 in earlier revisions), of which 36 arrived with the provider contract: 26 on the generic
   REST adapter's own surface and 10 validating the adapter's payload against the written
   schema.
 
@@ -494,11 +507,14 @@ the armed panel are audited by `scripts/browser_a11y.py` in both viewports on a 
 creates and deletes, because arming a demo account would break every other drill that logs in with a
 password alone. The report carries `second_factor_states` so a probe that failed to provision shows up
 as an empty list rather than as a silent skip. The four new states add no new finding type: the armed
-panel and the plain account view report the same two moderate rules with the same node counts.
+panel and the plain account view report the same moderate rules with the same node counts. (That sentence was
+true of the tree it was written against; the round at the end of this file both widened it and lowered the
+numbers, because part of what the two views used to share was the login screen rendering where it should not.)
 
 ## 2026-09-26 the privacy endpoints get a surface a subject can actually walk
 
-`GET /api/account/export` and `POST /api/account/erasure` had been shipped, drilled 46/46 and unit-guarded,
+`GET /api/account/export` and `POST /api/account/erasure` had been shipped, drilled 46/46 (53/53 as of the last
+round) and unit-guarded,
 and none of it was reachable from the product: only the second factor had a panel. A right that needs a
 terminal is not delivered to the person it belongs to, so this round is the interface plus the walk that
 proves the interface.
@@ -536,11 +552,12 @@ non-identifying actor id, because `song_projects` etc. hold NOT NULL foreign key
 `013`'s predicate; the client-side unlock is convenience, the database refusal is the guarantee, and the
 409 leaves the session alive so a person can read why and act on it.
 
-**Design note (unresolved, recorded rather than decided).** Nothing in this product requires re-authenticating
+**Design note (was unresolved, now closed).** Nothing in this product used to require re-authenticating
 immediately before self-erasure -- an XSRF-drained session cookie plus a typed e-mail is weaker than the
-"step-up" flow most account-deletion products use. Raising it means a new endpoint and a threat-model
-decision about what a stolen cookie can do, so it is left as an explicit open item rather than smuggled in
-beside a UI change.
+"step-up" flow most account-deletion products use. Raising it meant a threat-model decision about what a stolen
+cookie can do, so it was left as an explicit open item rather than smuggled in beside a UI change. The following
+round decided it and implemented it; see *the destructive writes stop trusting the session cookie* at the end of
+this file.
 
 **Two console-hygiene defects the walk surfaced, and one fixture hazard.** `/api/auth/me` answering 401 on a
 cold load is the normal signed-out state, yet both apps logged it as a fault; gate console entries went
@@ -574,7 +591,8 @@ comment claims the functions do not restate the list -- reading `017` again show
 validator is what refuses first. Rather than add a fourth copy in JavaScript, the API now returns the names parsed
 out of `pg_get_constraintdef(workspace_members_role_check)`, a static guard forbids a literal role name anywhere in
 that function (proven by planting one), and `member_drill` compares all three representations on every run and posts
-one add per name so the vocabulary is shown to be accepted, not merely listed. 33/33 became 39/39. The mismatch
+one add per name so the vocabulary is shown to be accepted, not merely listed. 33/33 became 39/39, and 47/47 once
+the step-up wall described at the end of this file was added. The mismatch
 itself is not silently tolerated: an applied migration cannot be edited (checksum), so the guarantee is now the
 resident agreement check, and the docs' claim is corrected here rather than left pretty.
 
@@ -633,3 +651,84 @@ approval surfaces the matrix names (rights review, moderation case, comment reso
 review, payouts, switches) -- no defined order, escalation, timeout or reversal path. That is a process
 design to settle with operations, and it stays an open item rather than being renamed as done because a
 table now exists.
+
+## 2026-09-26 the destructive writes stop trusting the session cookie
+
+**What was open.** Five writes were reachable with nothing but a live session: erase my account, transfer
+workspace ownership, change a member's role, remove a member, and drop my own second factor. The erasure panel
+asked the user to retype their e-mail, which proves only that whoever holds the cookie can read the panel -- the
+address is printed on it. The checklist had recorded this as an unresolved design question rather than a gap; this
+round decided it.
+
+**Research, and what it changed.** Three sources were read, not skimmed: RFC 9470 (the resource server answers
+`401 insufficient_user_authentication` and the client repeats the request after obtaining stronger proof), Okta's
+step-up guidance (assurance tiers per action, tokens carrying `acr` demanded versus `amr` actually used, cached
+sessions preferred), and Laravel's `password.confirm` middleware (verify once, stamp the session, stop asking for
+three hours). A Keycloak section was fetched and truncated before the relevant chapter, so nothing here is
+attributed to it; GitHub's "sensitive actions" REST page 404'd and the search returned only unrelated hits, so it
+was not consulted either. Weighed on fit / licence / activity / risk / quality / adaptation cost, the choice is
+**9470's response semantics plus Okta's factor ladder, implemented on this repo's own primitives, and explicitly
+not Laravel's window** -- the threat that motivated the item is a stolen cookie, and a confirmation window is the
+channel it would ride through. No reusable Python library for this was found; the repo already had the two hard
+parts (`verify_password` with `hmac.compare_digest`, and `015`'s `accept_mfa_step` making a code single-use in the
+database rather than per worker), so borrowing the shape cost less than adopting a dependency.
+
+**Implementation.** A `StepUp` request model (`password`, `code`, both optional on the schema because "absent"
+must be a challenge and not a Pydantic 422) is mixed into the five bodies; each endpoint calls
+`step_up_factors()` before it touches the database and records which factors passed in the audit row. Missing
+credential answers 401, a presented-and-wrong one answers 403; collapsing them would either let the schema make a
+security decision or leave a client unable to tell a first attempt from a brute force. Refusals are written to
+`audit_events` against the account itself (not as `system`) in their own transaction. The counter is per account,
+counts **failures only**, and a correct answer empties the window -- six guesses a minute, while a manager who
+confirms seven roster actions in a minute is working, not guessing. Which routes carry the wall is not prose:
+`scripts/authority_matrix.py` walks each endpoint body for the helper call and renders it as the matrix's
+"再认证" column, and `--check` runs inside `static-verify.sh`, so CI sees a route that gained or lost it.
+`shared/contracts/openapi-v13.{json,yaml}` now document `password`/`code` on exactly those five operations.
+
+**What the drills had to say about it.** `erasure_drill` 46 → **53**: the probe is genuinely armed through the real
+endpoints, so erasure owes two credentials, and the drill now proves the ordering -- a wrong password answers 403
+and leaves the one-time code *unspent*, which the very next request demonstrates by spending that same code
+successfully. Three refusals must appear in `audit_events` with `actor_id` set to the account. `member_drill`
+39 → **47**: 401 and 403 both leave the roster byte-identical, the credential is spent before the workspace rule
+is consulted (so "transfer ownership first" cannot leak ahead of identity), and the last section fills the
+failure window and requires that the *seventh* attempt -- with the correct password -- answers 429.
+`mfa_drill` 52 → **54**. One design bug was caught before any pipeline ran: the first version counted attempts,
+and the owner account legitimately confirms seven times inside the member drill's minute, so it would have locked
+itself out of its own workspace mid-run.
+
+**A server bug the static gates could not see.** `step_up_factors` opened its own transaction with a plain cursor
+while `_mfa_pass_code` reads the function result by column name -- a 500 on every armed account's disable. Nothing
+in `tests/unit` touches a database, so what caught it was running the three edited drills standalone against the
+live stack before launching the twelve-minute chain.
+
+**The defect the new assertion found.** The privacy walk was told to refuse when the panel demanded a code from an
+account that has no second factor; on the first run it refused for the opposite reason -- the field was visible.
+`label { display: grid }` (both stylesheets) outranks the UA's `[hidden] { display: none }`, so hiding by attribute
+had been quietly false for as long as the rule existed. The same failure covered `services/web/app.js:321`
+(`$('#login').hidden = true` on an element whose class sets `display: grid`), which means **the login screen kept
+rendering above the app on every signed-in view**: the before/after screenshots of the same state are in the two
+evidence directories, and the 15 committed browser reports show `region` violation nodes growing almost 1:1 with
+scan count (62 scans / 180 nodes, 88 / 324, 96 / 348) -- every view was being audited with a login form in it.
+Fix in two parts: `[hidden] { display: none !important }` in both stylesheets, and a page-wide sweep in the gate
+that fails if any element marked `hidden` still computes a display, with a denominator assertion so an empty sweep
+cannot read as clean (this round: 840 elements marked hidden, 0 still rendering). The follow-up item that used to
+read "96 moderate, `region` 56" is now "52 moderate, `region` 8", and the difference is this defect, not new work
+on landmarks.
+
+**Residuals, stated rather than hidden.** Adding a member stays credential-free -- it is additive and reversible,
+and the boundary this round drew is "irreversible or privilege-removing". An account that has lost both its phone
+and every recovery code cannot reach erasure, but it also cannot log in to ask, so the ladder does not create the
+lockout. The admin console still has no member view. And a per-action password means an armed account types a code
+per destructive action -- a deliberate trade against the three-hour window that was rejected above.
+
+**Readings from the authoritative run** (`acceptance-20260926T095844Z`, commit `1f19952`, fresh database created by
+`down -v` before start, 09:58:44Z → 10:16:39Z): 19 steps PASS + capacity skipped across 20 rows; 210 unit tests;
+`authority matrix agrees with the code: 89 routes, 48 writes` with 5 step-up routes; acceptance 11 passed twice;
+contract 5; chaos; lease 8 jobs / 2 workers / 160 credits once; fidelity 2 workspaces and 2 assets byte-identical
+with ledgers unchanged; erasure 53/53; mfa 54/54; member 47/47; reconciliation 15/15; 100-run provider regression
+100/100 at p50 6.35s / p95 7.9s settling 1000 credits; generic-REST 25/25 at p50 5.17s / p95 6.31s settling 250;
+browser 96 view records over 70 axe scans with critical 0 / serious 0 and 52 moderate, zero uncaught errors, 12
+console entries (8 expected 401 network lines, 2 expected 409 from the roster refusal, 2 expected 403 from the
+wrong-password attempt), 4 privacy states / 8 roster states / 5 second-factor states, 2 exports of 2614 and 2613
+bytes and 2 probe accounts erased. The run that found the `[hidden]` defect is kept as a discovery record
+(`acceptance-20260926T093142Z`, step 19 FAIL, with `browser-a11y-20260926T094118Z/report.json`).

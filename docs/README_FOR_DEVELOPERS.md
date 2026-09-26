@@ -116,6 +116,7 @@ GENERIC_PROVIDER_MODEL=...
 ## 安全边界
 
 - JWT 只证明用户身份；每个请求仍从数据库解析 Workspace Membership。
+- 会话不等于授权：不可逆或会削权的自助动作（删除账户、移交工作区所有权、改/删成员、关闭两步验证）在**发起那一次请求里**再交一次口令，已注册第二因子的账号同时要给一个当前验证码。缺凭证答 401（挑战，不计入爆破窗口），凭证错答 403（计入，每账号每分钟六次，答对即清零）；刻意不设确认窗口——Laravel 那类"确认一次三小时不再问"的会话戳，正是被偷走的 Cookie 会走的通道。哪些端点带这道检查由 `scripts/authority_matrix.py` 从端点函数体派生，写在 `docs/AUTHORITY_MATRIX.md` 的「再认证」列。
 - 「谁能调用哪个端点」不靠记忆：`./scripts/authority_matrix.py --write` 从代码派生 `docs/AUTHORITY_MATRIX.md`，`--check`（已接进 `static-verify.sh`）会重算并比对；改了某个端点的角色名单却忘了改文档，红的是构建。
 - PostgreSQL RLS 为多租户隔离提供第二层保护。
 - AI 只能提出 Patch，不能扣费、调用 Provider、选定 Master、修改 Rights Manifest 或签发 License。
