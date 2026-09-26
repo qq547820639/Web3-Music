@@ -1,4 +1,5 @@
-import hashlib,json,math,os,random,sqlite3,struct,time,uuid,wave
+import hashlib,json,math,os,random,sqlite3,struct,threading,time,uuid,wave
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from fastapi import Body,FastAPI,Header,HTTPException,Request
 from fastapi.staticfiles import StaticFiles
@@ -53,26 +54,81 @@ def write_wav(path:Path,seed:str,bpm:int,ordinal:int):
         t=i/rate;step=int(t/(beat/2))%len(scale);midi=root+scale[step]+(12 if step>=3 else 0);freq=440*(2**((midi-69)/12));chord=440*(2**(((root+(3 if ordinal%2 else 4))-69)/12));bass=440*(2**(((root-12)-69)/12));env=min(1,(t%(beat/2))/.03)*max(.15,1-(t%(beat/2))/(beat/2)*.75);value=.34*math.sin(2*math.pi*freq*t)*env+.18*math.sin(2*math.pi*chord*t)+.16*math.sin(2*math.pi*bass*t)
         if (t%beat)<.08:value+=.18*math.sin(2*math.pi*70*t)*(1-(t%beat)/.08)
         fade=min(1,t/.25,(duration-t)/.5);frames.extend(struct.pack("<h",int(max(-1,min(1,value*fade))*32767)))
-    with wave.open(str(path),"wb") as wf:wf.setnchannels(1);wf.setsampwidth(2);wf.setframerate(rate);wf.writeframes(frames)
+    # Published by rename, not in place: `if not path.exists()` elsewhere treats an existing file
+    # as complete, so a process killed mid-write would otherwise serve a torn WAV forever.
+    tmp=Path(f"{path}.{threading.get_ident()}.part")
+    with wave.open(str(tmp),"wb") as wf:wf.setnchannels(1);wf.setsampwidth(2);wf.setframerate(rate);wf.writeframes(frames)
+    os.replace(tmp,path)
+
+# Clip synthesis is pure-Python and costs ~0.75-1.0s per candidate measured in this container, so
+# it cannot run where a client is waiting: create_job is `async def`, and generating inside it took
+# a concurrent GET /health 9.95s (see docs/FINAL_RELEASE_STATUS.md). Two workers because the GIL
+# serialises the maths anyway; the point is off the event loop, not parallelism.
+_GENERATOR=ThreadPoolExecutor(max_workers=2,thread_name_prefix="clip")
+_GENERATING=set();_GEN_LOCK=threading.Lock()
+
+def build_results(row,req):
+    """The expensive half: synthesise every candidate clip. Only ever called off the request path."""
+    results=[];success=req["candidate_count"] if req["scenario"]!="partial_success" else max(1,req["candidate_count"]-1)
+    for ordinal in range(req["candidate_count"]):
+        clip=f"emu-{row['id'][:8]}-{ordinal+1}"
+        if ordinal<success:
+            filename=clip+".wav";path=MEDIA_ROOT/filename
+            if not path.exists():write_wav(path,row["id"],req["bpm"],ordinal)
+            results.append({"id":clip,"status":"completed","title":f"{req['title']} · Emulator {ordinal+1}","audio_url":row["base_url"].rstrip("/")+"/media/"+filename,"duration":8.0,"metadata":{"ordinal":ordinal+1,"provider":"emulator","not_suno":True}})
+        else:results.append({"id":clip,"status":"failed","error":{"code":"candidate_failed","message":"Emulated partial failure"}})
+    return results
+
+def publish(job_id):
+    """Generate this job's clips, then make them visible by writing results_json.
+
+    Ordering is the contract: a caller that sees completed fetches audio_url immediately, so no
+    result may be published before its bytes are on disk.
+    """
+    row=None
+    try:
+        with db() as conn:
+            row=conn.execute("SELECT * FROM jobs WHERE id=?",(job_id,)).fetchone()
+        if not row or row["results_json"] or row["cancelled"]:return
+        req=json.loads(row["request_json"])
+        if req["scenario"] in {"timeout","failed"}:return
+        results=build_results(row,req)
+        with db() as conn:
+            conn.execute("UPDATE jobs SET results_json=? WHERE id=? AND results_json IS NULL",(json.dumps(results,ensure_ascii=False),job_id));conn.commit()
+    except Exception as exc:
+        # A silent hang here is worse than a visible failure: a poller would wait it out and report
+        # a timeout with no cause, which is how the platform's own retries are tuned.
+        try:count=json.loads(row["request_json"])["candidate_count"] if row is not None else 1
+        except Exception:count=1
+        failed=[{"id":f"emu-{job_id[:8]}-{i+1}","status":"failed","error":{"code":"emulator_generation_error","message":str(exc)}} for i in range(count)]
+        try:
+            with db() as conn:
+                conn.execute("UPDATE jobs SET results_json=? WHERE id=? AND results_json IS NULL",(json.dumps(failed),job_id));conn.commit()
+        except Exception:pass
+    finally:
+        with _GEN_LOCK: _GENERATING.discard(job_id)
+
+def generate(job_id):
+    with _GEN_LOCK:
+        if job_id in _GENERATING:return False
+        _GENERATING.add(job_id)
+    try:
+        _GENERATOR.submit(publish,job_id);return True
+    except RuntimeError:
+        with _GEN_LOCK: _GENERATING.discard(job_id);return False
 
 def resolve(row):
+    """Read-only view of a job: no clip is ever synthesised while a client is waiting."""
     req=json.loads(row["request_json"]);elapsed=time.time()-row["created_at"]
     if row["cancelled"]:return {"id":row["id"],"status":"cancelled","results":[],"provider":"emulator"}
     if req["scenario"]=="timeout":return {"id":row["id"],"status":"processing","results":[],"provider":"emulator"}
     if elapsed<.7:return {"id":row["id"],"status":"queued","results":[],"provider":"emulator"}
     if elapsed<2:return {"id":row["id"],"status":"processing","results":[],"provider":"emulator"}
     if req["scenario"]=="failed":return {"id":row["id"],"status":"failed","results":[],"provider":"emulator","error":{"code":"provider_generation_error","message":"Emulated provider failure"}}
-    if row["results_json"]:results=json.loads(row["results_json"])
-    else:
-        results=[];success=req["candidate_count"] if req["scenario"]!="partial_success" else max(1,req["candidate_count"]-1)
-        for ordinal in range(req["candidate_count"]):
-            clip=f"emu-{row['id'][:8]}-{ordinal+1}"
-            if ordinal<success:
-                filename=clip+".wav";path=MEDIA_ROOT/filename
-                if not path.exists():write_wav(path,row["id"],req["bpm"],ordinal)
-                results.append({"id":clip,"status":"completed","title":f"{req['title']} · Emulator {ordinal+1}","audio_url":row["base_url"].rstrip("/")+"/media/"+filename,"duration":8.0,"metadata":{"ordinal":ordinal+1,"provider":"emulator","not_suno":True}})
-            else:results.append({"id":clip,"status":"failed","error":{"code":"candidate_failed","message":"Emulated partial failure"}})
-        with db() as conn:conn.execute("UPDATE jobs SET results_json=? WHERE id=?",(json.dumps(results,ensure_ascii=False),row["id"]));conn.commit()
+    if not row["results_json"]:
+        generate(row["id"])
+        return {"id":row["id"],"status":"processing","results":[],"provider":"emulator"}
+    results=json.loads(row["results_json"])
     return {"id":row["id"],"status":"partial" if any(x["status"]=="failed" for x in results) else "completed","results":results,"provider":"emulator"}
 
 @app.get("/health")
@@ -97,7 +153,11 @@ async def create_job(request:Request,idempotency_key:str|None=Header(default=Non
             if attempts<=2:raise HTTPException(429,"emulated rate limit")
             payload["scenario"]="success"
         job_id=str(uuid.uuid4());base=str(request.base_url).rstrip("/")
-        conn.execute("INSERT INTO jobs(id,idempotency_key,request_hash,request_json,base_url,created_at) VALUES(?,?,?,?,?,?)",(job_id,idempotency_key,request_hash,json.dumps(payload,ensure_ascii=False),base,time.time()));conn.commit();row=conn.execute("SELECT * FROM jobs WHERE id=?",(job_id,)).fetchone();return resolve(row)
+        conn.execute("INSERT INTO jobs(id,idempotency_key,request_hash,request_json,base_url,created_at) VALUES(?,?,?,?,?,?)",(job_id,idempotency_key,request_hash,json.dumps(payload,ensure_ascii=False),base,time.time()));conn.commit()
+        # Queued behind the commit so the worker thread can see the row: a real provider starts
+        # generating when it accepts the job, not when someone next happens to poll it.
+        generate(job_id)
+        row=conn.execute("SELECT * FROM jobs WHERE id=?",(job_id,)).fetchone();return resolve(row)
 
 @app.get("/v1/jobs/{job_id}")
 def get_job(job_id:str):
