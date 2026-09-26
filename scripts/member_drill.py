@@ -203,21 +203,43 @@ def main() -> int:
               cross.status_code == 403 and role_of(other_ws, outsider_id) == "-", f"{cross.status_code} {cross.text[:160]}")
 
         # ---- change, and the last-owner guard ----------------------------------------
-        changed = httpx.patch(BASE + f"/workspace/members/{joiner_id}", json={"role": "viewer"}, headers=owner_h, timeout=40)
+        # The roster is writable from inside a session, so the credential behind that session is
+        # asked for again at the moment of the write. Both refusals below have to leave the role
+        # exactly as it was, which is the only way to tell "refused" from "refused after writing".
+        no_cred = httpx.patch(BASE + f"/workspace/members/{joiner_id}", json={"role": "viewer"}, headers=owner_h, timeout=40)
+        check("a role change is refused until the password is re-presented",
+              no_cred.status_code == 401 and role_of(ws, joiner_id) == "creator",
+              f"{no_cred.status_code} {no_cred.text[:160]} role={role_of(ws, joiner_id)}")
+        bad_cred = httpx.patch(BASE + f"/workspace/members/{joiner_id}", json={"role": "viewer", "password": "not-the-password"},
+                               headers=owner_h, timeout=40)
+        check("and by a password that does not match the account",
+              bad_cred.status_code == 403 and role_of(ws, joiner_id) == "creator",
+              f"{bad_cred.status_code} {bad_cred.text[:160]} role={role_of(ws, joiner_id)}")
+        check("the credential is spent before the workspace rules are consulted",
+              "transfer ownership" not in bad_cred.text, bad_cred.text[:160])
+        changed = httpx.patch(BASE + f"/workspace/members/{joiner_id}", json={"role": "viewer", "password": PASSWORD},
+                              headers=owner_h, timeout=40)
         check("an owner can change a role", changed.status_code == 200 and role_of(ws, joiner_id) == "viewer",
               f"{changed.status_code} {changed.text[:160]}")
-        demote_self = httpx.patch(BASE + f"/workspace/members/{owner_id}", json={"role": "admin"}, headers=owner_h, timeout=40)
+        demote_self = httpx.patch(BASE + f"/workspace/members/{owner_id}", json={"role": "admin", "password": PASSWORD},
+                                  headers=owner_h, timeout=40)
         check("the only owner cannot demote themselves",
               demote_self.status_code == 409 and "transfer ownership" in demote_self.text, f"{demote_self.status_code} {demote_self.text[:160]}")
         check("and that refusal changed nothing", role_of(ws, owner_id) == "owner")
-        remove_self = httpx.delete(BASE + f"/workspace/members/{owner_id}", headers=owner_h, timeout=40)
+        remove_self = httpx.request("DELETE", BASE + f"/workspace/members/{owner_id}", json={"password": PASSWORD},
+                                    headers=owner_h, timeout=40)
         check("the only owner cannot remove themselves either",
               remove_self.status_code == 409 and "transfer ownership" in remove_self.text, f"{remove_self.status_code} {remove_self.text[:160]}")
         check("the workspace still has exactly its one owner",
               sql(f"SELECT count(*) FROM workspace_members WHERE workspace_id='{ws}' AND role='owner'") == "1")
 
         # ---- transfer, which is the way out of both guards ---------------------------
-        transfer = httpx.post(BASE + "/workspace/members/transfer", json={"user_id": joiner_id}, headers=owner_h, timeout=40)
+        bare_transfer = httpx.post(BASE + "/workspace/members/transfer", json={"user_id": joiner_id}, headers=owner_h, timeout=40)
+        check("transferring ownership asks for the password too",
+              bare_transfer.status_code == 401 and role_of(ws, joiner_id) == "viewer",
+              f"{bare_transfer.status_code} {bare_transfer.text[:160]}")
+        transfer = httpx.post(BASE + "/workspace/members/transfer",
+                              json={"user_id": joiner_id, "password": PASSWORD}, headers=owner_h, timeout=40)
         check("ownership moves to an existing member",
               transfer.status_code == 200 and role_of(ws, joiner_id) == "owner" and role_of(ws, owner_id) == "admin",
               f"{transfer.status_code} {transfer.text[:160]} owner={role_of(ws, joiner_id)} previous={role_of(ws, owner_id)}")
@@ -225,19 +247,38 @@ def main() -> int:
               sql(f"SELECT count(*) FROM workspace_members WHERE workspace_id='{ws}' AND role='owner'") == "1")
         outsider_h = {"Authorization": f"Bearer {tokens['joiner']}", "X-Workspace-Id": ws, "Content-Type": "application/json"}
         tokens["joiner_owner"] = outsider_h
-        back = httpx.post(BASE + "/workspace/members/transfer", json={"user_id": owner_id}, headers=owner_h, timeout=40)
+        back = httpx.post(BASE + "/workspace/members/transfer",
+                          json={"user_id": owner_id, "password": PASSWORD}, headers=owner_h, timeout=40)
         check("the account that gave up ownership cannot take it back by itself",
               back.status_code == 409 and "only the current owner" in back.text, f"{back.status_code} {back.text[:160]}")
         check("the new owner is still the new owner", role_of(ws, joiner_id) == "owner")
-        evict = httpx.post(BASE + "/workspace/members/transfer", json={"user_id": outsider_id}, headers=outsider_h, timeout=40)
+        evict = httpx.post(BASE + "/workspace/members/transfer",
+                           json={"user_id": outsider_id, "password": PASSWORD}, headers=outsider_h, timeout=40)
         check("ownership cannot move to someone who is not a member",
               evict.status_code == 409 and "must already be a member" in evict.text, f"{evict.status_code} {evict.text[:160]}")
         # the ex-owner is now an admin, and an admin must not be able to evict an owner
-        removed_by_admin = httpx.delete(BASE + f"/workspace/members/{joiner_id}", headers=owner_h, timeout=40)
+        removed_by_admin = httpx.request("DELETE", BASE + f"/workspace/members/{joiner_id}", json={"password": PASSWORD},
+                                         headers=owner_h, timeout=40)
         check("an admin who is not an owner cannot remove the owner",
               removed_by_admin.status_code == 409 and "only an owner" in removed_by_admin.text,
               f"{removed_by_admin.status_code} {removed_by_admin.text[:160]}")
         check("the owner is still there", role_of(ws, joiner_id) == "owner")
+
+        # ---- the wall is on a clock, not on luck -------------------------------------
+        # Wrong passwords are counted per account and the window is fixed, so guessing is bounded even
+        # though a manager moving through the roster seven times a minute is not. This runs here
+        # because filling that window is precisely what it does, and nothing after it needs the
+        # owner's credential again.
+        statuses = [httpx.patch(BASE + f"/workspace/members/{joiner_id}", json={"role": "creator", "password": f"wrong-{i}"},
+                                headers=owner_h, timeout=40).status_code for i in range(8)]
+        limit = statuses.index(429) + 1 if 429 in statuses else None
+        check("repeated wrong passwords are throttled", limit is not None, f"statuses: {statuses}")
+        check("the throttle does not fire on the first attempt", bool(limit) and limit > 1, f"429 at attempt {limit}")
+        check("while it is full even the right password is refused",
+              limit is not None and httpx.patch(BASE + f"/workspace/members/{joiner_id}",
+                                                json={"role": "creator", "password": PASSWORD},
+                                                headers=owner_h, timeout=40).status_code == 429)
+        check("and none of it wrote a role", role_of(ws, joiner_id) == "owner")
 
         # ---- the loop 014's error message promised -----------------------------------
         # erase_user_identity refuses a sole owner and says "transfer ownership first". Before 017
@@ -246,17 +287,20 @@ def main() -> int:
         eraser_token = sign_in(ERASER)
         eraser_h = {"Authorization": f"Bearer {eraser_token}", "X-Workspace-Id": ws, "Content-Type": "application/json"}
         sql(f"INSERT INTO workspace_members(workspace_id,user_id,role) VALUES ('{other_ws}','{eraser_id}','owner')")
-        blocked = httpx.post(BASE + "/account/erasure", json={"confirmation": ERASER}, headers=eraser_h, timeout=40)
+        blocked = httpx.post(BASE + "/account/erasure", json={"confirmation": ERASER, "password": PASSWORD},
+                             headers=eraser_h, timeout=40)
         check("erasure is refused while the account is the only owner of a workspace",
               blocked.status_code == 409 and "only owner" in blocked.text, f"{blocked.status_code} {blocked.text[:160]}")
         # that account owns other_ws, so the transfer must be made there with that membership
         other_h = {"Authorization": f"Bearer {eraser_token}", "X-Workspace-Id": other_ws, "Content-Type": "application/json"}
         httpx.post(BASE + "/workspace/members", json={"email": TRANSFEREE, "role": "creator"}, headers=other_h, timeout=40)
-        moved = httpx.post(BASE + "/workspace/members/transfer", json={"user_id": transferee_id}, headers=other_h, timeout=40)
+        moved = httpx.post(BASE + "/workspace/members/transfer",
+                           json={"user_id": transferee_id, "password": PASSWORD}, headers=other_h, timeout=40)
         check("the same account can move ownership of the workspace that blocks it",
               moved.status_code == 200 and role_of(other_ws, transferee_id) == "owner",
               f"{moved.status_code} {moved.text[:160]} now={role_of(other_ws, transferee_id)}")
-        erased = httpx.post(BASE + "/account/erasure", json={"confirmation": ERASER}, headers=eraser_h, timeout=40)
+        erased = httpx.post(BASE + "/account/erasure", json={"confirmation": ERASER, "password": PASSWORD},
+                            headers=eraser_h, timeout=40)
         check("and the erasure the message promised now actually goes through",
               erased.status_code == 200, f"{erased.status_code} {erased.text[:200]}")
         check("with the membership it no longer owns gone from its own record",

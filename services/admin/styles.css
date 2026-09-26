@@ -51,6 +51,11 @@ input,select {
   padding: 10px;
   outline: none;
 }
+/* `[hidden]` loses to any author `display` on the same element, and `label` below is display:grid --
+   the same trap services/web/styles.css documents. Keep the attribute authoritative here too. */
+[hidden] {
+  display: none !important;
+}
 label {
   display: grid;
   gap: 6px;

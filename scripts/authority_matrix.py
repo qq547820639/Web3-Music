@@ -39,6 +39,9 @@ AUTHORITY_DEPENDS = {
     "get_user": "session",            # a live session only; no workspace role checked
 }
 APP_LEVEL = {"bearer_scheme", "session_cookie_scheme"}
+# The in-body re-verification helper. Named here so a rename cannot turn the matrix column into a
+# column of dashes: tests/unit/test_authority_matrix.py asserts the set of routes it finds.
+STEP_UP_HELPER = "step_up_factors"
 READ_METHODS = {"GET", "HEAD"}
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -125,43 +128,53 @@ def app_level_dependencies(node: ast.Module) -> set[str]:
     return found
 
 
+def calls_step_up(node) -> bool:
+    """True when the endpoint re-asks for the credential behind the session before it writes.
+
+    Step-up lives in the request body, not in a `Depends`, so no amount of signature reading finds
+    it; this walks the body for the helper call and `--check` turns that into a column of the matrix.
+    """
+    return any(isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+               and call.func.id == STEP_UP_HELPER for call in ast.walk(node))
+
+
 def derive_file(source: pathlib.Path) -> list[dict]:
     """Every /api route one module declares. Split out so a test can feed it a fixture file
     instead of only the real tree, which is the only way to prove the reader sees a router
-    prefix and an `async def`."""
+    prefix, an `async def`, and a step-up call."""
     rows = []
-    if True:
-        text = source.read_text(encoding="utf-8")
-        tree = ast.parse(text, filename=str(source))
-        prefixes = router_prefixes(text)
-        app_deps = app_level_dependencies(tree)
-        for node in tree.body:
-            # async def is the shape of every streaming or awaited endpoint,
-            # and a reader that only visits ast.FunctionDef silently omits them.
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            route = decorator_route(node)
-            if not route:
-                continue
-            method, declared = route
-            from_router = any(isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
-                              and isinstance(d.func.value, ast.Name) and d.func.value.id == "router"
-                              for d in node.decorator_list)
-            # Resolve the authority shape first: a router mounted at /api declares its sub-paths
-            # without it, and filtering on the decorator string alone drops every one of them.
-            path = (prefixes.get("router", "") if from_router else "") + declared
-            if not path.startswith("/api"):
-                continue
-            kind, detail = authority_of(node)
-            rows.append({
-                "method": method,
-                "path": path,
-                "authority": kind,
-                "roles": detail,
-                "writes": method in WRITE_METHODS,
-                "endpoint": endpoint_id(source, node),
-                "app_level_auth": sorted(APP_LEVEL & app_deps),
-            })
+    text = source.read_text(encoding="utf-8")
+    tree = ast.parse(text, filename=str(source))
+    prefixes = router_prefixes(text)
+    app_deps = app_level_dependencies(tree)
+    for node in tree.body:
+        # async def is the shape of every streaming or awaited endpoint,
+        # and a reader that only visits ast.FunctionDef silently omits them.
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        route = decorator_route(node)
+        if not route:
+            continue
+        method, declared = route
+        from_router = any(isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
+                          and isinstance(d.func.value, ast.Name) and d.func.value.id == "router"
+                          for d in node.decorator_list)
+        # Resolve the authority shape first: a router mounted at /api declares its sub-paths
+        # without it, and filtering on the decorator string alone drops every one of them.
+        path = (prefixes.get("router", "") if from_router else "") + declared
+        if not path.startswith("/api"):
+            continue
+        kind, detail = authority_of(node)
+        rows.append({
+            "method": method,
+            "path": path,
+            "authority": kind,
+            "roles": detail,
+            "writes": method in WRITE_METHODS,
+            "step_up": calls_step_up(node),
+            "endpoint": endpoint_id(source, node),
+            "app_level_auth": sorted(APP_LEVEL & app_deps),
+        })
     return rows
 
 
@@ -195,16 +208,23 @@ def render_markdown(rows: list[dict]) -> str:
              "少一个就红（`tests/unit/test_authority_matrix.py`）。真正的授权担保还包括数据库层："
              "RLS 与 `011`/`012`/`013`/`016`/`017` 的 `SECURITY DEFINER` 函数，端点检查只是门口那道 convenience。"
              .format(sum(1 for r in rows if r["writes"] and r["authority"] == "app-level-only")),
+             "",
+             "`再认证` 一列是会话之外的第二道：{} 条写路由在动数据库之前要求调用方当场再交出一次口令"
+             "（已注册第二因子的账号还要一个当前验证码），判据是 `step_up_factors` 真的出现在端点函数体里，"
+             "而不是请求体里有某个字段——它挡的是「Cookie 被拿走之后还能做什么」，"
+             "所以设成没有确认窗口：一次凭证只够一次动作。"
+             .format(sum(1 for r in rows if r["step_up"])),
              ""]
     for kind in order:
         group = buckets.get(kind, [])
         if not group:
             continue
         lines += ["", f"## {labels[kind]}（{len(group)} 条，写操作 {sum(1 for r in group if r['writes'])} 条）", "",
-                  "| 方法与路径 | 角色 | 端点 |", "| --- | --- | --- |"]
+                  "| 方法与路径 | 角色 | 再认证 | 端点 |", "| --- | --- | --- | --- |"]
         for row in sorted(group, key=lambda r: (not r["writes"], r["path"])):
             roles = row["roles"] or "—"
-            lines.append(f"| `{row['method']} {row['path']}` | {roles} | `{row['endpoint']}` |")
+            lines.append(f"| `{row['method']} {row['path']}` | {roles} | {'是' if row['step_up'] else '—'}"
+                         f" | `{row['endpoint']}` |")
     return "\n".join(lines) + "\n"
 
 

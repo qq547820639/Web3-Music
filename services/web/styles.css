@@ -134,6 +134,14 @@ button:disabled {
   border-color: var(--line);
   background: var(--surface2);
 }
+/* The UA's `[hidden] { display: none }` is a plain rule, so any author `display` on the same
+   element wins and the attribute stops hiding anything: `label` below is display:grid, which is how
+   a verification-code field marked hidden came to render on screen for an account that has no
+   second factor (the browser gate caught it). Restore the attribute's meaning for every element this
+   app hides by attribute rather than by class. */
+[hidden] {
+  display: none !important;
+}
 label {
   display: grid;
   gap: 7px;

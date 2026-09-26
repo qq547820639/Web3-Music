@@ -13,6 +13,7 @@ const state = {
   activeAsset: null,
   candidates: [],
   blindMode: false,
+  mfaArmed: false,
   view: 'creation',
   lists: {
     projects: { offset: 0, limit: 20, q: '', status: '', total: 0 },
@@ -179,6 +180,7 @@ function askDialog({
         el.type = f.type || 'text';
       }
       if (f.placeholder) el.placeholder = f.placeholder;
+      if (f.autocomplete) el.autocomplete = f.autocomplete;
       if (f.value !== undefined && f.value !== null) el.value = String(f.value);
       if (f.required !== false) el.required = true;
       wrap.appendChild(el);
@@ -259,6 +261,18 @@ function confirmDialog({
     dialog.showModal();
     content.querySelector('.dialog-submit').focus();
   });
+}
+// The fields every irreversible write asks for before it sends. A session cookie proves who logged
+// in, not who is holding it now, so the server refuses with 401 until the password is re-presented --
+// and an account with a second factor armed also owes a current code. One function rather than four
+// copies: the roster, the transfer dialog and the privacy panel must not drift apart on their own.
+function stepUpFields() {
+  const fields = [{ name: 'password', label: '登录密码', type: 'password', autocomplete: 'current-password' }];
+  if (state.mfaArmed) fields.push({ name: 'code', label: '验证码', autocomplete: 'one-time-code' });
+  return fields;
+}
+function stepUpBody(answer) {
+  return { password: answer.password, code: answer.code || null };
 }
 async function api(path, options = {}, retry = true) {
   const headers = {
@@ -1658,6 +1672,11 @@ function renderMfa(status) {
   $('#mfaStart').hidden = armed || (pending && mfaPanel.secret);
   $('#mfaEnrol').hidden = !(pending && mfaPanel.secret);
   $('#mfaArmed').hidden = !armed;
+  // The irreversible panels ask for a code only when the account actually has a second factor; they
+  // read this flag rather than calling /auth/mfa/status a second time.
+  state.mfaArmed = armed;
+  $('#erasureCodeWrap').hidden = !armed;
+  syncErasureGate();
   if (armed) {
     const at = status.enrolled_at ? new Date(status.enrolled_at) : null;
     $('#mfaArmedAt').textContent = `开启时间：${at ? at.toLocaleString() : '未知'}；剩余恢复码 ${status.recovery_codes_remaining} 个。`
@@ -1733,15 +1752,21 @@ $('#mfaAbort').onclick = async () => {
 
 $('#mfaDisable').onclick = async () => {
   const code = $('#mfaDisableCode').value.trim();
+  const password = $('#mfaDisablePassword').value;
   $('#mfaError').textContent = '';
+  if (!password) {
+    mfaFail(new Error('关闭两步验证需要在这一刻再输一次登录密码。'));
+    return;
+  }
   if (!code) {
     mfaFail(new Error('关闭两步验证需要一个当前有效的验证码或恢复码。'));
     return;
   }
   setLoading($('#mfaDisable'), true, '关闭中…');
   try {
-    await api('/api/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ code }) });
+    await api('/api/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) });
     $('#mfaDisableCode').value = '';
+    $('#mfaDisablePassword').value = '';
     $('#mfaRecovery').hidden = true;
     await loadMfa();
     toast('两步验证已关闭。', 'ok');
@@ -1876,8 +1901,19 @@ async function loadTeam() {
 
 async function memberChange(member, role) {
   $('#teamError').textContent = '';
+  if (role === member.role) return;
+  const answer = await askDialog({
+    title: `把 ${member.display_name || member.email} 改为 ${role}`,
+    description: '角色决定这个人能做什么，保存后立即生效。请填写你自己的登录密码以确认。',
+    submitText: '确认改动',
+    fields: stepUpFields()
+  });
+  if (!answer) {
+    await loadTeam();
+    return;
+  }
   try {
-    const result = await api(`/api/workspace/members/${member.user_id}`, { method: 'PATCH', body: JSON.stringify({ role }) });
+    const result = await api(`/api/workspace/members/${member.user_id}`, { method: 'PATCH', body: JSON.stringify({ role, ...stepUpBody(answer) }) });
     toast(teamMessage(result, 'role'), 'ok');
   } catch (err) {
     $('#teamError').textContent = err.message;
@@ -1888,9 +1924,9 @@ async function memberChange(member, role) {
 async function memberRemove(member) {
   const answer = await askDialog({
     title: `移出 ${member.display_name || member.email}`,
-    description: '移出后这个人立刻失去该工作区的访问，账户本身不会被删除。输入对方邮箱以确认。',
+    description: '移出后这个人立刻失去该工作区的访问，账户本身不会被删除。输入对方邮箱，并填你自己的密码以确认。',
     submitText: '确认移出',
-    fields: [{ name: 'email', label: '对方邮箱', placeholder: member.email }]
+    fields: [{ name: 'email', label: '对方邮箱', placeholder: member.email }, ...stepUpFields()]
   });
   if (!answer) return;
   if (answer.email !== member.email) {
@@ -1898,7 +1934,7 @@ async function memberRemove(member) {
     return;
   }
   try {
-    const result = await api(`/api/workspace/members/${member.user_id}`, { method: 'DELETE' });
+    const result = await api(`/api/workspace/members/${member.user_id}`, { method: 'DELETE', body: JSON.stringify(stepUpBody(answer)) });
     toast(teamMessage(result, 'remove'), 'ok');
   } catch (err) {
     $('#teamError').textContent = err.message;
@@ -1909,9 +1945,9 @@ async function memberRemove(member) {
 async function ownershipTransfer(member) {
   const answer = await askDialog({
     title: '移交工作区所有权',
-    description: '移交后你本人变成 admin，且只有新属主才能再移交回去。数据库要求必须由当前属主发起。输入新属主邮箱以确认。',
+    description: '移交后你本人变成 admin，且只有新属主才能再移交回去。数据库要求必须由当前属主发起。输入新属主邮箱，并填你自己的密码以确认。',
     submitText: '确认移交',
-    fields: [{ name: 'email', label: '新属主邮箱', placeholder: member.email }]
+    fields: [{ name: 'email', label: '新属主邮箱', placeholder: member.email }, ...stepUpFields()]
   });
   if (!answer) return;
   if (answer.email !== member.email) {
@@ -1919,7 +1955,7 @@ async function ownershipTransfer(member) {
     return;
   }
   try {
-    const result = await api('/api/workspace/members/transfer', { method: 'POST', body: JSON.stringify({ user_id: member.user_id }) });
+    const result = await api('/api/workspace/members/transfer', { method: 'POST', body: JSON.stringify({ user_id: member.user_id, ...stepUpBody(answer) }) });
     toast(teamMessage(result, 'transfer'), 'ok');
     await refreshBootstrap();
   } catch (err) {
@@ -1958,14 +1994,31 @@ $('#teamAdd').onclick = async () => {
 // Both endpoints existed and were drilled before this panel did; what it adds is a path a subject
 // can actually walk without a terminal. The button unlocks only on an exact match with the signed-in
 // account's email because that is what erase_user_identity() compares (db/migrations/013), but the
-// guard is convenience rather than safety: the database refuses a mismatch with a 409 and leaves the
-// row untouched, which scripts/erasure_drill.py checks on both polarities.
+// email is the weak half of the confirmation -- the panel prints it, so anyone holding the session can
+// type it. The password is the load-bearing half: it is asked for at the moment of the erasing, and
+// the database still refuses a mismatched email with a 409 that leaves the row untouched, which
+// scripts/erasure_drill.py checks on both polarities.
 function privacyTarget() {
   const email = state.user?.email || '';
   $('#erasureTarget').textContent = email || '（未登录）';
   $('#erasureConfirm').value = '';
+  $('#erasurePassword').value = '';
+  $('#erasureCode').value = '';
   $('#erasureButton').disabled = true;
   $('#erasureButton').title = email ? '' : '需要先登录';
+}
+
+// Three things open the button: the email that names the account, the password that proves the
+// person behind the cookie, and -- only for an account that armed one -- a current second factor.
+function erasureReady() {
+  const email = state.user?.email || '';
+  if (!email || $('#erasureConfirm').value.trim() !== email) return false;
+  if (!$('#erasurePassword').value) return false;
+  return state.mfaArmed ? Boolean($('#erasureCode').value.trim()) : true;
+}
+
+function syncErasureGate() {
+  $('#erasureButton').disabled = !erasureReady();
 }
 
 function renderExportSummary(data) {
@@ -2024,9 +2077,9 @@ $('#privacyExport').onclick = async () => {
   }
 };
 
-$('#erasureConfirm').oninput = () => {
-  $('#erasureButton').disabled = $('#erasureConfirm').value.trim() !== (state.user?.email || '');
-};
+$('#erasureConfirm').oninput = syncErasureGate;
+$('#erasurePassword').oninput = syncErasureGate;
+$('#erasureCode').oninput = syncErasureGate;
 
 $('#erasureButton').onclick = async () => {
   const confirmation = $('#erasureConfirm').value.trim();
@@ -2038,7 +2091,10 @@ $('#erasureButton').onclick = async () => {
   }
   setLoading(btn, true, '删除中…');
   try {
-    const result = await api('/api/account/erasure', { method: 'POST', body: JSON.stringify({ confirmation }) });
+    const result = await api('/api/account/erasure', {
+      method: 'POST',
+      body: JSON.stringify({ confirmation, password: $('#erasurePassword').value, code: $('#erasureCode').value.trim() || null })
+    });
     // The session dies with the account, so this receipt is the only thing that survives the reload;
     // it is written before reload() because sessionStorage does not outlive a page that is torn down.
     sessionStorage.setItem('resonance_erased', JSON.stringify({ at: new Date().toISOString(), detail: result?.detail || {} }));

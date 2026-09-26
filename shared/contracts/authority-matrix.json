@@ -14,6 +14,7 @@
       "authority": "session",
       "roles": "",
       "writes": true,
+      "step_up": true,
       "endpoint": "app:account_erasure",
       "app_level_auth": [
         "bearer_scheme",
@@ -26,6 +27,7 @@
       "authority": "session",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:account_export",
       "app_level_auth": [
         "bearer_scheme",
@@ -38,6 +40,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,legal,owner,support",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:admin_dashboard",
       "app_level_auth": [
         "bearer_scheme",
@@ -50,6 +53,7 @@
       "authority": "require_roles",
       "roles": "admin,owner,support",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:cancel_job",
       "app_level_auth": [
         "bearer_scheme",
@@ -62,6 +66,7 @@
       "authority": "platform_admin",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:update_switch",
       "app_level_auth": [
         "bearer_scheme",
@@ -74,6 +79,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,legal,owner,support",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.admin_v12:dashboard",
       "app_level_auth": []
     },
@@ -83,6 +89,7 @@
       "authority": "require_roles",
       "roles": "admin,legal,owner,support",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.admin_v12:moderation",
       "app_level_auth": []
     },
@@ -92,6 +99,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,owner",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.admin_v12:payments",
       "app_level_auth": []
     },
@@ -101,6 +109,7 @@
       "authority": "platform_admin",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.admin_v12:payout_queue",
       "app_level_auth": []
     },
@@ -110,6 +119,7 @@
       "authority": "platform_admin",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.admin_v12:update_payout",
       "app_level_auth": []
     },
@@ -119,6 +129,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,owner",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.admin_v12:reconciliation",
       "app_level_auth": []
     },
@@ -128,6 +139,7 @@
       "authority": "platform_admin",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.admin_v12:release_evidence",
       "app_level_auth": []
     },
@@ -137,6 +149,7 @@
       "authority": "platform_admin",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.admin_v12:update_release_evidence",
       "app_level_auth": []
     },
@@ -146,6 +159,7 @@
       "authority": "platform_admin",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.admin_v12:release_gate",
       "app_level_auth": []
     },
@@ -155,6 +169,7 @@
       "authority": "require_roles",
       "roles": "admin,owner,support",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.admin_v12:update_ticket",
       "app_level_auth": []
     },
@@ -164,6 +179,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,owner,reviewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.creation:analytics_overview",
       "app_level_auth": []
     },
@@ -173,6 +189,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,legal,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.assets:list_assets",
       "app_level_auth": []
     },
@@ -182,6 +199,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:asset_detail",
       "app_level_auth": [
         "bearer_scheme",
@@ -194,6 +212,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:export_asset",
       "app_level_auth": [
         "bearer_scheme",
@@ -206,6 +225,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,legal,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.assets:asset_provenance",
       "app_level_auth": []
     },
@@ -215,6 +235,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,legal,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.assets:list_evidence",
       "app_level_auth": []
     },
@@ -224,6 +245,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,legal,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.assets:add_evidence",
       "app_level_auth": []
     },
@@ -233,6 +255,7 @@
       "authority": "require_roles",
       "roles": "admin,legal,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.assets:issue_reviewed_manifest",
       "app_level_auth": []
     },
@@ -242,6 +265,7 @@
       "authority": "app-level-only",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:login",
       "app_level_auth": [
         "bearer_scheme",
@@ -254,6 +278,7 @@
       "authority": "session",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:logout",
       "app_level_auth": [
         "bearer_scheme",
@@ -266,6 +291,7 @@
       "authority": "session",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:me",
       "app_level_auth": [
         "bearer_scheme",
@@ -278,6 +304,7 @@
       "authority": "app-level-only",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:mfa_challenge",
       "app_level_auth": [
         "bearer_scheme",
@@ -290,6 +317,7 @@
       "authority": "session",
       "roles": "",
       "writes": true,
+      "step_up": true,
       "endpoint": "app:mfa_disable",
       "app_level_auth": [
         "bearer_scheme",
@@ -302,6 +330,7 @@
       "authority": "session",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:mfa_enroll",
       "app_level_auth": [
         "bearer_scheme",
@@ -314,6 +343,7 @@
       "authority": "session",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:mfa_enroll_verify",
       "app_level_auth": [
         "bearer_scheme",
@@ -326,6 +356,7 @@
       "authority": "session",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:mfa_status",
       "app_level_auth": [
         "bearer_scheme",
@@ -338,6 +369,7 @@
       "authority": "app-level-only",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:refresh",
       "app_level_auth": [
         "bearer_scheme",
@@ -350,6 +382,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:bootstrap",
       "app_level_auth": [
         "bearer_scheme",
@@ -362,6 +395,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:own_briefs",
       "app_level_auth": []
     },
@@ -371,6 +405,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:create_brief",
       "app_level_auth": []
     },
@@ -380,6 +415,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:public_briefs",
       "app_level_auth": []
     },
@@ -389,6 +425,7 @@
       "authority": "require_roles",
       "roles": "admin,owner,reviewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:review_submissions",
       "app_level_auth": []
     },
@@ -398,6 +435,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:submit_to_brief",
       "app_level_auth": []
     },
@@ -407,6 +445,7 @@
       "authority": "require_roles",
       "roles": "admin,owner,reviewer",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:update_submission",
       "app_level_auth": []
     },
@@ -416,6 +455,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:award_submission",
       "app_level_auth": []
     },
@@ -425,6 +465,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:candidate_media_token",
       "app_level_auth": [
         "bearer_scheme",
@@ -437,6 +478,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:catalog",
       "app_level_auth": []
     },
@@ -446,6 +488,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,legal,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:list_deliveries",
       "app_level_auth": []
     },
@@ -455,6 +498,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,legal,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:export_delivery",
       "app_level_auth": []
     },
@@ -464,6 +508,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,legal,owner,reviewer,support,viewer",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.creation:capture_event",
       "app_level_auth": []
     },
@@ -473,6 +518,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:list_jobs",
       "app_level_auth": [
         "bearer_scheme",
@@ -485,6 +531,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:submit_job",
       "app_level_auth": [
         "bearer_scheme",
@@ -497,6 +544,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:job_detail",
       "app_level_auth": [
         "bearer_scheme",
@@ -509,6 +557,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,owner",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:ledger",
       "app_level_auth": [
         "bearer_scheme",
@@ -521,6 +570,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,legal,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:list_licenses",
       "app_level_auth": []
     },
@@ -530,6 +580,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:marketplace_offers",
       "app_level_auth": []
     },
@@ -539,6 +590,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:purchase_offer",
       "app_level_auth": []
     },
@@ -548,6 +600,7 @@
       "authority": "require_roles",
       "roles": "admin,legal,owner,support",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.assets:list_cases",
       "app_level_auth": []
     },
@@ -557,6 +610,7 @@
       "authority": "require_roles",
       "roles": "admin,legal,owner,support",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.assets:create_case",
       "app_level_auth": []
     },
@@ -566,6 +620,7 @@
       "authority": "require_roles",
       "roles": "admin,legal,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.assets:update_case",
       "app_level_auth": []
     },
@@ -575,6 +630,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:own_offers",
       "app_level_auth": []
     },
@@ -584,6 +640,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:create_offer",
       "app_level_auth": []
     },
@@ -593,6 +650,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:list_orders",
       "app_level_auth": []
     },
@@ -602,6 +660,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:create_credit_order",
       "app_level_auth": []
     },
@@ -611,6 +670,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:pay_order",
       "app_level_auth": []
     },
@@ -620,6 +680,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:refund_order",
       "app_level_auth": []
     },
@@ -629,6 +690,7 @@
       "authority": "app-level-only",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:payment_webhook",
       "app_level_auth": []
     },
@@ -638,6 +700,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,owner",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:list_payouts",
       "app_level_auth": []
     },
@@ -647,6 +710,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,legal,owner,reviewer,support,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.creation:get_preferences",
       "app_level_auth": []
     },
@@ -656,6 +720,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,legal,owner,reviewer,support,viewer",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.creation:update_preferences",
       "app_level_auth": []
     },
@@ -665,6 +730,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:list_projects",
       "app_level_auth": [
         "bearer_scheme",
@@ -677,6 +743,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:create_project",
       "app_level_auth": [
         "bearer_scheme",
@@ -689,6 +756,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:project_detail",
       "app_level_auth": [
         "bearer_scheme",
@@ -701,6 +769,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.creation:list_branches",
       "app_level_auth": []
     },
@@ -710,6 +779,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.creation:create_branch",
       "app_level_auth": []
     },
@@ -719,6 +789,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.creation:advance_branch",
       "app_level_auth": []
     },
@@ -728,6 +799,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:chat",
       "app_level_auth": [
         "bearer_scheme",
@@ -740,6 +812,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner,reviewer,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.creation:list_comments",
       "app_level_auth": []
     },
@@ -749,6 +822,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner,reviewer",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.creation:create_comment",
       "app_level_auth": []
     },
@@ -758,6 +832,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner,reviewer",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.creation:resolve_comment",
       "app_level_auth": []
     },
@@ -767,6 +842,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:update_locks",
       "app_level_auth": [
         "bearer_scheme",
@@ -779,6 +855,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:select_master",
       "app_level_auth": [
         "bearer_scheme",
@@ -791,6 +868,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:patch_project",
       "app_level_auth": [
         "bearer_scheme",
@@ -803,6 +881,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner,reviewer",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:quality",
       "app_level_auth": [
         "bearer_scheme",
@@ -815,6 +894,7 @@
       "authority": "require_roles",
       "roles": "admin,creator,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:create_quote",
       "app_level_auth": [
         "bearer_scheme",
@@ -827,6 +907,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:revisions",
       "app_level_auth": [
         "bearer_scheme",
@@ -839,6 +920,7 @@
       "authority": "app-level-only",
       "roles": "",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:provider_webhook",
       "app_level_auth": [
         "bearer_scheme",
@@ -851,6 +933,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,legal,owner,reviewer,support,viewer",
       "writes": false,
+      "step_up": false,
       "endpoint": "routers.market:list_tickets",
       "app_level_auth": []
     },
@@ -860,6 +943,7 @@
       "authority": "require_roles",
       "roles": "admin,billing,creator,legal,owner,reviewer,support,viewer",
       "writes": true,
+      "step_up": false,
       "endpoint": "routers.market:create_ticket",
       "app_level_auth": []
     },
@@ -869,6 +953,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": false,
+      "step_up": false,
       "endpoint": "app:list_workspace_members",
       "app_level_auth": [
         "bearer_scheme",
@@ -881,6 +966,7 @@
       "authority": "require_roles",
       "roles": "admin,owner",
       "writes": true,
+      "step_up": false,
       "endpoint": "app:add_workspace_member",
       "app_level_auth": [
         "bearer_scheme",
@@ -893,6 +979,7 @@
       "authority": "workspace_member",
       "roles": "",
       "writes": true,
+      "step_up": true,
       "endpoint": "app:transfer_workspace_ownership",
       "app_level_auth": [
         "bearer_scheme",
@@ -905,6 +992,7 @@
       "authority": "require_roles",
       "roles": "admin,owner",
       "writes": true,
+      "step_up": true,
       "endpoint": "app:remove_workspace_member",
       "app_level_auth": [
         "bearer_scheme",
@@ -917,6 +1005,7 @@
       "authority": "require_roles",
       "roles": "admin,owner",
       "writes": true,
+      "step_up": true,
       "endpoint": "app:change_workspace_member_role",
       "app_level_auth": [
         "bearer_scheme",

@@ -12,7 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from browser_a11y import (contrast_ratio, csp_failures, danger_pair, gate_failures,  # noqa: E402
-                       mobile_fit_failures)
+                       hidden_failures, mobile_fit_failures)
 
 CSP_OK = "default-src 'self'; script-src 'self'; base-uri 'none'"
 ORIGINS = ["http://localhost:4173", "http://localhost:4174"]
@@ -112,3 +112,22 @@ def test_the_contrast_reader_refuses_a_rule_it_cannot_evaluate():
         except AssertionError:
             continue
         raise AssertionError(f"a danger rule with no readable pair slipped through: {broken[:48]!r}")
+
+
+def test_an_element_marked_hidden_must_actually_not_render():
+    """`label { display: grid }` outranks the UA's `[hidden]`, and that is how a verification-code
+    field meant only for armed accounts rendered on the erasure panel. The gate's page-wide sweep is
+    what caught it; this pins that the sweep can both see it and stay out of the way."""
+    assert hidden_failures([scan()], require=False) == []
+    assert hidden_failures([scan(hidden_marked=4, hidden_but_rendered=[])]) == []
+    finding = hidden_failures([scan(label="account-privacy-panel", hidden_marked=4,
+                                    hidden_but_rendered=["#erasureCodeWrap"])])
+    assert len(finding) == 1, finding
+    assert "erasureCodeWrap" in finding[0] and "account-privacy-panel" in finding[0], finding
+    # A sweep over a denominator of zero reads exactly like a clean one, so it is not allowed to.
+    assert hidden_failures([scan(hidden_marked=0), scan(label="v2", hidden_marked=0)])
+    assert hidden_failures([scan(hidden_marked=0)], require=False) == []
+    # One aggregate line, but every label:id pair counts as an offender.
+    both = hidden_failures([scan(hidden_marked=2, hidden_but_rendered=["#a"]),
+                            scan(label="view-2", hidden_marked=3, hidden_but_rendered=["#a", "#b"])])
+    assert len(both) == 1 and "#a" in both[0] and "#b" in both[0] and "view-2" in both[0], both

@@ -279,8 +279,103 @@ def _mfa_pass_code(cur, user_id: str, code: str, secret_enc: str | None) -> str 
     return "recovery" if cur.fetchone()["ok"] else None
 
 
+class StepUp(BaseModel):
+    """Credentials re-presented at the moment of an irreversible write.
+
+    A session cookie proves who authenticated when; it says nothing about whether whoever holds it
+    now can still produce the password. That distinction is the whole point of a step-up challenge,
+    so the destructive endpoints ask for the credential again instead of trusting the cookie alone.
+    Both fields are optional on the model because "absent" must be answerable with a challenge
+    (401) rather than a Pydantic 422, which would put the schema in charge of a security decision.
+    """
+    password: str | None = None
+    code: str | None = None
+
+
+def _step_up_key(user_id: str) -> str:
+    return f"stepup:{hashlib.sha256(user_id.encode()).hexdigest()}"
+
+
+def _step_up_gate(user_id: str) -> None:
+    """Refuse while this account's failure window is full.
+
+    Only failed confirmations are counted, and a correct one empties the window: an owner who moves
+    through the roster seven times in a minute is doing their job, and a limiter that counted
+    attempts would lock them out of their own workspace. Guessing is still bounded -- six wrong
+    credentials per minute -- because the counter is what the gate reads.
+    """
+    if int(rq.get(_step_up_key(user_id)) or 0) >= settings.mfa_challenge_rate_limit_per_minute:
+        raise HTTPException(429, "too many failed confirmations; try again in a minute")
+
+
+def _step_up_failed(user_id: str) -> None:
+    # The same fixed-window script the second factor uses: only the first INCR sets the expiry, so
+    # the window cannot be stretched by the attempts it is counting.
+    _mfa_incr(keys=[_step_up_key(user_id)], args=[60])
+
+
+def _step_up_refused(request: Request, user_id: str, kind: str, status: int, reason: str, counted: bool = True) -> HTTPException:
+    """Record a failed confirmation, then hand back the exception for the caller to raise.
+
+    The refusal is written in its own transaction because the caller's is either not open yet or
+    about to be rolled back, and "someone holding a valid session could not re-produce the password"
+    is exactly the event an incident review looks for.
+    """
+    if counted:
+        _step_up_failed(user_id)
+    with transaction() as conn, conn.cursor() as cur:
+        # Recorded against the account, not as "system": the caller did hold a valid session, and the
+        # whole point of the row is that someone inside a session could not re-produce its credential.
+        audit(cur, Actor(user_id, "", "", False, None, None, "unverified"),
+              "auth.step_up.denied", "user", user_id,
+              {"kind": kind, "reason": reason}, request.state.request_id)
+        conn.commit()
+    return HTTPException(status, reason)
+
+
+def step_up_factors(request: Request, user_id: str, kind: str,
+                    password: str | None, code: str | None) -> list[str]:
+    """Re-verify the identity behind an authenticated session; return the factors that passed.
+
+    Password always, and the second factor as well for any account that has one armed -- the same
+    strength-against-sensitivity ladder Okta describes with acr/amr, carried out with this app's own
+    PBKDF2 check and 015's replay-proof code acceptance rather than an IdP.
+
+    Deliberately without a confirmation window: Laravel's password-confirmation middleware stamps the
+    session and stops asking for three hours, which is a reasonable UX for a settings page and the
+    opposite of what a stolen cookie needs. Here the credential is spent on the action it authorises.
+    """
+    _step_up_gate(user_id)
+    row = fetch_one("SELECT password_hash,mfa_enrolled_at,mfa_secret_enc,status FROM users WHERE id=%s",(user_id,))
+    if not row or row["status"] != "active": raise HTTPException(401,"user unavailable")
+    armed = row["mfa_enrolled_at"] is not None
+    # A credential that was never presented is a challenge, not a failed guess, so it does not
+    # consume the window: the client's next request is expected to carry it.
+    missing = [name for name, given in (("password", password), ("code", code)) if not given]
+    if not armed and "code" in missing: missing.remove("code")
+    if missing:
+        raise _step_up_refused(request, user_id, kind, 401,
+                               "this action needs your " + " and ".join(missing), counted=False)
+    if not verify_password(password, row["password_hash"]):
+        raise _step_up_refused(request, user_id, kind, 403, "password confirmation failed")
+    factors = ["password"]
+    if armed:
+        # Its own committed transaction on purpose: a recovery code spent here stays spent even if the
+        # write this authorises is later refused, which is the direction the risk falls in. The cursor
+        # factory matters too: _mfa_pass_code reads the function's result by column name.
+        with transaction() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            method = _mfa_pass_code(cur, user_id, code, row["mfa_secret_enc"])
+            conn.commit()
+        if not method:
+            raise _step_up_refused(request, user_id, kind, 403, "second factor confirmation failed")
+        factors.append(method)
+    rq.delete(_step_up_key(user_id))
+    return factors
+
+
 class MfaChallengeBody(BaseModel): pending_token:str; code:str
 class MfaCodeBody(BaseModel): code:str
+class MfaDisableBody(StepUp): code: str | None = None
 
 
 @app.post("/api/auth/mfa/challenge")
@@ -361,18 +456,19 @@ def mfa_enroll_verify(body:MfaCodeBody,request:Request,user:UserIdentity=Depends
 
 
 @app.post("/api/auth/mfa/disable")
-def mfa_disable(body:MfaCodeBody,request:Request,user:UserIdentity=Depends(get_user)):
+def mfa_disable(body:MfaDisableBody,request:Request,user:UserIdentity=Depends(get_user)):
     _mfa_throttle("disable",user.user_id)
     row=_mfa_account(user.user_id)
     if row["mfa_enrolled_at"] is None: return serialize({"armed":False})
+    # Dropping the second factor is the one action an attacker holding a stolen session most wants to
+    # take before taking anything else, so a current code alone is no longer enough: step_up_factors
+    # asks for the password as well and refuses without it.
+    factors = step_up_factors(request, user.user_id, "auth.mfa.disable", body.password, body.code)
     with transaction() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        if not _mfa_pass_code(cur,user.user_id,body.code,row["mfa_secret_enc"]):
-            conn.commit()
-            raise HTTPException(401,"a current code is required to drop the second factor")
         cur.execute("SELECT disable_mfa(%s) AS was_armed",(user.user_id,))
         was=cur.fetchone()["was_armed"]
         audit(cur,Actor(user.user_id,user.email,user.display_name,user.is_platform_admin,user.session_id,None,"self"),
-              "auth.mfa.disable","user",user.user_id,{"was_armed":bool(was)},request.state.request_id)
+              "auth.mfa.disable","user",user.user_id,{"was_armed":bool(was),"step_up":factors},request.state.request_id)
     return serialize({"armed":False})
 
 
@@ -414,7 +510,11 @@ def _membership_result(row) -> dict:
     return dict(row)
 
 
-def _membership_change(request: Request, actor: Actor, action: str, statement: str, params: tuple, target: str):
+def _membership_change(request: Request, actor: Actor, action: str, statement: str, params: tuple, target: str,
+                       step_up: list[str] | None = None):
+    # `step_up` is evaluated by the caller before this function runs, so the credential is spent --
+    # and a refusal audited -- before any of 017's functions is reached. It is recorded in the audit
+    # row only, not in the response: who verified is evidence about the action, not data for the caller.
     with transaction() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         try:
             result = _membership_result(_member_write(cur, statement, params))
@@ -422,13 +522,15 @@ def _membership_change(request: Request, actor: Actor, action: str, statement: s
             _membership_denied(actor, request, action, target, str(exc.detail))
             conn.commit()
             raise
-        audit(cur, actor, action, "workspace_member", target, result, request.state.request_id)
+        audit(cur, actor, action, "workspace_member", target,
+              {**result, "step_up": step_up} if step_up else result, request.state.request_id)
     return serialize(result)
 
 
 class MemberBody(BaseModel): email: str; role: str
-class MemberRoleBody(BaseModel): role: str
-class MemberTransferBody(BaseModel): user_id: str
+class MemberRoleBody(StepUp): role: str
+class MemberRemoveBody(StepUp): pass
+class MemberTransferBody(StepUp): user_id: str
 
 
 def allowed_workspace_roles() -> list[str]:
@@ -468,14 +570,18 @@ def add_workspace_member(body: MemberBody, request: Request, actor: Actor = Depe
 def change_workspace_member_role(member_id: str, body: MemberRoleBody, request: Request, actor: Actor = Depends(require_roles("owner", "admin"))):
     return _membership_change(request, actor, "workspace.member.role",
                               "SELECT * FROM change_workspace_member_role(%s,%s,%s::uuid,%s)",
-                              (actor.workspace_id, actor.user_id, member_id, body.role), member_id)
+                              (actor.workspace_id, actor.user_id, member_id, body.role), member_id,
+                              step_up=step_up_factors(request, actor.user_id, "workspace.member.role",
+                                                      body.password, body.code))
 
 
 @app.delete("/api/workspace/members/{member_id}")
-def remove_workspace_member(member_id: str, request: Request, actor: Actor = Depends(require_roles("owner", "admin"))):
+def remove_workspace_member(member_id: str, body: MemberRemoveBody, request: Request, actor: Actor = Depends(require_roles("owner", "admin"))):
     return _membership_change(request, actor, "workspace.member.remove",
                               "SELECT * FROM remove_workspace_member(%s,%s,%s::uuid)",
-                              (actor.workspace_id, actor.user_id, member_id), member_id)
+                              (actor.workspace_id, actor.user_id, member_id), member_id,
+                              step_up=step_up_factors(request, actor.user_id, "workspace.member.remove",
+                                                      body.password, body.code))
 
 
 @app.post("/api/workspace/members/transfer")
@@ -485,7 +591,9 @@ def transfer_workspace_ownership(body: MemberTransferBody, request: Request, act
     # the function. A role check here would answer a different question than the one being asked.
     return _membership_change(request, actor, "workspace.member.transfer",
                               "SELECT * FROM transfer_workspace_ownership(%s,%s,%s::uuid)",
-                              (actor.workspace_id, actor.user_id, body.user_id), body.user_id)
+                              (actor.workspace_id, actor.user_id, body.user_id), body.user_id,
+                              step_up=step_up_factors(request, actor.user_id, "workspace.member.transfer",
+                                                      body.password, body.code))
 
 
 @app.get("/api/auth/me")
@@ -560,13 +668,17 @@ def account_export(user:UserIdentity=Depends(get_user)):
         if rows: bundle["records"][membership["id"]]=rows
     return serialize(bundle)
 
-class ErasureBody(BaseModel):
+class ErasureBody(StepUp):
     confirmation:str
 
 @app.post("/api/account/erasure")
 def account_erasure(body:ErasureBody,request:Request,user:UserIdentity=Depends(get_user)):
     """Right to erasure: identity is anonymised and access is cut, while the accounting
     record the platform is obliged to keep survives under a non-identifying actor id."""
+    # The typed-email confirmation below stays, but it is not the check that matters: an email is
+    # public information, so on its own it only proves the caller can read the account it is already
+    # sitting in. The password is asked for here, in the request that does the erasing.
+    factors = step_up_factors(request, user.user_id, "privacy.account.erase", body.password, body.code)
     actor=Actor(user.user_id,user.email,user.display_name,user.is_platform_admin,user.session_id,None,"self")
     with transaction() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         try:
@@ -574,7 +686,8 @@ def account_erasure(body:ErasureBody,request:Request,user:UserIdentity=Depends(g
             result=cur.fetchone()["result"]
         except psycopg2.errors.RaiseException as exc:
             raise HTTPException(409,str(exc).strip().splitlines()[0]) from exc
-        audit(cur,actor,"privacy.account.erase","user",user.user_id,{"result":result},request.state.request_id)
+        audit(cur,actor,"privacy.account.erase","user",user.user_id,
+              {"result":result,"step_up":factors},request.state.request_id)
     return serialize({"status":"erased","detail":result})
 
 @app.get("/api/bootstrap")

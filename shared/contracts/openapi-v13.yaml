@@ -228,7 +228,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MfaCodeBody'
+              $ref: '#/components/schemas/MfaDisableBody'
       responses:
         '200':
           description: Successful Response
@@ -395,6 +395,12 @@ paths:
           - type: string
           - type: 'null'
           title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberRemoveBody'
       responses:
         '200':
           description: Successful Response
@@ -4211,6 +4217,16 @@ components:
       title: CreditOrderCreate
     ErasureBody:
       properties:
+        password:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Password
+        code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code
         confirmation:
           type: string
           title: Confirmation
@@ -4354,8 +4370,32 @@ components:
       - email
       - role
       title: MemberBody
+    MemberRemoveBody:
+      properties:
+        password:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Password
+        code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code
+      type: object
+      title: MemberRemoveBody
     MemberRoleBody:
       properties:
+        password:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Password
+        code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code
         role:
           type: string
           title: Role
@@ -4365,6 +4405,16 @@ components:
       title: MemberRoleBody
     MemberTransferBody:
       properties:
+        password:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Password
+        code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code
         user_id:
           type: string
           title: User Id
@@ -4394,6 +4444,20 @@ components:
       required:
       - code
       title: MfaCodeBody
+    MfaDisableBody:
+      properties:
+        password:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Password
+        code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Code
+      type: object
+      title: MfaDisableBody
     OfferCreate:
       properties:
         asset_snapshot_id:

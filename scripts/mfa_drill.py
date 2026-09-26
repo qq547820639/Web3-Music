@@ -83,28 +83,6 @@ def challenge(token: str, code: str) -> httpx.Response:
     return httpx.post(BASE + "/auth/mfa/challenge", json={"pending_token": token, "code": code}, timeout=40)
 
 
-class Codes:
-    """Codes for a seed, one per 30 second window.
-
-    accept_mfa_step refuses a step it has already honoured, which is the whole point of the replay
-    guard, so a drill that fires two TOTP codes inside the same window gets a legitimate 401 from a
-    correct code. Each acceptance therefore waits for the clock to move: at most 30s per step, and
-    this run needs two.
-    """
-
-    def __init__(self, seed: str, used: int = 0):
-        self.seed = seed
-        self.used = used
-
-    def next(self) -> str:
-        step = int(time.time() // 30)
-        if step <= self.used:
-            time.sleep(30 - (time.time() % 30) + 0.4)
-            step = int(time.time() // 30)
-        self.used = step
-        return e2e_client.totp_code(self.seed, at=step * 30 + 5)
-
-
 def redis_cli(*arguments: str) -> str:
     out = subprocess.run(["docker", "compose", "exec", "-T", "redis", "redis-cli", *arguments],
                          capture_output=True, text=True)
@@ -233,7 +211,7 @@ def main() -> int:
         check("and mints no session", sessions_at() == sessions_before, f"{sessions_before} -> {sessions_at()}")
 
         # The enrolment confirmation above consumed the current step, so start counting from it.
-        codes = Codes(seed, used=int(time.time() // 30))
+        codes = e2e_client.Codes(seed, used=int(time.time() // 30))
         good = codes.next()
         accepted = challenge(pending, good)
         granted = accepted.json() if accepted.status_code == 200 else {}
@@ -282,16 +260,26 @@ def main() -> int:
               sql(f"SELECT (mfa_enrolled_at IS NULL)::text FROM users WHERE id='{window_id}'") == "true")
 
         # ---- revocation and rotation ------------------------------------------------
-        dropped = httpx.post(BASE + "/auth/mfa/disable", json={"code": "000000"}, headers=bearer(s1), timeout=40)
-        check("dropping the factor needs a current code", dropped.status_code == 401, f"{dropped.status_code}")
+        bare = httpx.post(BASE + "/auth/mfa/disable", json={"code": "000000"}, headers=bearer(s1), timeout=40)
+        check("dropping the factor asks for the password before anything else",
+              bare.status_code == 401 and "password" in bare.text, f"{bare.status_code} {bare.text[:160]}")
         check("and the account stays armed when it is refused", status(s1).get("armed") is True)
+        # The code is the half an attacker can still hand over after phishing it; the password is the
+        # half a stolen cookie does not carry. Order is the point, and so is what must not happen: a
+        # refusal at the password wall must leave the code unspent and still usable.
+        proof = codes.next()
+        badpw = httpx.post(BASE + "/auth/mfa/disable", json={"code": proof, "password": "not-the-password"},
+                           headers=bearer(s1), timeout=40)
+        check("a wrong password refuses the drop even while the code is currently valid",
+              badpw.status_code == 403 and "password" in badpw.text, f"{badpw.status_code} {badpw.text[:160]}")
+        check("the refusal left the second factor armed", status(s1).get("armed") is True)
         again = httpx.post(BASE + "/auth/mfa/enroll", headers=bearer(s1), timeout=40)
         check("an armed second factor cannot be replaced behind its own back",
               again.status_code == 409, f"{again.status_code} {again.text[:160]}")
 
-        disabled = httpx.post(BASE + "/auth/mfa/disable", json={"code": codes.next()},
+        disabled = httpx.post(BASE + "/auth/mfa/disable", json={"code": proof, "password": PASSWORD},
                               headers=bearer(s1), timeout=40)
-        check("a current code drops the factor",
+        check("the very same code drops the factor once the password is right",
               disabled.status_code == 200 and disabled.json().get("armed") is False, f"{disabled.status_code} {disabled.text[:160]}")
         row = sql(f"SELECT coalesce(mfa_secret_enc,'-')||'|'||coalesce(mfa_recovery::text,'-')||'|'||(mfa_enrolled_at IS NULL)::text"
                   f"||'|'||coalesce(mfa_last_step::text,'-') FROM users WHERE id='{probe_id}'")
@@ -323,7 +311,7 @@ def main() -> int:
         # ---- the code oracle gets a bounded window, and it outranks a valid code -----
         # Everything above shares this account's counter, so the measurements below only mean
         # anything from a quiet window; wait_out_challenge_window(probe_id) cleared one.
-        new_codes = Codes(new_seed, used=int(time.time() // 30))
+        new_codes = e2e_client.Codes(new_seed, used=int(time.time() // 30))
         throttled = pending_token(PROBE)
         statuses = [challenge(throttled, "111111").status_code for _ in range(12)]
         limit = statuses.index(429) + 1 if 429 in statuses else None
@@ -341,7 +329,7 @@ def main() -> int:
             check("while throttled, even a correct code is refused", outranked.status_code == 429,
                   f"{outranked.status_code} {outranked.text[:120]}")
             time.sleep(max(ttl, 1) + 2)
-            released = httpx.post(BASE + "/auth/mfa/disable", json={"code": new_codes.next()},
+            released = httpx.post(BASE + "/auth/mfa/disable", json={"code": new_codes.next(), "password": PASSWORD},
                                   headers=bearer(plain.json()["access_token"]), timeout=40)
             check("when the window passes the account is usable again, not locked out",
                   released.status_code == 200, f"{released.status_code} {released.text[:160]}")

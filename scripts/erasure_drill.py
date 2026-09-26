@@ -241,12 +241,47 @@ def main() -> int:
                                             f"{sorted(set(nullable) - set(seeded))}")
 
         expiry_before = scalar(f"SELECT expires_at FROM auth_sessions WHERE user_id='{probe_id}'")
-        refused = httpx.post(BASE + "/account/erasure", json={"confirmation": "wrong@example.local"}, headers=headers, timeout=40)
+        # The typed email is not proof of presence: anyone inside the session can read it back off
+        # /auth/me. The probe armed a real second factor above, so this account owes two credentials
+        # at the moment of erasure and not one -- the strength ladder, applied to the most destructive
+        # self-service call the platform has.
+        codes = e2e_client.Codes(seed, used=int(time.time() // 30))
+        bare = httpx.post(BASE + "/account/erasure", json={"confirmation": PROBE_EMAIL}, headers=headers, timeout=40)
+        check("erasure is refused while the password has not been re-presented", bare.status_code == 401,
+              f"{bare.status_code} {bare.text[:200]}")
+        check("the refusal names the credential it is asking for", "password" in bare.text, bare.text[:200])
+        check("and the challenge left the account intact",
+              scalar(f"SELECT email FROM users WHERE id='{probe_id}'") == PROBE_EMAIL)
+        password_only = httpx.post(BASE + "/account/erasure", json={"confirmation": PROBE_EMAIL, "password": "demo-owner"},
+                                   headers=headers, timeout=40)
+        check("an armed account is also refused until the second factor comes with it",
+              password_only.status_code == 401 and "code" in password_only.text,
+              f"{password_only.status_code} {password_only.text[:200]}")
+        unspent = codes.next()
+        wrong = httpx.post(BASE + "/account/erasure",
+                           json={"confirmation": PROBE_EMAIL, "password": "not-the-password", "code": unspent},
+                           headers=headers, timeout=40)
+        check("a wrong password is refused as a failure rather than as a challenge", wrong.status_code == 403,
+              f"{wrong.status_code} {wrong.text[:200]}")
+        check("which also left the account intact",
+              scalar(f"SELECT status FROM users WHERE id='{probe_id}'") == "active")
+        check("three refusals are on the record against the account itself",
+              scalar(f"SELECT count(*) FROM audit_events WHERE action='auth.step_up.denied' AND actor_id='{probe_id}'") == "3",
+              scalar(f"SELECT string_agg(payload->>'reason','|') FROM audit_events "
+                     f"WHERE action='auth.step_up.denied' AND subject_id='{probe_id}'"))
+        # The password is checked before the code, so the code above is still unspent: `refused` here
+        # presents that very same code and only gets its 409 from the confirmation mismatch, which is
+        # the proof that a refusal at the first wall did not quietly consume the second factor.
+        refused = httpx.post(BASE + "/account/erasure",
+                             json={"confirmation": "wrong@example.local", "password": "demo-owner", "code": unspent},
+                             headers=headers, timeout=40)
         check("erasure refuses a confirmation that is not the account email", refused.status_code == 409,
               f"{refused.status_code} {refused.text[:200]}")
         check("the refused attempt changed nothing", scalar(f"SELECT email FROM users WHERE id='{probe_id}'") == PROBE_EMAIL)
 
-        erased = httpx.post(BASE + "/account/erasure", json={"confirmation": PROBE_EMAIL}, headers=headers, timeout=40)
+        erased = httpx.post(BASE + "/account/erasure",
+                            json={"confirmation": PROBE_EMAIL, "password": "demo-owner", "code": codes.next()},
+                            headers=headers, timeout=40)
         payload = erased.json() if erased.status_code == 200 else {}
         detail = payload.get("detail") if isinstance(payload, dict) else {}
         check("erasure succeeds with the matching confirmation", erased.status_code == 200,
@@ -313,7 +348,9 @@ def main() -> int:
         sql(f"INSERT INTO workspace_members(workspace_id,user_id,role) VALUES ('{sole_ws}','{sole_id}','owner')")
         sole_token, sole_workspace = e2e_client.login(BASE, SOLE_OWNER_EMAIL, "demo-owner")
         sole_headers = {"Authorization": f"Bearer {sole_token}", "X-Workspace-Id": sole_workspace, "Content-Type": "application/json"}
-        orphan = httpx.post(BASE + "/account/erasure", json={"confirmation": SOLE_OWNER_EMAIL}, headers=sole_headers, timeout=40)
+        orphan = httpx.post(BASE + "/account/erasure",
+                            json={"confirmation": SOLE_OWNER_EMAIL, "password": "demo-owner"},
+                            headers=sole_headers, timeout=40)
         check("erasing the only owner of a workspace is refused", orphan.status_code == 409 and "only owner" in orphan.text,
               f"{orphan.status_code} {orphan.text[:200]}")
         check("the guard left that account untouched", scalar(f"SELECT status FROM users WHERE id='{sole_id}'") == "active")
@@ -321,7 +358,9 @@ def main() -> int:
 
         admin_token, admin_ws = e2e_client.login(BASE, "owner@example.local", "demo-owner")
         admin_headers = {"Authorization": f"Bearer {admin_token}", "X-Workspace-Id": admin_ws, "Content-Type": "application/json"}
-        platform = httpx.post(BASE + "/account/erasure", json={"confirmation": "owner@example.local"}, headers=admin_headers, timeout=40)
+        platform = httpx.post(BASE + "/account/erasure",
+                              json={"confirmation": "owner@example.local", "password": "demo-owner"},
+                              headers=admin_headers, timeout=40)
         check("a platform administrator cannot self-erase", platform.status_code == 409 and "platform administrator" in platform.text,
               f"{platform.status_code} {platform.text[:200]}")
         survivor = httpx.post(BASE + "/auth/login", json={"email": "owner@example.local", "password": "demo-owner"}, timeout=40)

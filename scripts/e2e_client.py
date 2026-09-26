@@ -39,6 +39,31 @@ def totp_code(secret_b32: str, at: float | None = None, digits: int = 6, step: i
     return str(binary % (10 ** digits)).zfill(digits)
 
 
+class Codes:
+    """Codes for a seed, one per 30 second window.
+
+    accept_mfa_step refuses a step it has already honoured, which is the whole point of the replay
+    guard, so a drill that fires two TOTP codes inside the same window gets a legitimate 401 from a
+    correct code. Each acceptance therefore waits for the clock to move: at most 30s per step.
+
+    Lives here rather than in one drill because mfa_drill and erasure_drill both spend codes through
+    step-up and challenge endpoints, and a second copy of the clock arithmetic is a second thing to
+    get wrong.
+    """
+
+    def __init__(self, seed: str, used: int = 0):
+        self.seed = seed
+        self.used = used
+
+    def next(self) -> str:
+        step = int(time.time() // 30)
+        if step <= self.used:
+            time.sleep(30 - (time.time() % 30) + 0.4)
+            step = int(time.time() // 30)
+        self.used = step
+        return totp_code(self.seed, at=step * 30 + 5)
+
+
 def login(base: str, email: str, password: str, attempts: int = 5, timeout: int = 30):
     """Return (access_token, workspace_id), waiting out the login rate limiter."""
     last = None

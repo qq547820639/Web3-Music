@@ -124,6 +124,27 @@ def csp_failures(headers: dict[str, str], origins: list[str]) -> list[str]:
     return failures
 
 
+def hidden_failures(scans: list[dict], require: bool = True) -> list[str]:
+    """An element the app marks `hidden` must not render.
+
+    `[hidden] { display: none }` lives in the UA stylesheet, so one author rule such as
+    `label { display: grid }` outranks it and the attribute stops hiding anything -- which is how the
+    erasure panel's verification-code field rendered for a probe that has no second factor. The sweep
+    is page-wide on purpose: the trap belongs to the stylesheet, not to the panel that tripped it.
+
+    `require` also refuses a run that never saw an element marked hidden at all, because a sweep over
+    an empty denominator reads exactly like a clean one.
+    """
+    offenders = sorted({f"{scan['label']}: {name}" for scan in scans
+                        for name in scan.get("hidden_but_rendered") or []})
+    failures = []
+    if offenders:
+        failures.append(f"{len(offenders)} element(s) marked hidden still render: {', '.join(offenders[:6])}")
+    if require and sum(int(scan.get("hidden_marked") or 0) for scan in scans) == 0:
+        failures.append("no scanned page held a single element marked hidden, so the sweep proved nothing")
+    return failures
+
+
 class Auditor:
     axe_path = "/__axe/axe.min.js"
 
@@ -208,6 +229,14 @@ class Auditor:
         metrics = page.evaluate(
             "() => ({scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth})"
         )
+        hidden_state = page.evaluate(
+            """() => {
+                const marked = [...document.querySelectorAll('[hidden]')];
+                return {marked: marked.length,
+                        rendered: marked.filter(el => getComputedStyle(el).display !== 'none')
+                                        .map(el => el.id ? '#' + el.id : el.tagName.toLowerCase())};
+            }"""
+        )
         shot = self.out_dir / f"{viewport}-{label.replace('/', '-').replace(' ', '_')}.png"
         page.screenshot(path=str(shot), full_page=False)
         self.scans.append(
@@ -222,6 +251,8 @@ class Auditor:
                 "violations": violations,
                 "scroll_width": metrics["scroll"],
                 "client_width": metrics["client"],
+                "hidden_marked": hidden_state["marked"],
+                "hidden_but_rendered": sorted(set(hidden_state["rendered"])),
                 "screenshot": str(shot),
             }
         )
@@ -492,6 +523,16 @@ def self_test(auditor: Auditor) -> int:
         problems.append("csp check accepted unsafe-inline")
     if not csp_failures({"https://x": "default-src 'self'"}, ["https://x"]):
         problems.append("csp check accepted a policy with no script-src directive")
+    if hidden_failures([view("hidden-clean", hidden_marked=3)]):
+        problems.append("hidden-element check fired on a page where nothing marked hidden renders")
+    if not hidden_failures([view("hidden-leak", hidden_marked=3, hidden_but_rendered=["#erasureCodeWrap"])]):
+        problems.append("hidden-element check missed an element the app hides by attribute")
+    if not hidden_failures([view("hidden-blind", hidden_marked=0)]):
+        problems.append("hidden-element check stayed silent with an empty denominator")
+    if hidden_failures([view("hidden-blind", hidden_marked=0)], require=False):
+        problems.append("hidden-element check demanded a denominator after being told not to")
+    if hidden_failures([{"label": "no such key"}], require=False):
+        problems.append("hidden-element check requires a key a scan record may legitimately omit")
     if not gate_failures([view("unsettled", settle="timeout")]):
         problems.append("gate accepted a scan taken while the page was still painting")
     if not unstable_during_transition:
@@ -649,11 +690,29 @@ def walk_privacy(page, auditor: Auditor, viewport: str, probe: dict) -> list[str
     if not page.locator("#erasureButton").is_disabled():
         failures.append("a confirmation that does not equal the account email still unlocked erasure")
     page.fill("#erasureConfirm", probe["email"])
+    # Typing the email is what a copied session can do; the password is what it cannot. If the button
+    # opened on the email alone, the step-up field would be decoration.
+    if not page.locator("#erasurePassword").is_visible():
+        return failures + ["the erasure panel never asked for a password, so a stolen cookie alone could delete an account"]
+    if not page.locator("#erasureButton").is_disabled():
+        failures.append("the account email alone unlocked erasure with no password typed")
+    if page.locator("#erasureCodeWrap").is_visible():
+        failures.append("the panel demanded a second factor this probe never armed")
+    page.fill("#erasurePassword", "not-the-password")
     if page.locator("#erasureButton").is_disabled():
-        return failures + ["the exact account email did not unlock erasure, so no subject can self-delete"]
+        return failures + ["typing a password never enabled the button, so no subject can self-delete"]
+    page.get_by_role("button", name="永久删除我的账户").click()
+    page.wait_for_selector("#erasureError:not(:empty)", timeout=30000)
+    refusal = (page.text_content("#erasureError") or "").strip()
+    if "password" not in refusal.lower():
+        failures.append(f"a wrong password was refused without the reason reaching the panel: {refusal[:120]!r}")
+    auditor.scan(page, "account-privacy-erasure-refused", viewport, require="#erasureError")
+    if page.locator("#erasedNotice:not([hidden])").count():
+        return failures + ["a wrong password still erased the account"]
     shown = (page.text_content("#erasureTarget") or "").strip()
     if shown != probe["email"]:
         return failures + [f"the panel was showing {shown!r} as the erasure target, not the probe"]
+    page.fill("#erasurePassword", PASSWORD)
     page.get_by_role("button", name="永久删除我的账户").click()
     try:
         page.wait_for_selector("#erasedNotice:not([hidden])", timeout=30000)
@@ -724,15 +783,29 @@ def walk_team(page, auditor: Auditor, viewport: str, probe_email: str) -> list[s
         failures.append("the roster did not grow by exactly the member the panel added")
 
     row = page.locator("#teamList .member-row", has_text=probe_email)
+    # The confirmation dialogs now carry two fields, so a bare `input` selector would match both and
+    # Playwright's strict mode would fail the walk for the wrong reason.
+    email_field = "#dialog .dialog-fields input:not([type=password])"
+    password_field = "#dialog .dialog-fields input[type=password]"
+
+    # Re-roling someone is a privilege change, so the panel asks for the password in a dialog before
+    # the PATCH goes out. The dialog is scanned because it is the one surface that traps focus.
     row.locator("select").select_option("reviewer")
     row.get_by_role("button", name="保存角色").click()
+    page.wait_for_selector("#dialog[open]", timeout=20000)
+    auditor.scan(page, "workspace-team-role-dialog", viewport)
+    page.fill(password_field, PASSWORD)
+    page.locator("#dialog .dialog-submit").click()
     page.wait_for_selector(f"#teamList .member-row:has-text('{probe_email}') .tag:text-is('reviewer')", timeout=20000)
     auditor.scan(page, "workspace-team-role", viewport)
 
     row.get_by_role("button", name="移出").click()
     page.wait_for_selector("#dialog[open]", timeout=20000)
     auditor.scan(page, "workspace-team-remove-dialog", viewport)
-    page.fill("#dialog .dialog-fields input", "wrong@" + probe_email)
+    if page.locator(password_field).count() != 1:
+        failures.append("the removal dialog carries no password field, so the email alone still authorises it")
+    page.fill(email_field, "wrong@" + probe_email)
+    page.fill(password_field, PASSWORD)
     page.locator("#dialog .dialog-submit").click()
     page.wait_for_selector("#dialog[open]", state="detached", timeout=20000)
     mismatch = (page.text_content("#teamError") or "").strip()
@@ -740,9 +813,22 @@ def walk_team(page, auditor: Auditor, viewport: str, probe_email: str) -> list[s
         failures.append("a confirmation that does not match the member's e-mail still let removal proceed")
     if page.locator(f"#teamList .member-row:has-text('{probe_email}')").count() != 1:
         failures.append("the mismatched confirmation removed the member anyway")
+
+    # The blank run is the point of the feature: naming the target's e-mail -- which the panel already
+    # shows on screen -- must not be enough. The dialog stays open and says why.
     row.get_by_role("button", name="移出").click()
     page.wait_for_selector("#dialog[open]", timeout=20000)
-    page.fill("#dialog .dialog-fields input", probe_email)
+    page.fill(email_field, probe_email)
+    page.locator("#dialog .dialog-submit").click()
+    if not page.locator("#dialog[open]").count():
+        failures.append("the removal dialog submitted with the password left empty")
+    if not (page.text_content("#dialog .dialog-error") or "").strip():
+        failures.append("an empty password left no message in the dialog")
+    else:
+        auditor.scan(page, "workspace-team-remove-blank", viewport, require="#dialog .dialog-error")
+    if page.locator(f"#teamList .member-row:has-text('{probe_email}')").count() != 1:
+        failures.append("an empty password still removed the member")
+    page.fill(password_field, PASSWORD)
     page.locator("#dialog .dialog-submit").click()
     page.wait_for_selector(f"#teamList .member-row:has-text('{probe_email}')", state="detached", timeout=20000)
     auditor.scan(page, "workspace-team-removed", viewport)
@@ -766,6 +852,17 @@ def walk_mfa(page, auditor: Auditor, viewport: str, probe: "SecondFactor", email
     page.wait_for_selector("#mfaArmed:not([hidden])", timeout=20000)
     auditor.scan(page, "account-mfa-armed", viewport)
 
+    # Dropping the second factor is the first move an attacker makes with a stolen session, so the
+    # panel now wants the password alongside the code. The blank attempt is what proves the field is
+    # load-bearing rather than decorative -- and it must not spend the code shown on screen.
+    page.fill("#mfaDisableCode", probe.code(page))
+    page.get_by_role("button", name="关闭两步验证").click()
+    page.wait_for_selector("#mfaError:not(:empty)", timeout=20000)
+    blank = (page.text_content("#mfaError") or "").strip()
+    if "密码" not in blank:
+        raise SystemExit(f"the panel dropped the factor without asking for the password: {blank[:120]!r}")
+    auditor.scan(page, "account-mfa-refused", viewport, require="#mfaError")
+    page.fill("#mfaDisablePassword", PASSWORD)
     page.fill("#mfaDisableCode", probe.code(page))
     page.get_by_role("button", name="关闭两步验证").click()
     page.wait_for_selector("#mfaState:text-is('未开启')", timeout=20000)
@@ -903,6 +1000,7 @@ def main() -> int:
                 + sorted(set(team))
                 + mobile_fit_failures(auditor.scans, require=not args.desktop_only)
                 + keyboard + csp_failures(auditor.security_headers, [WEB_URL, ADMIN_URL])
+                + hidden_failures(auditor.scans)
                 + sorted(set(auditor.crashes)) + sorted(set(auditor.csp_blocks)))
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
