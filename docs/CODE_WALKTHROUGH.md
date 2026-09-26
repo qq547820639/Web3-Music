@@ -55,13 +55,13 @@ flowchart LR
 |---|---|---|
 | 表现层 | `services/web`、`services/admin` | 原生 JS 单页应用，无构建步骤，Nginx 托管 |
 | 边缘层 | `services/gateway` | 统一同源入口、限流、CSP、安全响应头 |
-| 应用/API 层 | `services/api/app` | FastAPI：`main.py`（旧式路由）+ `routers/`（模块化路由）+ `domain/`（纯领域逻辑） |
+| 应用/API 层 | `services/api/app` | FastAPI：`main.py`（旧式路由）+ `routers/`（模块化路由）+ `domain/`（纯领域逻辑）+ `auth.py`（会话与令牌）+ `mfa.py`（第二因子材料与密封） |
 | 异步执行层 | `services/worker` | PostgreSQL Lease Worker（领取/心跳/重试/死信）、Provider Adapter、媒体入库、结算 |
 | 仿真/测试层 | `services/provider-emulator`、`services/payment-emulator`、`services/acceptance`、`services/loadtest` | 故障实验室、支付模拟、端到端验收、容量压测 |
-| 契约层 | `shared/contracts` | OpenAPI v13（71 paths，含 `/api/account/export` 与 `/api/account/erasure`）+ JSON Schema |
-| 数据层 | `db/migrations`（6 个）、`db/bootstrap` | 领域表、RLS、约束/触发器/索引、种子数据、角色 |
+| 契约层 | `shared/contracts` | OpenAPI v13（79 paths，含 `/api/account/export`、`/api/account/erasure`、五个 `/api/auth/mfa/*` 与三条 `/api/workspace/members*`）+ JSON Schema |
+| 数据层 | `db/migrations`（17 个）、`db/bootstrap` | 领域表、RLS、约束/触发器/索引、种子数据、角色 |
 | 基础设施层 | `infrastructure/prometheus`、`infrastructure/kubernetes` | 指标抓取、生产参考部署 |
-| 运维层 | `scripts/`（20 个） | 启动/验证/Chaos/备份恢复/发布证据/容量 Gate |
+| 运维层 | `scripts/`（32 个） | 启动/验证/Chaos/备份恢复/发布证据/容量 Gate/四条常驻演练 |
 
 ### 1.3 关键信任边界（与文档声明核对）
 
@@ -177,7 +177,7 @@ HTTP → gateway → request_context(CSRF/安全头) → get_user(鉴权) → ge
 
 - `prometheus.yml`：抓 `api:8000/metrics` + `worker:9101/metrics`（无认证，已声明仅本地）。
 - `kubernetes/`：`resonance-apps.yaml`（Deployment×5 + Service）+ `resonance-capacity-500.yaml`（HPA api/worker min2 max10 + PDB + rollingUpdate maxUnavailable 0），占位镜像 `registry.example.com`，需外置 Secret controller。
-- `scripts/`（20 个）：`up/test/smoke/reset`、`static-verify`、`architecture-audit`（**基于字符串包含的"契约审计"**，非真实架构校验）、`contract-test`、`chaos-worker-recovery`（Kill-9 恢复 + 额度泄漏校验，质量高）、`backup/restore/verify-backup`、`capacity-gate-500`、`release-evidence`、`generate-secrets`（**生成 `POSTGRES_*` 密码但 compose 未消费**，§4 P2-9）。
+- `scripts/`（32 个，含 `requirements-browser.txt`、`requirements-load.txt` 两份测试侧依赖清单）：`up/test/smoke/reset`、`static-verify`、`architecture-audit`（**基于字符串包含的“契约审计”**，非真实架构校验）、`contract-test`、`chaos-worker-recovery` + `chaos_worker_recovery.py`（Kill-9 恢复 + 额度泄漏校验，质量高）、`lease-contention` + `lease_contention.py`、`backup/restore/verify-backup`、`restore_fidelity.py`（绝对指纹：逐账户账本余额 + 每个资产 master 音频 sha256）、`capacity-gate-500`、`load-test-500.py`、`release-evidence`、`source-manifest.sh`、`export-openapi.sh`、`generate-secrets`（**生成 `POSTGRES_*` 密码但 compose 未消费**，§4 P2-9）；四条常驻演练 `erasure_drill.py` / `mfa_drill.py` / `member_drill.py` / `browser_a11y.py`；批量与对账 `provider_regression.py`、`reconcile_market.py`、`reservation_race.py`；以及 `e2e_client.py`——它的 `totp_code()` 是从 RFC 6238 现写的 stdlib 实现，与被测服务端用的 pyotp 不同源，否则「演练绿」只说明两侧犯了同一个错。
 - `tests/unit`（7 文件 28 用例）：均为**纯函数/模块级/字符串断言**；`test_v13_final.py` 甚至用 `psycopg2` stub 规避 DB 依赖；只有两个 emulator 测试用了 `TestClient`。**无任何 FastAPI 主应用 + 真实 PostgreSQL 的测试**。
 - `.github/workflows/ci.yml`：三 job —— `static-and-unit`、`compose-acceptance`（真实起 Docker + acceptance + contract + chaos + backup/restore）、`commercial-flow`。**CI 已编码完整 E2E，但本仓库无 CI 通过证据**（`git_commit=unavailable`，release-evidence 仅静态 log）。
 
@@ -209,7 +209,7 @@ api/worker ──> MinIO（媒体）
 
 | 契约 | 事实源 | 与代码一致性 |
 |---|---|---|
-| OpenAPI v13（71 paths） | 由运行中的 FastAPI `/openapi.json` 导出 | 一致（`export-openapi.sh`），但 `securitySchemes` 空 |
+| OpenAPI v13（79 paths） | 由运行中的 FastAPI `/openapi.json` 导出 | 一致（`export-openapi.sh`），但 `securitySchemes` 空 |
 | `song-spec-runtime-v1` | `contracts.py` 运行时强制 | 一致（单测覆盖） |
 | 其余 JSON Schema | `shared/contracts/*.schema.json` | **仅文档，运行时未校验** |
 | Provider 契约 | `docs/PROVIDER_ADAPTER_CONTRACT.md` + `test_provider_contract.py` | 一致（未执行） |
@@ -371,7 +371,7 @@ graph TD
 
 ### 附：关键证据索引
 
-- 前端体量：`wc -c services/web/app.js` = 32294；`services/admin/admin.js` = 11144（压缩单文件）。
+- 前端体量：`wc -c services/web/app.js` = 74196；`services/admin/admin.js` = 18628（压缩单文件）。
 - UX 信号：`app.js` 中 `prompt(` 16 次、`confirm(` 4 次、`loading`/`spinner` 0 次、`aria-` 0 次、`tabindex` 0 次。
 - 验证证据：`release-evidence/20260810T000459Z/static-verify.log` = `28 passed in 3.62s`；`environment.txt` = `git_commit=unavailable`。
 - 测试形态：`tests/unit/test_v13_final.py:7-16` 用 psycopg2 stub 规避 DB；`test_capacity_package.py` 为字符串包含断言。

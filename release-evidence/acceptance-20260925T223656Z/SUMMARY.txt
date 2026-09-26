@@ -1,0 +1,10 @@
+Resonance AI Music Asset Platform — E2E Acceptance
+started_at=2026-09-25T22:36:56Z
+evidence_dir=release-evidence/acceptance-20260925T223656Z
+host=Mac
+git_commit=aa875721fb9f2c69f99f90f617e23fb62c3d899c
+
+STEP | RESULT | STARTED_AT | FINISHED_AT
+static-verify | FAIL | 2026-09-25T22:36:56Z | 2026-09-25T22:36:57Z
+
+finished_at=2026-09-25T22:36:57Z

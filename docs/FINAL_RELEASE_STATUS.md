@@ -1,7 +1,7 @@
 # Resonance v13 Final Release Status
 
-Updated 2026-09-25 after the first end-to-end execution of the cross-container suite in
-this delivery environment. Earlier revisions of this file stated that the environment
+Updated 2026-09-26; first written 2026-09-25 after the first end-to-end execution of the
+cross-container suite in this delivery environment. Earlier revisions of this file stated that the environment
 "does not expose a Docker daemon" and that the Compose E2E had to be run elsewhere; that
 was true of the packaging environment but not of this one, and it had stood in place of
 evidence for every gate in `RELEASE_CHECKLIST.md`. The gates are now recorded against what
@@ -10,15 +10,28 @@ was actually executed.
 ## Executed on a real Compose stack
 
 Authoritative run: `scripts/acceptance-all.sh` on a fresh database (volumes removed
-before start), **17 steps PASS and 1 recorded as skipped**, commit
-`2c3ef7f`, 2026-09-25T23:47:50Z → 2026-09-25T23:58:18Z, evidence in
-`release-evidence/acceptance-20260925T234750Z/` (per-step logs, `SUMMARY.txt`, full
+before start), **19 steps PASS and 1 recorded as skipped** across 20 rows, commit
+`b79e70b`, 2026-09-26T02:44:13Z → 2026-09-26T02:55:36Z, evidence in
+`release-evidence/acceptance-20260926T024413Z/` (per-step logs, `SUMMARY.txt`, full
 `compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
-machine-readable record at `release-evidence/browser-a11y-20260925T235724Z/report.json` (stamped with the same commit). This is the
-first run of the 18-step pipeline -- `generic-rest-roundtrip` joined it at step
-16 and pushed the browser audit to step 17.
-The same suite was green on this host 5 times before it as well
-(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1` (older → newer)), so the pass is reproducible rather than a single lucky run.
+machine-readable record at `release-evidence/browser-a11y-20260926T025229Z/report.json` (stamped with the same commit).
+What is version-controlled from that directory is only `SUMMARY.txt` (per-step verdicts and timestamps) and the
+browser run's `report.json`; the per-step logs and the two compose log files stay on the host that ran the pipeline.
+So a clone can re-check the step ledger and the whole browser reading (views, scans, violations per impact, CSP,
+`uncaught_errors`, the second-factor states) against committed artifacts, while the drill tallies and timings quoted
+below come from per-step logs that exist only on that host -- re-running the pipeline is how a reader verifies those.
+The pipeline is 20 rows wide now: `mfa-drill` joined at step 12 and `member-drill` at step 13, which
+is also where the erasure drill's step 11 reading comes from.
+Seven green runs precede it on this host
+(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955` — older → newer, at
+15/15/16/16/17/18/19 rows with `FAIL=0` in every `SUMMARY.txt`), so the pass is reproducible rather
+than a single lucky run. The pipeline widened as steps were added, so what those runs share is "each
+passed every row that existed then", not "the same 20 rows seven times".
+Two discovery records from today are kept because each is the evidence for a defect that is now fixed:
+`acceptance-20260926T021711Z` stops at step 3 because the acceptance suite signed a provider webhook with
+its own copy of the secret literal while the container had never been given the variable, so a changed
+deployed value turned it into a 401; `acceptance-20260926T022643Z` stops at step 17 with 98/100 and two
+candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'message': ''}`.
 
 > **CI status is deliberately not claimed as evidence.** The branch was pushed, which
 > dispatches those jobs, but this environment cannot read their outcome: the repository is
@@ -56,8 +69,11 @@ The same suite was green on this host 5 times before it as well
 - **100-run generation regression** (new): `100/100 completed, error rate 0.0%`, per-job
   ready count, 64-hex media hash, sampled real download, `settled_credits == quoted price`,
   and a ledger that moved by exactly the summed settlement with no dangling hold.
-  Across the green pipeline runs: **p50 6.25s / p95 8.31s**, **p50 8.53s / p95 13.64s**,
-  **p50 5.195s / p95 9.89s** and **100/100 completed error rate 0.0% p50 7.18s p95 15.66s** (the authoritative run), each 100/100 with 1000 credits settled;
+  Across all eight green runs, in run order: **p50 8.18s / p95 20.77s**, **p50 7.615s / p95 11.37s**,
+  **p50 6.25s / p95 8.31s**, **p50 8.525s / p95 13.64s**, **p50 5.195s / p95 9.89s**,
+  **p50 7.18s / p95 15.66s**, **p50 5.09s / p95 5.37s** and **p50 4.09s / p95 5.33s** (the
+  authoritative run, step 17) -- every one of them `100/100 completed, error rate 0.0%` with 1000
+  credits settled, so the count is constant while the timing spans 4-21s;
   the red run at `1f8010e` read p50 31.88s / p95 81.81s on the same code path with 87/100
   finished. The timing reading moves with host I/O, so it must be quoted per run, not as a
   property of the code.
@@ -67,13 +83,16 @@ The same suite was green on this host 5 times before it as well
   `/api/bootstrap` reports that identity (measured both ways: with the overlay off it exits
   `expected provider 'generic_rest', the stack reports 'emulator' ... the overlay did not take
   effect`; with a dead base URL it fails a job and prints the reason the worker stored,
-  `job_error={'type': 'ConnectError', ...}`). Result in the authoritative run (step 16): `25/25 completed, error rate 0.0%, p50 5.21s, p95 6.37s, settled 250 credits`. This is the adapter and contract plumbing, not
+  `job_error={'type': 'ConnectError', ...}`). The step has run three times and read `25/25 completed,
+  error rate 0.0%, settled 250 credits` every time (p50/p95 5.21s/6.37s at step 16 of `2c3ef7f`,
+  4.14s/4.19s at step 17 of `96d5955`, 4.14s/4.18s at step 18 of the authoritative run), so the count
+  is the reading that travels and the timing is not. This is the adapter and contract plumbing, not
   a provider: the endpoint behind it is still our emulator, so the gate for 100 *real*
   provider runs stays open.
 - **Real-browser walkthrough + axe audit** (new): Playwright driving axe-core 4.13.0
   (pinned by sha256, fetched at run time, test-only) against the live stack —
-  **62 view records, 36 axe scans across desktop 1440 and phone 390, 0 critical and 0
-  serious**, 48 moderate (`heading-order`, `landmark-one-main`, `region`) left as follow-up.
+  **70 view records, 44 axe scans across desktop 1440 and phone 390, 0 critical and 0
+  serious**, 64 moderate left as follow-up (`region` 40, `heading-order` 18, `landmark-one-main` 6).
   It also asserts what axe cannot see: the shipped CSP must block **zero** inline styles
   authored by the app (measured 0 after the fix, 10 per radar render before), no uncaught
   exceptions, `script-src 'self'` present on both origins, skip-link and keyboard access
@@ -92,8 +111,16 @@ The same suite was green on this host 5 times before it as well
   subtracts every foreign key in the live schema that points at `users(id)`. That check was
   shown to bite — a throwaway `tmp_probe_link(user_id REFERENCES users(id))` table made it name
   `tmp_probe_link.user_id` and fail, and dropping the table made it pass again.
-- Static verification and unit tests: 114 unit tests (previously recorded here as 23, then
-  54, 66, 70, then 78), of which 36 arrived with the provider contract: 26 on the generic
+- **Second-factor drill** (new, step 12): `scripts/mfa_drill.py` — `52/52 checks` in the authoritative
+  run, and the codes come from `scripts/e2e_client.py`'s own stdlib RFC 6238 implementation rather than
+  from the pyotp the server uses, so a green run cannot be two halves of the same mistake. The four
+  assertions that carry weight are listed in the round section below; the drill also waits out the
+  fixed challenge window by reading the Redis key TTL instead of sleeping a guess.
+- **Workspace membership drill** (new, step 13): `scripts/member_drill.py` — `33/33 checks`, including
+  two that issue a raw `INSERT` and a self-promoting `UPDATE` as the application role and require the
+  database to answer `permission denied`, and the loop that closes the erasure dead end: sole owner →
+  erasure refused → transfer → erasure succeeds.
+- Static verification and unit tests: 176 unit tests (114 at the previous authoritative run `2c3ef7f`; this file had recorded 23, then 54, 66, 70 and 78 in earlier revisions), of which 36 arrived with the provider contract: 26 on the generic
   REST adapter's own surface and 10 validating the adapter's payload against the written
   schema.
 
@@ -374,3 +401,84 @@ presigned delivery、容量索引、Kubernetes HPA/PDB 与自动 500-user capaci
 100 次生成回归**本轮已在真实 Compose 栈上执行并留证**（见上）；500-user runtime evidence 仍
 **未取得**——本机 4 vCPU / 6 GiB 低于该 profile 自己声明的资源请求，Gate 实测判红，须在达标主机
 或 CI 大规格 runner 上重跑，不能用静态验证或小规模通过率替代。
+
+## 2026-09-26 second factor, membership writes, and a deployment that cannot inherit repo secrets
+
+Three gate items closed in one round, and the second factor is the reason the other two turned up.
+
+**Second factor (TOTP).** A password now stops at a pending credential (`purpose=mfa_pending`,
+`amr=["pwd"]`, no session row and no cookies); `POST /api/auth/mfa/challenge` is what mints the
+session. Enrolment is staged -- the seed is stored sealed and pending, and only proof of a current
+code arms it -- so an abandoned enrolment cannot lock anyone out, and a seed left unconfirmed past
+the window is void. The replay guard (`accept_mfa_step`: a strictly greater time step, per account)
+and the single-use recovery codes live in `db/migrations/015` rather than in process memory, and
+`auth_sessions` gained `amr`/`mfa_at`, which refresh rotation carries forward. `get_user` refuses a
+session that never presented the factor once the account is armed, and arming stamps the session that
+proved the code so enrolling cannot lock out the person enrolling. Codes are RFC 6238 through pyotp
+2.10.0, verified against all eighteen published Appendix B vectors *and* against an independent
+stdlib implementation that the tests carry (the widely quoted SHA1 value for T=59 is 94287082; the
+94290855 often cited for that row is not what the standard's own key and time produce, and the vector
+table in this repository was wrong about it until it was re-derived with a third implementation).
+Seeds are AESGCM-sealed with a key that has no in-file default. `scripts/mfa_drill.py` walks 52
+assertions on the live stack; four of them matter most: a pending token presented at an
+access-token endpoint is refused, an accepted code cannot be replayed on a *different* pending token,
+an account armed after a session opened leaves that older session refused, and a re-enrolment
+invalidates the previous recovery set at the hash level, not just in behaviour.
+
+**What adding it exposed.** Two privacy defects, both now fixed and both given teeth that a future
+column cannot slip past:
+
+* `erase_user_identity` did not clear the six new `users` columns, so an erased subject who had armed
+  a factor kept a seal-openable authenticator seed and ten recovery-code hashes in the erased row.
+  The erasure drill could not see it because it predates 015 and its coverage assertion enumerates
+  *foreign keys pointing at* `users`, not the columns `users` gained. 016 clears them; the drill now
+  derives "which nullable columns must be NULL afterwards" from `information_schema`, seeds a
+  type-appropriate value into each one before erasing (so "NULL after" cannot mean "always was"), and
+  hands its classifier a row the database would never produce to prove it reports a leftover.
+* The subject-access response selected seven named columns and its `coverage` list was only compared
+  against those same foreign keys, so it said nothing about the authentication columns or about
+  `password_hash`. It now names every column it reads and declares what it deliberately excludes,
+  with the reason in the payload.
+
+**Membership writes (G11).** The API had always been able to read `workspace_members` and never to
+write it -- `music_app` has SELECT only, so an application-side UPDATE matches zero rows and raises
+nothing, the shape 011 and 012 exist because of. Migration 017 carries add/change/remove/transfer as
+`SECURITY DEFINER` functions; the last-owner rule is the same predicate the eraser uses, transfer
+promotes before it demotes so no intermediate state is ownerless, and the legal role names are not
+restated but left to the `CHECK` constraint. This also removes a dead end that had shipped twice:
+since 014 the eraser has refused a sole owner with the instruction "transfer ownership first", and
+until now nothing in the repository could do that. `scripts/member_drill.py` (33 assertions) includes
+two that issue a raw `INSERT` and a self-promoting `UPDATE` as `music_app` and require the database to
+answer `permission denied`, one that calls the function with a forged actor, and the loop that closes
+the dead end: sole owner -> erasure refused -> transfer -> erasure succeeds.
+
+**Secret hygiene.** `docker-compose.yml` restated the same literals as `app/settings.py`
+(`${JWT_SECRET:-local-development-...}`) and `docker-compose.production.yml` overrode none of them, so
+a production deploy that forgot a variable booted on a signing key published in a public repository.
+The four signing secrets now interpolate with `:?` only, and `DEMO_STACK` -- pinned to `"true"` as a
+literal in the base file, `"false"` in the production overlay, deliberately not `${DEMO_STACK:-true}`
+so a stray host `.env` cannot flip the licence -- makes the API refuse to start otherwise; observed
+live: `refusing to start: jwt_secret is still a literal published in this repository | ...`.
+`.env.example` had a second trap that CI copies verbatim: `JWT_SECRET` and `MEDIA_SIGNING_SECRET` were
+both `change-me-before-sharing`, i.e. whoever could mint a media link could mint a session.
+
+Two gates keep those properties from rotting. `tests/unit/test_secret_defaults.py` (16) checks the
+policy in both directions and sweeps every compose file for the `${NAME:-literal}` shape.
+`tests/unit/test_environment_contract.py` (9) derives the configuration contract from three grammars
+-- python including this repo's own `csv()`/`boolean()` wrappers, compose mapping keys *and* `${}`
+interpolations, Dockerfile `ENV`/`ARG` counted as a provider and not as a reader -- and diffs both
+directions. Its measurements: 83 names read by code, 13 provided-but-not-read names excused by
+attributing each to a real other consumer (the postgres/MinIO/redis images, uvicorn's own flags,
+host-port mappings), and one dead variable found and deleted -- `WEBHOOK_SECRET` on the
+provider-emulator, whose code never pushes a webhook, so the line made the provider secret look wired
+when it was not. Every allow-list entry is re-checked for still being true, which is how two of my own
+first guesses (`API_BASE_URL`, a documented `GENERIC_PROVIDER_AUTH_PREFIX`) were rejected: the first is
+provided after all, and the second's default is `"Bearer "` with a trailing space that no `.env` line
+can be relied on to keep.
+
+**Browser surface.** The login second step, the pending enrolment panel, the recovery-code list and
+the armed panel are audited by `scripts/browser_a11y.py` in both viewports on a probe account the gate
+creates and deletes, because arming a demo account would break every other drill that logs in with a
+password alone. The report carries `second_factor_states` so a probe that failed to provision shows up
+as an empty list rather than as a silent skip. The four new states add no new finding type: the armed
+panel and the plain account view report the same two moderate rules with the same node counts.

@@ -126,7 +126,7 @@ GENERIC_PROVIDER_MODEL=...
 
 ## 生产部署前的外部条件
 
-代码包不能替代真实经营主体、供应商合同或合规审批。对外收费前仍需完成：正式 OIDC/SSO 与 MFA、KMS/Secret Manager、TLS/WAF、托管高可用 PostgreSQL/Redis/对象存储、集中日志与 Trace、病毒扫描与专业内容审核、真实支付机构、税务与发票、正式音乐 Provider 合同、至少 100 次真实生成回归、独立渗透测试和灾难恢复演练。
+代码包不能替代真实经营主体、供应商合同或合规审批。对外收费前仍需完成：正式 OIDC/SSO 对接（平台自带的 TOTP 第二步验证已实现并由常驻演练覆盖，企业 SSO 需要外部 IdP）、KMS/Secret Manager、TLS/WAF、托管高可用 PostgreSQL/Redis/对象存储、集中日志与 Trace、病毒扫描与专业内容审核、真实支付机构、税务与发票、正式音乐 Provider 合同、至少 100 次真实生成回归、独立渗透测试和灾难恢复演练。
 
 ## 目录
 
