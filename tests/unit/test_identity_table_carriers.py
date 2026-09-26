@@ -11,9 +11,13 @@ database were still the backstop:
     not among them;
   * 001 grants music_app SELECT on all three of those, so reads are answered by whatever statement the
     application writes -- the isolation of a read is therefore the isolation of its WHERE clause;
-  * writes to the trio are blocked by privileges that were never granted, which is the same wall as
+  * writes to the group are blocked by privileges that were never granted, which is the same wall as
     RLS for a `UPDATE ... WHERE` that matches nothing (it raises nothing either), so the guard for
-    those writes is 017's and 018's SECURITY DEFINER functions, tested live in scripts/member_drill.py.
+    those writes is 017's, 018's and 019's SECURITY DEFINER functions, tested live in
+    scripts/member_drill.py. 019 puts a fourth table in this group: `workspace_invitations` holds
+    addresses and the hashes of their claims, is likewise outside RLS, and reaches the application as
+    SELECT only -- for the subject export; every write, including the accept that crosses a tenant
+    boundary by design, goes through a definer function.
 
 Each guard below ships with the sample that must make it fire.
 """
@@ -26,8 +30,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT / "db/migrations"
 API = ROOT / "services/api"
 
-# The three tables that hold who a person is and what they belong to, as opposed to what they made.
-IDENTITY_TABLES = {"users", "workspaces", "workspace_members"}
+# The tables that hold who a person is and what they belong to, as opposed to what they made.
+IDENTITY_TABLES = {"users", "workspaces", "workspace_members", "workspace_invitations"}
 
 ENABLE_RLS = re.compile(r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:[a-z_]+\.)?([a-z_]+)\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY",
                         re.IGNORECASE)
@@ -41,11 +45,25 @@ GRANT_SELECT = re.compile(r"GRANT\s+([^;]+?)\s+ON\s+([a-z_]+(?:\s*,\s*[a-z_]+)*)
 
 # A read of an identity table that carries no parameter at all answers for every tenant at once.
 RAW_READ = re.compile(r"\b(?:FROM|JOIN|UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+(?:[a-z_]+\.)?"
-                      r"(users|workspaces|workspace_members)\b", re.IGNORECASE)
+                      r"(workspace_invitations|workspace_members|workspaces|users)\b", re.IGNORECASE)
+
+
+def strip_sql_comments(text: str) -> str:
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
+    return re.sub(r"--[^\n]*", "", text)
 
 
 def migration_text() -> str:
-    return "\n".join(p.read_text(encoding="utf-8") for p in sorted(MIGRATIONS.glob("*.sql")))
+    """Every migration, with comments removed.
+
+    The readers below all scan statements, and the migrations are heavily commented -- including
+    sentences that quote SQL. Without this, 019's `-- 只为 /api/account/export 的逐表 select 存在。`
+    line was taken for a privilege name and reported the application role as holding
+    `只为 … grant select` on `workspace_invitations`: a wrong reading of a safe database, which is the
+    worst kind of finding to file.
+    """
+    return strip_sql_comments("\n".join(p.read_text(encoding="utf-8")
+                                        for p in sorted(MIGRATIONS.glob("*.sql"))))
 
 
 def rls_enabled_tables(text: str) -> set[str]:
@@ -95,8 +113,8 @@ def unparameterised(literals: list[str]) -> list[str]:
 
 # ------------------------------------------------------------------ the census ----
 
-def test_no_migration_names_the_trio_in_a_security_statement():
-    """The migrations never write `ALTER TABLE users ENABLE ROW LEVEL SECURITY` or a policy for the trio.
+def test_no_migration_names_the_identity_group_in_a_security_statement():
+    """The migrations never write `ALTER TABLE users ENABLE ROW LEVEL SECURITY` or a policy for any of them.
 
     The honest limit of this guard, stated where someone will read it: 001 turns RLS on through a plpgsql
     loop over an array of table names (`EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl)`),
@@ -114,7 +132,7 @@ def test_no_migration_names_the_trio_in_a_security_statement():
 
 def test_identity_tables_have_no_policies_at_all():
     policied = rls_policied_tables(migration_text())
-    assert policied - IDENTITY_TABLES, "the policy reader found nothing, so it cannot clear the trio either"
+    assert policied - IDENTITY_TABLES, "the policy reader found nothing, so it cannot clear the identity group either"
     hit = sorted(policied & IDENTITY_TABLES)
     assert not hit, f"a policy now exists for {hit} -- see the note above"
 
@@ -127,7 +145,7 @@ def test_the_rls_reader_fires_on_a_policy_for_an_identity_table():
     assert not (rls_enabled_tables(migration_text()) & IDENTITY_TABLES)
 
 
-def test_001_hands_the_application_role_select_on_the_trio():
+def test_001_hands_the_application_role_select_on_the_identity_group():
     grants = grants_by_table(migration_text())
     for table in sorted(IDENTITY_TABLES):
         held = grants.get((table, "music_app"), set())
@@ -147,8 +165,32 @@ def test_the_grant_reader_fires_on_a_write_privilege():
     assert not [key for key in grants if "schema" in key[0] or "public" in key[0] or "all" in key[0]], sorted(grants)
 
 
+def test_the_census_reads_statements_and_not_the_prose_around_them():
+    """The comment-stripper, both polarities.
+
+    Without it, a `-- GRANT ...` sentence in a migration header is not merely noise: the privilege
+    group is a free-form `[^;]+?`, so the prose becomes the privilege name and the census reports a
+    grant the database does not have. The negative half says a commented-out write grant stays out of
+    the reading, and the positive half says a real one still gets in.
+    """
+    sample = ("-- GRANT UPDATE ON users TO music_app, 这行是注释\n"
+              "GRANT SELECT ON users TO music_app;\n"
+              "/* GRANT DELETE ON workspaces TO music_app */\n"
+              "GRANT SELECT ON workspaces TO music_app;\n")
+    stripped = strip_sql_comments(sample)
+    assert "UPDATE" not in stripped and "DELETE" not in stripped
+    grants = grants_by_table(stripped)
+    assert grants[("users", "music_app")] == {"select"}
+    assert grants[("workspaces", "music_app")] == {"select"}
+    assert grants_by_table(sample)[("users", "music_app")] != {"select"}, \
+        "the reader stopped seeing comments, so the stripping below proves nothing"
+    real = grants_by_table(migration_text())
+    assert real[("workspace_invitations", "music_app")] == {"select"}, \
+        f"019's export-only grant no longer reads as SELECT alone: {sorted(real[('workspace_invitations', 'music_app')])}"
+
+
 def test_every_raw_identity_read_in_the_api_carries_a_bound_value():
-    """The one property that keeps the trio isolated while it has no policies: each statement names the
+    """The one property that keeps the group isolated while it has no policies: each statement names the
     caller's own id (or the session's workspace), so there is no such thing as an unscoped read."""
     offenders = []
     seen = 0

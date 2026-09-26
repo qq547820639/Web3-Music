@@ -1532,7 +1532,7 @@ def main() -> int:
     print(f"scanned {len(auditor.scans)} views with axe-core {AXE_VERSION}")
     print(f"privacy walk: {len(exports)} exports downloaded and parsed, "
           f"{len(privacy_probes)} probe accounts erased ({', '.join(p['email'] for p in privacy_probes) or 'none'})")
-    print(f"team walk: {len(team_probes)} roster walks with add/re-role/remove exercised "
+    print(f"team walk: {len(team_probes)} roster walks with offer/accept/re-role/revoke/remove exercised "
           f"({', '.join(sorted(team_probes)) or 'none'})")
     print(f"roster walk: {roster_walks} platform-admin directory walks, each followed by a non-administrator "
           f"refusal and an injected panel failure "
