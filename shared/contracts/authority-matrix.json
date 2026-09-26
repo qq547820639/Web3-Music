@@ -36,6 +36,45 @@
     },
     {
       "method": "GET",
+      "path": "/api/account/invitations",
+      "authority": "session",
+      "roles": "",
+      "writes": false,
+      "step_up": false,
+      "endpoint": "app:my_invitations",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/account/invitations/accept",
+      "authority": "session",
+      "roles": "",
+      "writes": true,
+      "step_up": false,
+      "endpoint": "app:accept_workspace_invitation_route",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/account/invitations/decline",
+      "authority": "session",
+      "roles": "",
+      "writes": true,
+      "step_up": false,
+      "endpoint": "app:decline_workspace_invitation_route",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/admin/dashboard",
       "authority": "require_roles",
       "roles": "admin,billing,legal,owner,support",
@@ -969,12 +1008,12 @@
     },
     {
       "method": "GET",
-      "path": "/api/workspace/members",
-      "authority": "workspace_member",
-      "roles": "",
+      "path": "/api/workspace/invitations",
+      "authority": "require_roles",
+      "roles": "admin,owner",
       "writes": false,
       "step_up": false,
-      "endpoint": "app:list_workspace_members",
+      "endpoint": "app:list_workspace_invitations",
       "app_level_auth": [
         "bearer_scheme",
         "session_cookie_scheme"
@@ -982,12 +1021,38 @@
     },
     {
       "method": "POST",
-      "path": "/api/workspace/members",
+      "path": "/api/workspace/invitations",
       "authority": "require_roles",
       "roles": "admin,owner",
       "writes": true,
       "step_up": false,
-      "endpoint": "app:add_workspace_member",
+      "endpoint": "app:create_workspace_invitation_route",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/workspace/invitations/{invitation_id}",
+      "authority": "require_roles",
+      "roles": "admin,owner",
+      "writes": true,
+      "step_up": false,
+      "endpoint": "app:revoke_workspace_invitation_route",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/workspace/members",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": false,
+      "step_up": false,
+      "endpoint": "app:list_workspace_members",
       "app_level_auth": [
         "bearer_scheme",
         "session_cookie_scheme"

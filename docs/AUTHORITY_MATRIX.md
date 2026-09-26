@@ -1,13 +1,13 @@
 # 权限矩阵（由代码派生，不要手改）
 
-`./scripts/authority_matrix.py --check` 会重算这张表并比对；派生自 `services/api/app/main.py` 与 `services/api/app/routers/*.py` 的路由装饰器与依赖签名，共 91 条 /api 路由，其中写操作 48 条。
+`./scripts/authority_matrix.py --check` 会重算这张表并比对；派生自 `services/api/app/main.py` 与 `services/api/app/routers/*.py` 的路由装饰器与依赖签名，共 96 条 /api 路由，其中写操作 51 条。
 
 读法：`require_roles` 一栏是端点自己声明的角色名单，名单之外的人在 `Depends` 阶段就拿 403；`工作区成员即可` 只检查调用者属于 `X-Workspace-Id` 那个工作区，`有效会话即可` 是主体自助通道（删除账户、注册第二因子）；`只有应用层鉴权` 的写路由一共 5 条，它们的保护不在这张表里而在端点内部——口令校验、刷新会话校验、按账号的限流、以及回调的 HMAC 签名——常驻用例逐条核对该端点源码里确实还写着那个载体，少一个就红（`tests/unit/test_authority_matrix.py`）。真正的授权担保还包括数据库层：RLS 与 `011`/`012`/`013`/`016`/`017` 的 `SECURITY DEFINER` 函数，端点检查只是门口那道 convenience。
 
 `再认证` 一列是会话之外的第二道：5 条写路由在动数据库之前要求调用方当场再交出一次口令（已注册第二因子的账号还要一个当前验证码），判据是 `step_up_factors` 真的出现在端点函数体里，而不是请求体里有某个字段——它挡的是「Cookie 被拿走之后还能做什么」，所以设成没有确认窗口：一次凭证只够一次动作。
 
 
-## 显式角色名单（require_roles）（59 条，写操作 33 条）
+## 显式角色名单（require_roles）（61 条，写操作 34 条）
 
 | 方法与路径 | 角色 | 再认证 | 端点 |
 | --- | --- | --- | --- |
@@ -41,7 +41,8 @@
 | `POST /api/projects/{project_id}/quality` | admin,creator,owner,reviewer | — | `app:quality` |
 | `POST /api/projects/{project_id}/quotes` | admin,creator,owner | — | `app:create_quote` |
 | `POST /api/support/tickets` | admin,billing,creator,legal,owner,reviewer,support,viewer | — | `routers.market:create_ticket` |
-| `POST /api/workspace/members` | admin,owner | — | `app:add_workspace_member` |
+| `POST /api/workspace/invitations` | admin,owner | — | `app:create_workspace_invitation_route` |
+| `DELETE /api/workspace/invitations/{invitation_id}` | admin,owner | — | `app:revoke_workspace_invitation_route` |
 | `DELETE /api/workspace/members/{member_id}` | admin,owner | 是 | `app:remove_workspace_member` |
 | `PATCH /api/workspace/members/{member_id}` | admin,owner | 是 | `app:change_workspace_member_role` |
 | `GET /api/admin/dashboard` | admin,billing,legal,owner,support | — | `app:admin_dashboard` |
@@ -70,6 +71,7 @@
 | `GET /api/projects/{project_id}/branches` | admin,creator,owner,reviewer,viewer | — | `routers.creation:list_branches` |
 | `GET /api/projects/{project_id}/comments` | admin,creator,owner,reviewer,viewer | — | `routers.creation:list_comments` |
 | `GET /api/support/tickets` | admin,billing,creator,legal,owner,reviewer,support,viewer | — | `routers.market:list_tickets` |
+| `GET /api/workspace/invitations` | admin,owner | — | `app:list_workspace_invitations` |
 
 ## 平台管理员（8 条，写操作 3 条）
 
@@ -100,16 +102,19 @@
 | `GET /api/projects/{project_id}/revisions` | — | — | `app:revisions` |
 | `GET /api/workspace/members` | — | — | `app:list_workspace_members` |
 
-## 有效会话即可（get_user）（8 条，写操作 5 条）
+## 有效会话即可（get_user）（11 条，写操作 7 条）
 
 | 方法与路径 | 角色 | 再认证 | 端点 |
 | --- | --- | --- | --- |
 | `POST /api/account/erasure` | — | 是 | `app:account_erasure` |
+| `POST /api/account/invitations/accept` | — | — | `app:accept_workspace_invitation_route` |
+| `POST /api/account/invitations/decline` | — | — | `app:decline_workspace_invitation_route` |
 | `POST /api/auth/logout` | — | — | `app:logout` |
 | `POST /api/auth/mfa/disable` | — | 是 | `app:mfa_disable` |
 | `POST /api/auth/mfa/enroll` | — | — | `app:mfa_enroll` |
 | `POST /api/auth/mfa/enroll/verify` | — | — | `app:mfa_enroll_verify` |
 | `GET /api/account/export` | — | — | `app:account_export` |
+| `GET /api/account/invitations` | — | — | `app:my_invitations` |
 | `GET /api/auth/me` | — | — | `app:me` |
 | `GET /api/auth/mfa/status` | — | — | `app:mfa_status` |
 

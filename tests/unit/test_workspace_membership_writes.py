@@ -1,13 +1,18 @@
 """Static guards on the workspace-membership write path.
 
-The live proofs are scripts/member_drill.py: 39 checks against the running stack, including that
-music_app is refused when it writes `workspace_members` itself and that 017's functions refuse a
-forged actor. What belongs in a no-stack test is the shape a drill cannot see from outside: that no
-code path in the API writes the table, that every membership endpoint resolves an actor, and that
-every function 017 declares carries its REVOKE/GRANT pair.
+The live proofs are scripts/member_drill.py: it walks the running stack, including that music_app is
+refused when it writes `workspace_members` itself and that 017's functions refuse a forged actor. What
+belongs in a no-stack test is the shape a drill cannot see from outside: that no code path in the API
+writes the table, that every membership endpoint resolves an actor, and that every function 017 declares
+carries its REVOKE/GRANT pair.
 
-Each guard ships with the sample that must make it fire. A detector that has never been seen to
-report anything is indistinguishable from a detector that cannot.
+019 moved one of those four writes out of the surface entirely: adding a member by e-mail address. This
+file keeps the census honest about the remaining three and refuses the fourth's return; the invitation
+half -- 019's own functions, the token, and the address binding -- is guarded next door, in
+tests/unit/test_workspace_invitation_surface.py.
+
+Each guard ships with the sample that must make it fire. A detector that has never been seen to report
+anything is indistinguishable from a detector that cannot.
 
 One limit stated rather than papered over: the write guard matches literal SQL. A statement whose
 table name is interpolated at runtime -- f"DELETE FROM {table}" -- is invisible to any static
@@ -24,9 +29,24 @@ MAIN = ROOT / "services/api/app/main.py"
 MIGRATION = ROOT / "db/migrations/017_workspace_membership.sql"
 
 FUNCTION = re.compile(r"^\s*CREATE OR REPLACE FUNCTION (\w+)\(", re.IGNORECASE | re.MULTILINE)
-MEMBERSHIP_WRITE = re.compile(r"\b(add|change|remove|transfer)_workspace_\w+\b")
-MEMBERSHIP_FUNCTIONS = {"add_workspace_member", "change_workspace_member_role",
-                        "remove_workspace_member", "transfer_workspace_ownership"}
+MEMBERSHIP_WRITE = re.compile(r"\b(change|remove|transfer)_workspace_\w+\b")
+MEMBERSHIP_FUNCTIONS = {"change_workspace_member_role", "remove_workspace_member",
+                        "transfer_workspace_ownership"}
+# The route set 019 leaves behind: three membership writes, the roster read, and the four invitation
+# routes that replaced adding a member by address. Path strings as declared on the decorators.
+MEMBERSHIP_SURFACE = ("/api/workspace/members", "/api/workspace/invitations", "/api/account/invitations")
+DECLARED_ROUTES = {"/api/workspace/members", "/api/workspace/members/{member_id}",
+                   "/api/workspace/members/transfer",
+                   "/api/workspace/invitations", "/api/workspace/invitations/{invitation_id}",
+                   "/api/account/invitations", "/api/account/invitations/accept",
+                   "/api/account/invitations/decline"}
+# 019 deleted the by-address write; the name stays here so the deletion cannot rot back into a route.
+REMOVED_WRITE = "add_workspace_member"
+
+
+def on_surface(path: str) -> bool:
+    """Does this route path belong to the membership/invitation surface this file guards?"""
+    return path.startswith(MEMBERSHIP_SURFACE)
 
 
 def tree_of(path):
@@ -52,22 +72,26 @@ def writes_to(text: str, table: str) -> list[str]:
 
 
 def membership_routes(node) -> list[str]:
-    """The paths a function serves, if it serves any under /api/workspace/members."""
+    """The paths a function serves, if it serves any on the membership/invitation surface."""
     if not isinstance(node, ast.FunctionDef):
         return []
     routes = [d for d in node.decorator_list
               if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
               and isinstance(d.func.value, ast.Name) and d.func.value.id == "app"]
     paths = [d.args[0].value for d in routes if d.args and isinstance(d.args[0], ast.Constant)]
-    return [path for path in paths if "/workspace/members" in path]
+    return [path for path in paths if on_surface(path)]
 
 
 def unguarded(node) -> bool:
-    """True when a membership endpoint resolves nobody: no get_actor, no require_roles."""
+    """True when an endpoint on the surface resolves nobody: no get_actor, require_roles or get_user.
+
+    The account-side routes (/api/account/invitations*) resolve a session rather than a workspace actor
+    on purpose -- their caller is not a member yet -- so a resolved identity of either shape is enough.
+    """
     if not membership_routes(node):
         return False
     dumped = ast.dump(node.args)
-    return not any(name in dumped for name in ("get_actor", "require_roles"))
+    return not any(name in dumped for name in ("get_actor", "require_roles", "get_user"))
 
 
 def function_names(sql_text: str) -> list[str]:
@@ -104,10 +128,51 @@ def test_the_write_detector_fires_on_every_literal_shape_it_claims_to_see():
 
 def test_membership_writes_go_through_the_017_functions():
     calls = [sql for sql in sql_literals(tree_of(MAIN)) if MEMBERSHIP_WRITE.search(sql)]
-    assert len(calls) == 4, f"expected exactly one SQL string per 017 write function: {calls}"
+    assert len(calls) == 3, f"expected exactly one SQL string per surviving 017 write function: {calls}"
     for sql in calls:
         assert sql.startswith("SELECT * FROM "), sql
     assert {MEMBERSHIP_WRITE.search(sql).group(0) for sql in calls} == MEMBERSHIP_FUNCTIONS
+
+
+def test_the_by_address_write_stays_off_the_surface():
+    """019 revoked music_app's EXECUTE on add_workspace_member.
+
+    A route that called it again would not be a feature restored, it would be a 500: the application
+    role can no longer run the function at all. The deletion is pinned on both sides -- the SQL string
+    and the POST route -- because the reason it went away (an address probe plus a membership nobody
+    agreed to) is still standing in 017's body, which the checksum freeze keeps unedited.
+    """
+    main = MAIN.read_text(encoding="utf-8")
+    callers = [sql for sql in sql_literals(tree_of(MAIN)) if REMOVED_WRITE in sql]
+    assert not callers, f"{REMOVED_WRITE} is called from the API again: {callers}"
+    sources = sorted(p.relative_to(ROOT / "services/api").as_posix()
+                     for p in (ROOT / "services/api").rglob("*.py") if REMOVED_WRITE in p.read_text(encoding="utf-8"))
+    assert not sources, f"{REMOVED_WRITE} reappears in services/api/ at {sources}"
+    restored = [f"{verb} {path}" for verb, path in route_verbs()
+                if path == "/api/workspace/members" and verb == "POST"]
+    assert not restored, (
+        f"POST /api/workspace/members is back, and 019:373 leaves it with nothing to call: {restored}")
+    removed_ids = {"teamEmail", "teamAddRole", "teamAdd"} & element_ids(
+        (ROOT / "services/web/index.html").read_text(encoding="utf-8"))
+    assert not removed_ids, f"the add-by-address box came back with the route: {sorted(removed_ids)}"
+    assert main.count("/api/workspace/members") >= 1, "the roster read went away, so the checks above are empty"
+
+
+def test_the_removed_write_detector_fires_on_a_route_and_a_statement():
+    """The guard above reports an absence, so the planted copy is the only proof it can see one."""
+    planted = ('@app.post("/api/workspace/members")\n'
+               'def add_a_member(body, actor=Depends(get_actor)):\n'
+               '    return fetch_all("SELECT * FROM add_workspace_member(%s,%s,%s,%s)", '
+               '(actor.workspace_id, actor.user_id, body.email, body.role))\n')
+    restored = [(verb, path) for verb, path in route_verbs(planted)
+                if path == "/api/workspace/members" and verb == "POST"]
+    assert restored == [("POST", "/api/workspace/members")], restored
+    assert [sql for sql in sql_literals(ast.parse(planted)) if REMOVED_WRITE in sql], (
+        "the statement reader cannot see the call the deleted route used to make")
+    assert sorted({"teamAdd"} & element_ids('<div id="teamAdd"></div>')) == ["teamAdd"], (
+        "the markup reader cannot see a restored add box either")
+    # And the surviving three must not read as a restoration.
+    assert not [sql for sql in sql_literals(tree_of(MAIN)) if REMOVED_WRITE in sql]
 
 
 def test_every_membership_endpoint_declares_an_actor_dependency():
@@ -124,6 +189,16 @@ def test_the_actor_detector_fires_on_an_unguarded_endpoint():
                         'def closed_route(request, actor=Depends(get_actor)):\n    return None\n',
                         filename="<synthetic>")
     assert [node.name for node in guarded.body if unguarded(node)] == []
+    # 019 put the same requirement on the invitation surface, on both sides of it: the manager's routes
+    # resolve a workspace actor, the invitee's resolve a session, and neither may resolve nothing.
+    for path, dependency in (("/api/workspace/invitations", "require_roles"),
+                             ("/api/account/invitations/accept", "get_user")):
+        left_open = ast.parse(f'@app.post("{path}")\ndef open_route(request):\n    return None\n',
+                              filename="<synthetic>")
+        assert [node.name for node in left_open.body if unguarded(node)] == ["open_route"], path
+        covered = ast.parse(f'@app.post("{path}")\ndef closed_route(request, actor=Depends({dependency})):\n'
+                            '    return None\n', filename="<synthetic>")
+        assert [node.name for node in covered.body if unguarded(node)] == [], path
     elsewhere = ast.parse('@app.get("/api/projects")\ndef unrelated(request):\n    return None\n',
                           filename="<synthetic>")
     assert [node.name for node in elsewhere.body if unguarded(node)] == [], "the detector must stay in its lane"
@@ -161,6 +236,36 @@ APP_JS = ROOT / "services/web/app.js"
 INDEX_HTML = ROOT / "services/web/index.html"
 ROLE_SOURCE = ROOT / "db/migrations/001_production_candidate.sql"
 
+# The method each surviving path answers with. POST on the bare /api/workspace/members is the entry
+# that used to be in this table and is not any more: 019 moved it to POST /api/workspace/invitations.
+DECLARED_ENDPOINTS = {("GET", "/api/workspace/members"),
+                      ("PATCH", "/api/workspace/members/{member_id}"),
+                      ("DELETE", "/api/workspace/members/{member_id}"),
+                      ("POST", "/api/workspace/members/transfer"),
+                      ("POST", "/api/workspace/invitations"),
+                      ("GET", "/api/workspace/invitations"),
+                      ("DELETE", "/api/workspace/invitations/{invitation_id}"),
+                      ("GET", "/api/account/invitations"),
+                      ("POST", "/api/account/invitations/accept"),
+                      ("POST", "/api/account/invitations/decline")}
+# The elements the roster and the invitation panels are built out of. The three whose names said "add a
+# member" (teamEmail, teamAddRole, teamAdd) are gone with the route; the teamInvite* / invite* / inbox*
+# names are what replaced them, and the panel cannot work without any of the rest.
+PANEL_IDS = {"teamState", "teamList", "teamManage", "teamError",
+             "teamInviteEmail", "teamInviteRole", "teamInvite", "teamInviteToken", "teamInviteExpiry",
+             "invitesBlock", "inviteState", "inviteList",
+             "inboxState", "inboxList", "inboxToken", "inboxTokenAccept", "inboxError"}
+SELECTED = re.compile(r"\$\('#((?:team|invite|inbox)[A-Za-z0-9]*)'\)")
+
+
+def element_ids(document: str) -> set[str]:
+    return set(re.findall(r'id="([A-Za-z0-9_-]+)"', document))
+
+
+def dangling_selectors(app: str, document: str) -> list[str]:
+    """Roster or invitation elements the panel reaches for and no document defines."""
+    return sorted({found for found in SELECTED.findall(app)} - element_ids(document))
+
 
 def role_names_in_schema() -> set[str]:
     text = ROLE_SOURCE.read_text(encoding="utf-8")
@@ -183,26 +288,41 @@ def literal_role_names(source: str, function: str) -> set[str]:
     return found & role_names_in_schema()
 
 
+def route_verbs(source=None) -> list[tuple[str, str]]:
+    """(METHOD, path) for every route on the membership/invitation surface that the source declares.
+
+    `source` lets a control feed the reader a route set of its own, which is the only way to show that a
+    guard against a restored POST can see one. The verb is part of the fact 019 changed: the path
+    /api/workspace/members still exists, only as a read.
+    """
+    body = ast.parse(MAIN.read_text(encoding="utf-8")).body if source is None else ast.parse(source).body
+    found = []
+    for node in body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for decorator in node.decorator_list:
+            if (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute)
+                    and isinstance(decorator.func.value, ast.Name) and decorator.func.value.id == "app"
+                    and decorator.args and isinstance(decorator.args[0], ast.Constant)
+                    and isinstance(decorator.args[0].value, str)):
+                path = decorator.args[0].value
+                if on_surface(path):
+                    found.append((decorator.func.attr.upper(), path))
+    return found
+
+
 def routes_declared() -> set[str]:
-    paths = set()
-    for node in statements(MAIN):
-        if isinstance(node, ast.FunctionDef):
-            for decorator in node.decorator_list:
-                if (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute)
-                        and isinstance(decorator.func.value, ast.Name) and decorator.func.value.id == "app"
-                        and decorator.args and isinstance(decorator.args[0], ast.Constant)):
-                    value = decorator.args[0].value
-                    if "/workspace/members" in value:
-                        paths.add(value)
-    return paths
+    return {path for _, path in route_verbs()}
 
 
 def test_the_panel_drives_the_routes_the_api_declares():
     declared = routes_declared()
-    assert declared == {"/api/workspace/members", "/api/workspace/members/{member_id}",
-                        "/api/workspace/members/transfer"}, sorted(declared)
+    assert declared == DECLARED_ROUTES, sorted(declared)
+    assert {(verb, path) for verb, path in route_verbs()} == DECLARED_ENDPOINTS, sorted(route_verbs())
     app = APP_JS.read_text(encoding="utf-8")
-    for route in ("/api/workspace/members", "/api/workspace/members/transfer"):
+    for route in ("/api/workspace/members", "/api/workspace/members/transfer",
+                  "/api/workspace/invitations", "/api/account/invitations",
+                  "/api/account/invitations/accept", "/api/account/invitations/decline"):
         assert route in app, f"the roster no longer calls {route}"
     assert "/api/workspace/members/${member.user_id}" in app, (
         "the panel must address a member by id, and the id it uses is the user_id the roster lists")
@@ -211,12 +331,23 @@ def test_the_panel_drives_the_routes_the_api_declares():
 def test_the_panel_selects_only_elements_the_document_defines():
     app = APP_JS.read_text(encoding="utf-8")
     document = INDEX_HTML.read_text(encoding="utf-8")
-    declared = set(re.findall(r'id="([A-Za-z0-9_-]+)"', document))
-    team_ids = {"teamState", "teamList", "teamManage", "teamEmail", "teamAddRole", "teamAdd", "teamError"}
-    missing = sorted(team_ids - declared)
+    missing = sorted(PANEL_IDS - set(re.findall(r'id="([A-Za-z0-9_-]+)"', document)))
     assert not missing, f"index.html lost roster elements: {missing}"
-    dangling = sorted({found for found in re.findall(r"\$\('#(team[A-Za-z0-9]*)'\)", app)} - declared)
+    dangling = dangling_selectors(app, document)
     assert not dangling, f"app.js selects roster elements that no document defines: {dangling}"
+
+
+def test_the_element_reader_fires_on_a_selector_nothing_defines():
+    """Both halves of the guard above read two files and subtract; an empty subtraction needs proving."""
+    document = INDEX_HTML.read_text(encoding="utf-8")
+    declared = set(re.findall(r'id="([A-Za-z0-9_-]+)"', document))
+    assert sorted(PANEL_IDS - declared) == [], "the panel markup went missing, so the set above is not the decision"
+    assert dangling_selectors("$('#teamList'); $('#inboxState'); $('#teamGhost');",
+                              '<b id="teamList"></b><b id="inboxState"></b>') == ["teamGhost"]
+    assert dangling_selectors("$('#teamList'); $('#inboxState');",
+                              '<b id="teamList"></b><b id="inboxState"></b>') == []
+    assert dangling_selectors("$('#erasureButton');", '<b id="teamList"></b>') == [], (
+        "the reader reached outside the roster and the invitation panels")
 
 
 def test_the_role_vocabulary_is_read_from_the_schema_not_retyped():

@@ -794,7 +794,7 @@ def walk_privacy(page, auditor: Auditor, viewport: str, probe: dict) -> list[str
 
 
 def provision_team_probe(email: str) -> str:
-    """An account that exists on the platform but belongs to no workspace, so the panel can add it."""
+    """An account that exists on the platform but belongs to no workspace, so it can be offered one."""
     return compose_sql(f"""INSERT INTO users(email,display_name,password_hash,is_platform_admin)
       SELECT '{email}','A11y Team Probe',password_hash,false FROM users WHERE email='{EMAIL}' RETURNING id""")
 
@@ -802,7 +802,8 @@ def provision_team_probe(email: str) -> str:
 def retire_team_probe(user_id: str):
     if not user_id:
         return
-    for table, column in (("workspace_members", "user_id"), ("auth_sessions", "user_id"),
+    for table, column in (("workspace_invitations", "used_by"), ("workspace_invitations", "revoked_by"),
+                          ("workspace_members", "user_id"), ("auth_sessions", "user_id"),
                           ("user_preferences", "user_id"), ("users", "id")):
         try:
             compose_sql(f"DELETE FROM {table} WHERE {column}='{user_id}'")
@@ -812,32 +813,187 @@ def retire_team_probe(user_id: str):
             print(f"  team probe cleanup skipped on {table}: {str(exc)[:120]}")
 
 
-def walk_team(page, auditor: Auditor, viewport: str, probe_email: str) -> list[str]:
-    """Roster -> add -> re-role -> confirm dialog -> remove, plus the one refusal the panel can show."""
+def reload_account_view(page, auditor: Auditor, viewport: str):
+    """Re-open 数据与账户 and wait for the panel's own reads to come back, not just for the view class.
+
+    navigate() flips `.active` synchronously and only then awaits its fetches, so a check written
+    against the DOM immediately after the click reads the previous render. Both roster lists are waited
+    for by response, which is the only signal that says "the numbers on screen are from this visit".
+    """
+    goto_view(page, "资产", "view-assets")
+    with page.expect_response(lambda r: "/api/workspace/members" in r.url, timeout=20000) as roster, \
+            page.expect_response(lambda r: "/api/workspace/invitations" in r.url, timeout=20000) as offers:
+        goto_view(page, "数据与账户", "view-account")
+    for awaited in (roster, offers):
+        response = awaited.value
+        if response.status != 200:
+            raise SystemExit(f"re-entering the account view answered {response.status} on {response.url}")
+
+
+def sign_in_as(page, email: str):
+    """Log a second account in on its own page, without the state audit login() performs.
+
+    login() exists to produce an auditable login screen, and the owner's page already did that this
+    run; re-auditing the same state from the invitee's page would only add a second axe pass over an
+    identical document. What the invitee's page has to contribute is a session, so this is the short
+    version of the same handshake.
+    """
+    page.goto(WEB_URL, wait_until="networkidle")
+    page.wait_for_selector("#loginForm", timeout=20000)
+    page.fill("#email", email)
+    page.fill("#password", PASSWORD)
+    page.press("#password", "Enter")
+    page.wait_for_selector("#app:not([hidden])", timeout=20000)
+
+
+def offer_row(page, address: str):
+    return page.locator("#inviteList .member-row", has_text=address)
+
+
+def pending_offers(page) -> int:
+    """How many offers the owner's panel currently counts as live, read off its own state line."""
+    match = re.match(r"(\d+) 份待接受", (page.text_content("#inviteState") or "").strip())
+    if not match:
+        raise SystemExit(f"the offer panel's state line does not count live offers: {page.text_content('#inviteState')!r}")
+    return int(match.group(1))
+
+
+def offer_row(page, address: str):
+    """The owner's offer row for exactly this address.
+
+    Matched on the element that holds the address rather than on the row's text: a row's
+    ``textContent`` concatenates the address with whatever span follows it
+    (``nobody-here-x@example.localDemo Owner 发出 · …``), so a whole-token regex can never match, while
+    a plain substring locator collides the probe address with its own ``nobody-here-`` twin and
+    Playwright's strict mode refuses the pair. ``:text-is`` is exact per element, which is the identity
+    both rows actually have.
+    """
+    return page.locator(f"#inviteList .member-row:has(b:text-is('{address}'))")
+
+
+def member_row(page, address: str):
+    """The roster row for exactly this address, for the same reason as offer_row."""
+    return page.locator(f"#teamList .member-row:has(span:text-is('{address}'))")
+
+
+def walk_team(page, invitee, auditor: Auditor, viewport: str, probe_email: str) -> list[str]:
+    """Offer -> the addressed account accepts in its own session -> re-role -> confirm dialog -> remove.
+
+    The order is the claim: nothing on the owner's side of this walk can make the probe a member, so
+    the roster is asserted not to have moved while only offers existed, and it moves exactly once, in
+    the invitee's session.
+    """
     failures: list[str] = []
     goto_view(page, "数据与账户", "view-account")
     page.wait_for_selector("#teamList .member-row", timeout=20000)
+    # The state line is the panel's own count, so it is read rather than assumed -- but only as a
+    # baseline: aborted runs of this gate leave offers behind, so every later expectation is a delta.
+    page.wait_for_function("() => /^\\d+ 份待接受/.test((document.querySelector('#inviteState')||{}).textContent||'')",
+                           timeout=20000)
     before = page.locator("#teamList .member-row").count()
+    live = pending_offers(page)
     auditor.scan(page, "workspace-team", viewport)
 
-    page.fill("#teamEmail", "nobody-here-" + probe_email)
-    page.get_by_role("button", name="添加成员").click()
-    page.wait_for_selector("#teamError:not(:empty)", timeout=20000)
-    if "account" not in (page.text_content("#teamError") or "").lower():
-        failures.append("adding an e-mail with no account did not read as an unknown-account refusal")
-    auditor.scan(page, "workspace-team-refusal", viewport, require="#teamError")
+    ghost = "nobody-here-" + probe_email
+    page.fill("#teamInviteEmail", ghost)
+    page.select_option("#teamInviteRole", "viewer")
+    page.get_by_role("button", name="发出邀请").click()
+    offer_row(page, ghost).first.wait_for(timeout=20000)
+    # The old panel answered an unknown address with a refusal, which is what made it a membership
+    # probe; the offer now goes out the same way it does for a known account, so an empty error strip
+    # and a rendered one-time token are the assertions, not a message to look for.
+    if (page.text_content("#teamError") or "").strip():
+        failures.append(f"inviting an address with no account still surfaces a refusal: {page.text_content('#teamError')!r}")
+    if not page.locator("#teamInviteToken").is_visible():
+        failures.append("the offer came back with no one-time token, so there is nothing to hand over out of band")
+    elif len((page.text_content("#teamInviteTokenValue") or "").strip()) < 20:
+        failures.append(f"the token the panel shows is too short to be the one the server issued: {page.text_content('#teamInviteTokenValue')!r}")
+    if not page.locator("#teamInviteExpiry").is_visible():
+        failures.append("the panel offered an invitation without saying when it stops working")
+    auditor.scan(page, "workspace-team-offered", viewport)
     if page.locator("#teamList .member-row").count() != before:
-        failures.append("the refused add still changed the roster")
+        failures.append("an offer to an address nobody owns still changed the roster")
 
-    page.fill("#teamEmail", probe_email)
-    page.select_option("#teamAddRole", "viewer")
-    page.get_by_role("button", name="添加成员").click()
-    page.wait_for_selector(f"#teamList .member-row:has-text('{probe_email}')", timeout=20000)
-    auditor.scan(page, "workspace-team-added", viewport)
+    page.fill("#teamInviteEmail", probe_email)
+    page.select_option("#teamInviteRole", "viewer")
+    page.get_by_role("button", name="发出邀请").click()
+    offer_row(page, probe_email).first.wait_for(timeout=20000)
+    if page.locator("#teamList .member-row").count() != before:
+        failures.append("the roster grew before the addressed account ever said yes -- the offer attached somebody")
+    auditor.scan(page, "workspace-team-pending", viewport)
+
+    if pending_offers(page) != live + 2:
+        failures.append(f"two offers were issued but the panel counts {pending_offers(page) - live} new live ones")
+    offer_row(page, ghost).get_by_role("button", name="撤销").click()
+    page.wait_for_selector("#dialog[open]", timeout=20000)
+    # Taking back one's own offer is not a step-up action: it removes nothing a person already holds.
+    # Asking for the password here would be the panel confusing "destructive" with "irreversible".
+    if page.locator("#dialog .dialog-fields input[type=password]").count():
+        failures.append("withdrawing an offer now demands a credential, which it deliberately does not need")
+    auditor.scan(page, "workspace-team-revoke-dialog", viewport)
+    page.locator("#dialog .dialog-submit").click()
+    offer_row(page, ghost).first.locator(".tag:has-text('已撤销')").wait_for(timeout=20000)
+    if offer_row(page, ghost).count() != 1:
+        failures.append("a withdrawn offer vanished from the list instead of staying as history")
+    if offer_row(page, ghost).locator("button").count() != 0:
+        failures.append("a withdrawn offer still carries a button")
+    if pending_offers(page) != live + 1:
+        failures.append(f"withdrawing one of the two offers left the panel counting {pending_offers(page) - live} live")
+
+    # This is the moment the invitation feature is actually tested as usable: the account signing in
+    # here holds no membership at all, so a boot that requires one -- /api/bootstrap answering 400 and
+    # init() throwing the visitor back to the form -- makes this line fail rather than pass quietly.
+    sign_in_as(invitee, probe_email)
+    goto_view(invitee, "数据与账户", "view-account")
+    invitee.wait_for_selector("#inboxList .member-row", timeout=20000)
+    if invitee.locator("#inboxList .member-row").count() != 1:
+        failures.append(f"the addressed account sees {invitee.locator('#inboxList .member-row').count()} offers, "
+                        "expected the one live offer and not the withdrawn one")
+    if "nobody-here-" in (invitee.text_content("#inboxList") or ""):
+        failures.append("the withdrawn offer is still readable in the invitee's inbox")
+    auditor.scan(invitee, "workspace-team-inbox", viewport)
+    accept = invitee.locator("#inboxList .member-row").first.get_by_role("button", name="接受", exact=True)
+    accept.click()
+    # The panel repeats, in the confirmation, whose credential the database is about to compare. That
+    # sentence is the feature: an offer is not a seat until the addressed account spends its own session.
+    invitee.wait_for_selector("#dialog[open]", timeout=20000)
+    dialog_text = invitee.text_content("#dialog") or ""
+    if "邮箱" not in dialog_text or "登录账户" not in dialog_text:
+        failures.append(f"the acceptance dialog does not say whose address the database will check: {dialog_text[:160]!r}")
+    auditor.scan(invitee, "workspace-team-accept-dialog", viewport)
+    invitee.locator("#dialog .dialog-submit").click()
+    # "The row went away" is not the evidence: a claim that the server refused also leaves an empty
+    # list, by way of the panel's error state. An acceptance has to land as 没有待处理 with nothing in
+    # the error strip, or the owner-side checks below would be reading a screen that never changed.
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+    try:
+        invitee.wait_for_function(
+            "() => !document.querySelector('#inboxList .member-row')"
+            " && !((document.querySelector('#inboxError')||{}).textContent || '').trim()"
+            " && /没有待处理/.test((document.querySelector('#inboxState')||{}).textContent || '')",
+            timeout=20000)
+    except PlaywrightTimeout:
+        failures.append("the acceptance never read as settled on the invitee's own screen: "
+                        f"state={invitee.text_content('#inboxState')!r} error={invitee.text_content('#inboxError')!r}")
+
+    reload_account_view(page, auditor, viewport)
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+    try:
+        member_row(page, probe_email).first.wait_for(timeout=20000)
+    except PlaywrightTimeout:
+        failures.append("the acceptance never reached the owner's roster (panel says "
+                        f"{(page.text_content('#teamState') or '').strip()!r}, "
+                        f"rows={page.locator('#teamList .member-row').count()}, baseline={before})")
+    try:
+        offer_row(page, probe_email).first.locator(".tag:has-text('已接受')").wait_for(timeout=20000)
+    except PlaywrightTimeout:
+        failures.append("the accepted offer is not shown as settled on the owner's side: "
+                        f"{(offer_row(page, probe_email).first.text_content() or '')[:160]!r}")
+    auditor.scan(page, "workspace-team-accepted", viewport)
     if page.locator("#teamList .member-row").count() != before + 1:
-        failures.append("the roster did not grow by exactly the member the panel added")
+        failures.append(f"the roster moved by {page.locator('#teamList .member-row').count() - before} rows for one acceptance")
 
-    row = page.locator("#teamList .member-row", has_text=probe_email)
+    row = member_row(page, probe_email)
     # The confirmation dialogs now carry two fields, so a bare `input` selector would match both and
     # Playwright's strict mode would fail the walk for the wrong reason.
     email_field = "#dialog .dialog-fields input:not([type=password])"
@@ -851,7 +1007,7 @@ def walk_team(page, auditor: Auditor, viewport: str, probe_email: str) -> list[s
     auditor.scan(page, "workspace-team-role-dialog", viewport)
     page.fill(password_field, PASSWORD)
     page.locator("#dialog .dialog-submit").click()
-    page.wait_for_selector(f"#teamList .member-row:has-text('{probe_email}') .tag:text-is('reviewer')", timeout=20000)
+    member_row(page, probe_email).first.locator(".tag:text-is('reviewer')").wait_for(timeout=20000)
     auditor.scan(page, "workspace-team-role", viewport)
 
     row.get_by_role("button", name="移出").click()
@@ -866,7 +1022,7 @@ def walk_team(page, auditor: Auditor, viewport: str, probe_email: str) -> list[s
     mismatch = (page.text_content("#teamError") or "").strip()
     if "不一致" not in mismatch:
         failures.append("a confirmation that does not match the member's e-mail still let removal proceed")
-    if page.locator(f"#teamList .member-row:has-text('{probe_email}')").count() != 1:
+    if member_row(page, probe_email).count() != 1:
         failures.append("the mismatched confirmation removed the member anyway")
 
     # The blank run is the point of the feature: naming the target's e-mail -- which the panel already
@@ -881,17 +1037,15 @@ def walk_team(page, auditor: Auditor, viewport: str, probe_email: str) -> list[s
         failures.append("an empty password left no message in the dialog")
     else:
         auditor.scan(page, "workspace-team-remove-blank", viewport, require="#dialog .dialog-error")
-    if page.locator(f"#teamList .member-row:has-text('{probe_email}')").count() != 1:
+    if member_row(page, probe_email).count() != 1:
         failures.append("an empty password still removed the member")
     page.fill(password_field, PASSWORD)
     page.locator("#dialog .dialog-submit").click()
-    page.wait_for_selector(f"#teamList .member-row:has-text('{probe_email}')", state="detached", timeout=20000)
+    member_row(page, probe_email).first.wait_for(state="detached", timeout=20000)
     auditor.scan(page, "workspace-team-removed", viewport)
     if page.locator("#teamList .member-row").count() != before:
         failures.append("the roster never returned to the size it started at")
     return failures
-
-
 NON_ADMIN_EMAIL = os.environ.get("E2E_NON_ADMIN_EMAIL", "third@example.local")
 NON_ADMIN_PASSWORD = os.environ.get("E2E_NON_ADMIN_PASSWORD", "demo-viewer")
 
@@ -1148,9 +1302,11 @@ def main() -> int:
                 walk_studio(page, auditor, viewport)
                 walk_views(page, auditor, viewport)
                 if stage == "axe":
-                    # The roster walk runs against the demo owner's own session and cleans up after
-                    # itself through the UI, so the probe account only has to be removed here.
-                    team_email = f"a11y-team-{viewport}-{time.strftime('%m%dT%H%M%SZ', time.gmtime())}@example.local"
+                    # The roster walk runs in two sessions -- the demo owner's, and the probe's own --
+                    # and cleans up after itself through the UI, so the probe account only has to be
+                    # removed here.
+                    team_email = (f"a11y-team-{viewport}-"
+                                  f"{time.strftime('%m%dT%H%M%SZ', time.gmtime())}@example.local").lower()
                     team_user = ""
                     try:
                         team_user = provision_team_probe(team_email)
@@ -1162,7 +1318,18 @@ def main() -> int:
                         # accounts in the demo roster, and atexit is what turns "I created it" into
                         # "I remove it" even when the walk raises on the way.
                         atexit.register(retire_team_probe, team_user)
-                        team += walk_team(page, auditor, viewport, team_email)
+                        # The second context is the point, not a convenience: cookies are per-context,
+                        # and the claim being walked is that an offer only becomes a membership when the
+                        # addressed account asks for it. One page cannot be both the inviter and the
+                        # person invited.
+                        invitee_context = browser.new_context(viewport=size)
+                        invitee = invitee_context.new_page()
+                        auditor.arm(invitee)
+                        auditor.attach_console(invitee, f"{viewport}-{stage}-invitee")
+                        try:
+                            team += walk_team(page, invitee, auditor, viewport, team_email)
+                        finally:
+                            invitee_context.close()
                         retire_team_probe(team_user)
                 if stage == "axe":
                     keyboard += keyboard_checks(page, auditor, viewport)

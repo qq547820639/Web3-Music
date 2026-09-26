@@ -277,9 +277,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/workspace/invitations:
     post:
-      summary: Add Workspace Member
-      operationId: add_workspace_member_api_workspace_members_post
+      summary: Create Workspace Invitation Route
+      description: Offer an address a role in this workspace. The offer is not the
+        membership.
+      operationId: create_workspace_invitation_route_api_workspace_invitations_post
       security:
       - JWTBearer: []
       - SessionCookie: []
@@ -305,7 +308,185 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MemberBody'
+              $ref: '#/components/schemas/InviteBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: List Workspace Invitations
+      operationId: list_workspace_invitations_api_workspace_invitations_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/workspace/invitations/{invitation_id}:
+    delete:
+      summary: Revoke Workspace Invitation Route
+      operationId: revoke_workspace_invitation_route_api_workspace_invitations__invitation_id__delete
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Invitation Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/account/invitations:
+    get:
+      summary: My Invitations
+      operationId: my_invitations_api_account_invitations_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/account/invitations/accept:
+    post:
+      summary: Accept Workspace Invitation Route
+      description: 'Claim an invitation. Either the token from the share link or the
+        id from the inbox -- and in
+
+        both cases the authority is that this session''s own account holds the addressed
+        address.'
+      operationId: accept_workspace_invitation_route_api_account_invitations_accept_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationClaimBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/account/invitations/decline:
+    post:
+      summary: Decline Workspace Invitation Route
+      operationId: decline_workspace_invitation_route_api_account_invitations_decline_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationDeclineBody'
       responses:
         '200':
           description: Successful Response
@@ -4404,6 +4585,42 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    InvitationClaimBody:
+      properties:
+        token:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Token
+        invitation_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Invitation Id
+      type: object
+      title: InvitationClaimBody
+    InvitationDeclineBody:
+      properties:
+        invitation_id:
+          type: string
+          title: Invitation Id
+      type: object
+      required:
+      - invitation_id
+      title: InvitationDeclineBody
+    InviteBody:
+      properties:
+        email:
+          type: string
+          title: Email
+        role:
+          type: string
+          title: Role
+      type: object
+      required:
+      - email
+      - role
+      title: InviteBody
     JobSubmit:
       properties:
         quote_id:
@@ -4473,19 +4690,6 @@ components:
       - expected_spec_revision
       - confirmation
       title: MasterRequest
-    MemberBody:
-      properties:
-        email:
-          type: string
-          title: Email
-        role:
-          type: string
-          title: Role
-      type: object
-      required:
-      - email
-      - role
-      title: MemberBody
     MemberRemoveBody:
       properties:
         password:

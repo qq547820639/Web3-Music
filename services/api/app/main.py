@@ -1,4 +1,4 @@
-import hashlib, hmac, io, json, os, re, time, uuid, zipfile
+import hashlib, hmac, io, json, os, re, secrets, time, uuid, zipfile
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from datetime import datetime, timedelta, timezone
@@ -477,13 +477,21 @@ def mfa_disable(body:MfaDisableBody,request:Request,user:UserIdentity=Depends(ge
     return serialize({"armed":False})
 
 
-# ---- workspace membership (G11) -------------------------------------------------------------
+# ---- workspace membership and invitations (G11) --------------------------------------------------
 # The API has always been able to read memberships (list_memberships, at auth.py:276) and has never
 # had a way to write one: music_app holds SELECT only on workspace_members, so an application UPDATE
 # would match zero rows and raise nothing. 017's SECURITY DEFINER functions carry the writes and hold
 # the invariants. require_roles() at the edge answers "are you a manager" with a 403, and the
 # functions re-derive the same fact from the table because they, not the endpoint, are the guarantee --
 # scripts/member_drill.py proves that by calling the functions with a forged actor as music_app.
+#
+# The one 017 write that used to be exposed here -- POST /api/workspace/members, adding a member by
+# e-mail address -- is gone, and 019 takes its place with an offer the other person has to accept.
+# The reason is not taste: that function resolved the address against `users` and answered an unknown
+# one with its own words (017:58-61), so the endpoint was simultaneously a platform-membership probe
+# and a way to attach an account to a workspace the owner chose, with no step in which the person
+# named could say no. 019:222 revokes music_app's EXECUTE on it, which is why no route here can call
+# it even by accident.
 
 def _member_write(cur, statement: str, params: tuple):
     """Call one of 017's functions, translating the database's own refusals."""
@@ -516,10 +524,13 @@ def _membership_result(row) -> dict:
 
 
 def _membership_change(request: Request, actor: Actor, action: str, statement: str, params: tuple, target: str,
-                       step_up: list[str] | None = None):
+                       step_up: list[str] | None = None, extra=None):
     # `step_up` is evaluated by the caller before this function runs, so the credential is spent --
     # and a refusal audited -- before any of 017's functions is reached. It is recorded in the audit
     # row only, not in the response: who verified is evidence about the action, not data for the caller.
+    # `extra` is a result->dict hook for the one thing that must exist in the response and nowhere
+    # else: the invitation token, whose only stored form is its SHA-256 (see 019). Auditing `result`
+    # and answering `{**result, **extra(result)}` keeps the secret out of audit_events.payload.
     with transaction() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         try:
             result = _membership_result(_member_write(cur, statement, params))
@@ -529,13 +540,17 @@ def _membership_change(request: Request, actor: Actor, action: str, statement: s
             raise
         audit(cur, actor, action, "workspace_member", target,
               {**result, "step_up": step_up} if step_up else result, request.state.request_id)
+    if extra:
+        result = {**result, **extra(result)}
     return serialize(result)
 
 
-class MemberBody(BaseModel): email: str; role: str
+class InviteBody(BaseModel): email: str; role: str
 class MemberRoleBody(StepUp): role: str
 class MemberRemoveBody(StepUp): pass
 class MemberTransferBody(StepUp): user_id: str
+class InvitationClaimBody(BaseModel): token: str | None = None; invitation_id: str | None = None
+class InvitationDeclineBody(BaseModel): invitation_id: str
 
 
 def allowed_workspace_roles() -> list[str]:
@@ -564,11 +579,85 @@ def list_workspace_members(actor: Actor = Depends(get_actor)):
                       "roles": allowed_workspace_roles()})
 
 
-@app.post("/api/workspace/members")
-def add_workspace_member(body: MemberBody, request: Request, actor: Actor = Depends(require_roles("owner", "admin"))):
-    return _membership_change(request, actor, "workspace.member.add",
-                              "SELECT * FROM add_workspace_member(%s,%s,%s,%s)",
-                              (actor.workspace_id, actor.user_id, body.email, body.role), body.email)
+@app.post("/api/workspace/invitations")
+def create_workspace_invitation_route(body: InviteBody, request: Request,
+                                      actor: Actor = Depends(require_roles("owner", "admin"))):
+    """Offer an address a role in this workspace. The offer is not the membership."""
+    # 256 bits of randomness from the OS CSPRNG, stored only as its SHA-256 -- the same shape as
+    # create_browser_session's refresh token (auth.py:119-124). The plaintext exists in this response
+    # and in no database row, log or audit payload.
+    token = secrets.token_urlsafe(32)
+    return _membership_change(request, actor, "workspace.invitation.create",
+                              "SELECT * FROM create_workspace_invitation(%s,%s,%s,%s,%s)",
+                              (actor.workspace_id, actor.user_id, body.email, body.role, token_hash(token)),
+                              body.email,
+                              # Only a written invitation has a token to hand back; the already-member
+                              # branch created no row, so a token would be a claim on nothing.
+                              extra=lambda result: {"token": token} if result.get("invited") else {})
+
+
+@app.get("/api/workspace/invitations")
+def list_workspace_invitations(actor: Actor = Depends(require_roles("owner", "admin"))):
+    rows = fetch_all("SELECT * FROM workspace_invitation_list(%s,%s)", (actor.workspace_id, actor.user_id))
+    return serialize({"workspace_id": actor.workspace_id, "invitations": rows,
+                      "actor_role": actor.role, "can_manage": True,
+                      "roles": [role for role in allowed_workspace_roles() if role != "owner"]})
+
+
+@app.delete("/api/workspace/invitations/{invitation_id}")
+def revoke_workspace_invitation_route(invitation_id: str, request: Request,
+                                      actor: Actor = Depends(require_roles("owner", "admin"))):
+    return _membership_change(request, actor, "workspace.invitation.revoke",
+                              "SELECT * FROM revoke_workspace_invitation(%s,%s,%s::uuid)",
+                              (actor.workspace_id, actor.user_id, invitation_id), invitation_id)
+
+
+# The invitee's own surface. Deliberately /api/account/* and deliberately keyed on get_user rather
+# than get_actor: get_actor demands X-Workspace-Id *and* an existing membership (auth.py:244-249), and
+# the whole point of an invitation is that the person reading it is not a member yet. Nothing here
+# takes a workspace -- the row being claimed names its own, and 019's functions re-derive it.
+@app.get("/api/account/invitations")
+def my_invitations(user: UserIdentity = Depends(get_user)):
+    rows = fetch_all("SELECT * FROM my_workspace_invitations(%s)", (user.user_id,))
+    return serialize({"invitations": rows, "email": user.email})
+
+
+def _invitation_claim(request: Request, user: UserIdentity, action: str, statement: str, params: tuple,
+                      target: str):
+    actor = Actor(user.user_id, user.email, user.display_name, user.is_platform_admin, user.session_id, None, "self")
+    with transaction() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        try:
+            result = _membership_result(_member_write(cur, statement, params))
+        except HTTPException as exc:
+            _membership_denied(actor, request, action, target, str(exc.detail))
+            conn.commit()
+            raise
+        audit(cur, actor, action, "workspace_invitation", target, result, request.state.request_id)
+    return serialize(result)
+
+
+@app.post("/api/account/invitations/accept")
+def accept_workspace_invitation_route(body: InvitationClaimBody, request: Request,
+                                      user: UserIdentity = Depends(get_user)):
+    """Claim an invitation. Either the token from the share link or the id from the inbox -- and in
+    both cases the authority is that this session's own account holds the addressed address."""
+    if (body.token is None) == (body.invitation_id is None):
+        raise HTTPException(400, "supply either a token or an invitation_id, not both and not neither")
+    # Every refusals wording is 409 (_member_write), including "addressed to a different account":
+    # a 403 here would confirm that the token or id is real, which is the probe this slice removed.
+    return _invitation_claim(request, user, "workspace.invitation.accept",
+                             "SELECT * FROM accept_workspace_invitation(%s,%s::uuid,%s)",
+                             (user.user_id, body.invitation_id,
+                              token_hash(body.token) if body.token else None),
+                             body.invitation_id or "token")
+
+
+@app.post("/api/account/invitations/decline")
+def decline_workspace_invitation_route(body: InvitationDeclineBody, request: Request,
+                                       user: UserIdentity = Depends(get_user)):
+    return _invitation_claim(request, user, "workspace.invitation.decline",
+                             "SELECT * FROM decline_workspace_invitation(%s,%s::uuid)",
+                             (user.user_id, body.invitation_id), body.invitation_id)
 
 
 @app.patch("/api/workspace/members/{member_id}")
@@ -621,7 +710,13 @@ PERSONAL_TABLES=(("song_projects","created_by","workspace_id"),("project_branche
   ("brand_briefs","created_by","workspace_id"),("brand_submissions","submitted_by","submitting_workspace_id"),
   ("support_tickets","opened_by","workspace_id"),("support_tickets","assigned_to","workspace_id"),
   ("moderation_cases","assigned_to","workspace_id"),("audit_events","actor_id","workspace_id"),
-  ("ledger_transactions","created_by","workspace_id"))
+  ("ledger_transactions","created_by","workspace_id"),
+  # 019's invitation rows store three person-keys: who offered, who used it, who settled it (the
+  # inviter revoking and the invitee declining land in the same column pair, by design). The
+  # addresses themselves are covered by the users.* trio below only for the caller's own account;
+  # an invitation's `email` reaches the response as part of the row the caller is connected to.
+  ("workspace_invitations","created_by","workspace_id"),("workspace_invitations","used_by","workspace_id"),
+  ("workspace_invitations","revoked_by","workspace_id"))
 # The account record a subject access response is built from. This list, not a SELECT *, so adding
 # a column to users cannot silently widen what the endpoint hands out -- and 015's six
 # authentication columns are in it deliberately: a sealed seed and a set of code hashes are still

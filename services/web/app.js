@@ -424,10 +424,7 @@ async function init() {
     // A live session means the erased receipt belongs to somebody else's past; keep it off-screen.
     sessionStorage.removeItem('resonance_erased');
     state.memberships = me.workspaces;
-    if (!state.memberships.some(w => w.id === state.workspace)) state.workspace = state.memberships[0]?.id || '';
     const ws = $('#workspace');
-    ws.innerHTML = state.memberships.map(w => `<option value="${w.id}">${escapeHtml(w.name)} · ${escapeHtml(w.role)}</option>`).join('');
-    ws.value = state.workspace;
     ws.onchange = async () => {
       state.workspace = ws.value;
       localStorage.setItem('resonance_workspace', state.workspace);
@@ -437,6 +434,9 @@ async function init() {
       await loadProjects();
       await navigate(state.view);
     };
+    // One place builds the top-bar choices: a membership gained from an invitation and a cold login
+    // must not be able to drift on which workspace is selected when the stored one is gone.
+    renderWorkspaceOptions();
     $('#identity').textContent = state.user.display_name;
     setAuthScreen(true);
     await refreshBootstrap();
@@ -457,6 +457,15 @@ async function init() {
   }
 }
 async function refreshBootstrap() {
+  // Having no seat became an ordinary state with 019: the account an invitation was written for has
+  // to be able to sign in and read that invitation, and it cannot be a member first -- that is the
+  // point. /api/bootstrap answers 400 without a workspace, so the alternative was a boot that threw
+  // the visitor back to the login form with nothing on screen to explain it.
+  if (!state.workspace) {
+    state.bootstrap = null;
+    $('#creditPill').textContent = '还没有加入任何工作区';
+    return;
+  }
   state.bootstrap = await api('/api/bootstrap');
   const available = state.bootstrap.credits?.available ?? 0;
   $('#creditPill').textContent = `${Number(available).toFixed(0)} Credits`;
@@ -710,6 +719,13 @@ function setRadarTip(point, show) {
 
 // Creation OS
 async function loadProjects(preserveSelection = false) {
+  if (!state.workspace) {
+    state.lists.projects.total = 0;
+    state.projects = [];
+    renderProjects();
+    $('#branches').innerHTML = '<span class="muted">加入一个工作区后显示</span>';
+    return;
+  }
   const data = await api('/api/projects' + listQuery('projects'));
   state.lists.projects.total = data.total || 0;
   state.projects = data.items || [];
@@ -1801,13 +1817,22 @@ async function copyText(value, label) {
 $('#copySecret').onclick = () => copyText(mfaPanel.secret || $('#mfaSecret').textContent, '密钥');
 $('#copyRecovery').onclick = () => copyText([...$('#mfaRecoveryList').querySelectorAll('code')].map(c => c.textContent).join('\n'), '恢复码');
 
-// ---- workspace membership writes (the 团队协作 panel) ------------------------------------------
-// Migration 017 and scripts/member_drill.py made the write path real; this panel is the same surface
-// for someone without a terminal. Two things it deliberately does not do: restate the legal role
-// names (the API hands back the ones the CHECK constraint allows, and 017's own comment says the copy
-// is the thing that lies), and report a refusal as a success -- the functions answer already_member
-// and unchanged rather than raising, so the panel says those back in words.
+// ---- workspace invitations and membership (the 团队协作 panel) ----------------------------------
+// Migration 019 replaced 017's "add a member by e-mail". That path resolved the address against
+// `users` and wrote the membership row in the same step, so the panel was at once a probe for
+// "does this person have an account" and a way to attach somebody without their saying yes. What is
+// left here is an offer that becomes a membership only when the person addressed accepts it from
+// their own account. Two things this panel still does not do: restate the legal role names (the API
+// hands back the ones the CHECK constraint allows, and 017's own comment says the copy is the thing
+// that lies), and report a refusal as a success -- the functions answer already_member,
+// already_settled and unchanged rather than raising, so the panel says those back in words.
 const team = { data: null };
+// The invitation list carries the offer vocabulary (membership roles minus owner), so the invite form
+// is populated from it and not from the roster: an offer must never be able to hand out ownership.
+const invites = { data: null, loaded: false };
+// The plaintext token exists in one response and in no stored row (019 keeps only its SHA-256), so
+// the panel holds it for exactly as long as the box holding it is on screen.
+const inviteOffer = { token: '' };
 
 function fillRoles(select, roles, current) {
   select.replaceChildren(...roles.map(role => {
@@ -1819,12 +1844,53 @@ function fillRoles(select, roles, current) {
   }));
 }
 
+// An empty list and an unreadable one are different facts, and a blank container cannot tell them
+// apart, so every list in this panel gets its own sentence instead of zero nodes.
+function emptyLine(text) {
+  const line = document.createElement('p');
+  line.className = 'muted';
+  line.textContent = text;
+  return line;
+}
+
+// The controls in one row all write the same membership or the same invitation, so while one request
+// is in flight the rest of them can only buy a second write the database has to refuse.
+function rowBusy(actions, busy) {
+  for (const el of actions.querySelectorAll('button,select')) el.disabled = busy;
+}
+
+// A success toast that outlives a failed reload makes the app tell two contradictory stories at once,
+// so every write re-reads the server's answer first and only then chooses which toast is allowed.
+function reportWrite(message, refreshed) {
+  if (refreshed && !refreshed.ok) {
+    toast(`写入已经提交，但名单没能刷新：${refreshed.message}`, 'error');
+    return;
+  }
+  toast(message, 'ok');
+}
+
+function combine(...results) {
+  const failed = results.find(result => result && !result.ok);
+  return failed ? { ok: false, message: failed.message } : { ok: true, message: '' };
+}
+
+const INVITE_STATUS = { pending: '待接受', used: '已接受', revoked: '已撤销', expired: '已过期' };
+
+function invitationStatusLabel(row) {
+  return INVITE_STATUS[row.invitation_status] || row.invitation_status || '未知';
+}
+
+function workspaceName(id) {
+  const known = (state.memberships || []).find(w => w.id === id);
+  return known ? known.name : String(id || '').slice(0, 8);
+}
+
 function teamMessage(result, kind, email) {
   const r = result || {};
-  if (kind === 'add') {
+  if (kind === 'invite') {
     return r.already_member
-      ? `${email} 已经是这个工作区的成员（角色 ${r.role}），没有重复加入。`
-      : `已添加成员 ${email}，角色 ${r.role}。`;
+      ? `${email} 已经是这个工作区的成员（角色 ${r.role}），没有再发一份邀请。`
+      : `已向 ${r.email} 发出 ${r.role} 邀请，等待对方接受。`;
   }
   if (kind === 'role') {
     return r.unchanged
@@ -1832,6 +1898,11 @@ function teamMessage(result, kind, email) {
       : `角色已从 ${r.previous_role} 改为 ${r.role}。`;
   }
   if (kind === 'remove') return '已移出成员；这个账户在平台上的其他工作区不受影响。';
+  if (kind === 'revoke') {
+    return r.already_settled
+      ? '这份邀请已经落定，撤销没有改动任何东西。'
+      : '邀请已撤销，那串口令立刻失效；已经是成员的人不受影响。';
+  }
   return `所有权已移交给 ${String(r.new_owner || '').slice(0, 8)}…，你现在的角色是 ${r.previous_owner_role}。`;
 }
 
@@ -1845,19 +1916,19 @@ function memberAction(member, roles) {
   save.type = 'button';
   save.className = 'secondary';
   save.textContent = '保存角色';
-  save.onclick = () => memberChange(member, select.value);
+  save.onclick = () => memberChange(member, select.value, save, actions);
   const drop = document.createElement('button');
   drop.type = 'button';
   drop.className = 'danger';
   drop.textContent = '移出';
-  drop.onclick = () => memberRemove(member);
+  drop.onclick = () => memberRemove(member, drop, actions);
   actions.append(select, save, drop);
   if (team.data && team.data.actor_role === 'owner' && member.role !== 'owner') {
     const give = document.createElement('button');
     give.type = 'button';
     give.className = 'ghost';
     give.textContent = '移交所有权';
-    give.onclick = () => ownershipTransfer(member);
+    give.onclick = () => ownershipTransfer(member, give, actions);
     actions.append(give);
   }
   return actions;
@@ -1868,14 +1939,11 @@ function renderTeam(data) {
   const roles = data.roles || [];
   const members = data.members || [];
   $('#teamState').textContent = `${members.length} 名成员${data.can_manage ? '（可管理）' : '（只读）'}`;
-  $('#teamManage').hidden = !data.can_manage;
   $('#teamError').textContent = '';
-  $('#teamAdd').disabled = !roles.length;
-  $('#teamAddRole').disabled = !roles.length;
-  fillRoles($('#teamAddRole'), roles, roles.includes('creator') ? 'creator' : roles[0]);
-  if (!roles.length) $('#teamAddRole').replaceChildren();
+  // #teamManage is renderInvitations' business: without the server's offer vocabulary the form would
+  // have nothing honest to put in the role select.
   const list = $('#teamList');
-  list.replaceChildren(...members.map(member => {
+  list.replaceChildren(...(members.length ? members.map(member => {
     const row = document.createElement('div');
     row.className = 'member-row';
     const who = document.createElement('div');
@@ -1900,19 +1968,144 @@ function renderTeam(data) {
       row.append(memberAction(member, roles));
     }
     return row;
-  }));
+  }) : [emptyLine('这个工作区还没有成员记录。')]));
 }
 
-async function loadTeam() {
+function syncInviteGate() {
+  const roles = (invites.data && invites.data.roles) || [];
+  const ready = invites.loaded && roles.length > 0;
+  $('#teamInvite').disabled = !ready;
+  $('#teamInviteRole').disabled = !ready;
+}
+
+function invitationRow(row) {
+  const live = row.invitation_status === 'pending';
+  const node = document.createElement('div');
+  node.className = 'member-row';
+  const who = document.createElement('div');
+  const mail = document.createElement('b');
+  mail.textContent = row.invited_email;
+  const by = document.createElement('span');
+  by.className = 'muted';
+  by.textContent = `${row.invited_by_name || row.invited_by_email || '未知发起人'} 发出 · ${fmtDate(row.invited_at)}`;
+  const when = document.createElement('span');
+  when.className = 'muted';
+  // A live offer is defined by when it stops working; a settled one by who settled it, which is the
+  // only thing that tells a withdrawn invitation apart from a declined one (019 writes both to
+  // revoked_at and names the person in settled_by_name).
+  when.textContent = live
+    ? `有效期至 ${fmtDate(row.invitation_expires_at)}`
+    : (row.settled_at
+        ? `原定至 ${fmtDate(row.invitation_expires_at)} · 落定于 ${fmtDate(row.settled_at)}`
+        : `已于 ${fmtDate(row.invitation_expires_at)} 过期`)
+      + (row.settled_by_name ? ` · 经 ${row.settled_by_name}` : '');
+  who.append(mail, by, when);
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.textContent = `${row.invitation_role} · ${invitationStatusLabel(row)}`;
+  node.append(who, tag);
+  // Settled rows stay on screen as history rather than vanishing; only a live offer has anything left
+  // to withdraw, so that is the only row carrying a button.
+  if (live) {
+    const actions = document.createElement('div');
+    actions.className = 'row gap-sm';
+    const drop = document.createElement('button');
+    drop.type = 'button';
+    drop.className = 'danger';
+    drop.textContent = '撤销';
+    drop.onclick = () => invitationRevoke(row, drop, actions);
+    actions.append(drop);
+    node.append(actions);
+  }
+  return node;
+}
+
+function renderInvitations(data) {
+  invites.data = data;
+  invites.loaded = true;
+  const rows = data.invitations || [];
+  const roles = data.roles || [];
+  const pending = rows.filter(row => row.invitation_status === 'pending').length;
+  $('#inviteState').textContent = `${pending} 份待接受 · 共 ${rows.length} 条`;
+  $('#invitesBlock').hidden = false;
+  $('#teamManage').hidden = data.can_manage !== true;
+  fillRoles($('#teamInviteRole'), roles, roles.includes('creator') ? 'creator' : roles[0]);
+  if (!roles.length) $('#teamInviteRole').replaceChildren();
+  syncInviteGate();
+  // An empty role list means the server could not identify the CHECK constraint that defines the
+  // legal names, so the form stays shut and the panel says so rather than offering guesses.
+  if (!roles.length) $('#teamError').textContent = '数据库没有交出可用的角色名单，无法发出邀请。';
+  $('#inviteList').replaceChildren(...(rows.length
+    ? rows.map(invitationRow)
+    : [emptyLine('还没有发出过邀请。')]));
+}
+
+function noSeatNote() {
+  const note = document.createElement('p');
+  note.className = 'muted';
+  note.textContent = '你还没有加入任何工作区，这一栏暂时没有内容可看。';
+  return note;
+}
+
+async function loadMembers() {
+  if (!state.workspace) {
+    // The loading placeholder must be replaced even when there is nothing to ask: a pane that stays on
+    // 「检查中…」tells the reader a request is coming, and no request is coming.
+    $('#teamState').textContent = '还没有加入任何工作区';
+    $('#teamList').replaceChildren(noSeatNote());
+    return { ok: true, message: '' };
+  }
   try {
     renderTeam(await api('/api/workspace/members'));
+    return { ok: true, message: '' };
   } catch (err) {
     $('#teamState').textContent = '不可用';
     $('#teamError').textContent = err.message;
+    return { ok: false, message: err.message };
   }
 }
 
-async function memberChange(member, role) {
+async function loadInvitations() {
+  if (!state.workspace) {
+    // Same shape as the 403 below, reached before the request instead of after it: with no seat there
+    // is no offer list to read, and that is not an error to show the reader.
+    $('#invitesBlock').hidden = true;
+    $('#teamManage').hidden = true;
+    return { ok: true, message: '' };
+  }
+  try {
+    renderInvitations(await api('/api/workspace/invitations'));
+    return { ok: true, message: '' };
+  } catch (err) {
+    invites.loaded = false;
+    invites.data = null;
+    syncInviteGate();
+    // 403 is the ordinary answer for someone who is neither owner nor admin: there is no invitation
+    // surface for them and nothing went wrong, so the panel hides the blocks without an alert.
+    if (err.status === 403) {
+      $('#invitesBlock').hidden = true;
+      $('#teamManage').hidden = true;
+      return { ok: true, message: '' };
+    }
+    $('#invitesBlock').hidden = false;
+    $('#teamManage').hidden = true;
+    $('#inviteState').textContent = '不可用';
+    $('#inviteList').replaceChildren(emptyLine(`邀请名单读不到：${err.message}`));
+    $('#teamError').textContent = err.message;
+    return { ok: false, message: err.message };
+  }
+}
+
+// Both lists are re-read together, and in this order: the roster clears the panel's alert box and the
+// invitation list has the last word on the form's state, so a panel that refreshed only the roster
+// would go on showing an offer the server had already settled -- which is the "what the click
+// assumed" failure 019 exists to remove.
+async function loadTeam() {
+  const members = await loadMembers();
+  return combine(members, await loadInvitations());
+}
+
+async function memberChange(member, role, btn, actions) {
   $('#teamError').textContent = '';
   if (role === member.role) return;
   const answer = await askDialog({
@@ -1925,16 +2118,19 @@ async function memberChange(member, role) {
     await loadTeam();
     return;
   }
+  rowBusy(actions, true);
+  setLoading(btn, true, '保存中…');
   try {
     const result = await api(`/api/workspace/members/${member.user_id}`, { method: 'PATCH', body: JSON.stringify({ role, ...stepUpBody(answer) }) });
-    toast(teamMessage(result, 'role'), 'ok');
+    reportWrite(teamMessage(result, 'role'), await loadTeam());
   } catch (err) {
     $('#teamError').textContent = err.message;
+    rowBusy(actions, false);
+    setLoading(btn, false);
   }
-  await loadTeam();
 }
 
-async function memberRemove(member) {
+async function memberRemove(member, btn, actions) {
   const answer = await askDialog({
     title: `移出 ${member.display_name || member.email}`,
     description: '移出后这个人立刻失去该工作区的访问，账户本身不会被删除。输入对方邮箱，并填你自己的密码以确认。',
@@ -1946,16 +2142,19 @@ async function memberRemove(member) {
     $('#teamError').textContent = '输入的邮箱与对方账户不一致，已取消。';
     return;
   }
+  rowBusy(actions, true);
+  setLoading(btn, true, '移出中…');
   try {
     const result = await api(`/api/workspace/members/${member.user_id}`, { method: 'DELETE', body: JSON.stringify(stepUpBody(answer)) });
-    toast(teamMessage(result, 'remove'), 'ok');
+    reportWrite(teamMessage(result, 'remove'), await loadTeam());
   } catch (err) {
     $('#teamError').textContent = err.message;
+    rowBusy(actions, false);
+    setLoading(btn, false);
   }
-  await loadTeam();
 }
 
-async function ownershipTransfer(member) {
+async function ownershipTransfer(member, btn, actions) {
   const answer = await askDialog({
     title: '移交工作区所有权',
     description: '移交后你本人变成 admin，且只有新属主才能再移交回去。数据库要求必须由当前属主发起。输入新属主邮箱，并填你自己的密码以确认。',
@@ -1967,39 +2166,298 @@ async function ownershipTransfer(member) {
     $('#teamError').textContent = '输入的邮箱与目标成员不一致，已取消。';
     return;
   }
+  rowBusy(actions, true);
+  setLoading(btn, true, '移交中…');
   try {
     const result = await api('/api/workspace/members/transfer', { method: 'POST', body: JSON.stringify({ user_id: member.user_id, ...stepUpBody(answer) }) });
-    toast(teamMessage(result, 'transfer'), 'ok');
     await refreshBootstrap();
+    reportWrite(teamMessage(result, 'transfer'), await loadTeam());
   } catch (err) {
     $('#teamError').textContent = err.message;
+    rowBusy(actions, false);
+    setLoading(btn, false);
   }
-  await loadTeam();
 }
 
-$('#teamAdd').onclick = async () => {
-  const email = $('#teamEmail').value.trim();
-  const role = $('#teamAddRole').value;
+function renderInviteToken(result) {
+  inviteOffer.token = result.token || '';
+  $('#teamInviteTokenValue').textContent = inviteOffer.token;
+  $('#teamInviteToken').hidden = !inviteOffer.token;
+  $('#teamInviteExpiry').textContent = `${result.email} 的 ${result.role} 邀请在 ${fmtDate(result.expires_at)} 失效。`
+    + (Number(result.superseded) > 0 ? `同一地址的 ${result.superseded} 份旧邀请已同时作废。` : '')
+    + '口令只显示这一次，本平台不发邮件——请把它线下交给对方。';
+  $('#teamInviteExpiry').hidden = false;
+}
+
+function hideInviteToken() {
+  inviteOffer.token = '';
+  $('#teamInviteTokenValue').textContent = '';
+  $('#teamInviteToken').hidden = true;
+  $('#teamInviteExpiry').hidden = true;
+}
+
+$('#copyInviteToken').onclick = () => copyText(inviteOffer.token || $('#teamInviteTokenValue').textContent, '邀请口令');
+$('#inviteTokenDismiss').onclick = hideInviteToken;
+
+$('#teamInvite').onclick = async () => {
+  const email = $('#teamInviteEmail').value.trim();
+  const role = $('#teamInviteRole').value;
+  const btn = $('#teamInvite');
   $('#teamError').textContent = '';
+  hideInviteToken();
   if (!email) {
-    $('#teamError').textContent = '请填写要添加的账户邮箱。';
+    $('#teamError').textContent = '请填写要邀请的账户邮箱。';
     return;
   }
   if (!role) {
-    $('#teamError').textContent = '数据库没有交出可用的角色名单，无法添加。';
+    $('#teamError').textContent = '数据库没有交出可用的角色名单，无法发出邀请。';
     return;
   }
-  setLoading($('#teamAdd'), true, '添加中…');
+  setLoading(btn, true, '邀请中…');
   try {
-    const result = await api('/api/workspace/members', { method: 'POST', body: JSON.stringify({ email, role }) });
-    toast(teamMessage(result, 'add', email), 'ok');
-    $('#teamEmail').value = '';
-    await loadTeam();
+    // The route answers the normalized address, the role and the expiry it actually wrote, and hands
+    // the plaintext token only when a row was created -- there is nothing to share for an
+    // already-member answer.
+    const result = await api('/api/workspace/invitations', { method: 'POST', body: JSON.stringify({ email, role }) });
+    if (result.invited) renderInviteToken(result);
+    $('#teamInviteEmail').value = '';
+    reportWrite(teamMessage(result, 'invite', email), await loadTeam());
   } catch (err) {
-    // 017 refuses an unknown e-mail rather than provisioning anyone: there is no registration here.
+    // 019 never resolves the address against `users`: an unknown one and a known-not-member one
+    // leave this catch with the same sentence, which is the point.
     $('#teamError').textContent = err.message;
   } finally {
-    setLoading($('#teamAdd'), false);
+    setLoading(btn, false);
+    syncInviteGate();
+  }
+};
+
+async function invitationRevoke(row, btn, actions) {
+  // Deliberately no step-up: withdrawing an offer takes away nothing a person already has. The roster
+  // asks for the password because it cuts someone's access; closing a door nobody walked through is
+  // not the same kind of act, and 019's revoke function takes no credential.
+  const confirmed = await confirmDialog({
+    title: '撤销这份邀请',
+    message: `撤销发给 ${row.invited_email} 的 ${row.invitation_role} 邀请？口令立刻失效，已经是成员的人不受影响。`,
+    confirmText: '撤销邀请',
+    danger: true
+  });
+  if (!confirmed) return;
+  rowBusy(actions, true);
+  setLoading(btn, true, '撤销中…');
+  try {
+    const result = await api(`/api/workspace/invitations/${encodeURIComponent(row.invitation_id)}`, { method: 'DELETE' });
+    const refreshed = await loadTeam();
+    if (!refreshed.ok) {
+      // The reload did not replace this row, so the button is still the live one and has to come back
+      // for a retry instead of sitting there reading "撤销中…" forever.
+      rowBusy(actions, false);
+      setLoading(btn, false);
+    }
+    reportWrite(teamMessage(result, 'revoke'), refreshed);
+  } catch (err) {
+    $('#teamError').textContent = err.message;
+    rowBusy(actions, false);
+    setLoading(btn, false);
+  }
+}
+
+// ---- the invitee's inbox (待我接受的邀请) ---------------------------------------------------------
+// The other half of 019, and deliberately not under /api/workspace: the person reading an offer is by
+// definition not a member yet, so get_actor's "X-Workspace-Id and a membership row" (auth.py:243-249)
+// can never be satisfied by them. api() still attaches the current workspace header to every call and
+// the /api/account/* routes ignore it -- nothing here needs a workspace to be selected, and an account
+// holding no membership at all reads this list the same way.
+function inboxRow(row) {
+  const node = document.createElement('div');
+  node.className = 'member-row';
+  const who = document.createElement('div');
+  const name = document.createElement('b');
+  name.textContent = row.workspace_name || '（未命名工作区）';
+  const by = document.createElement('span');
+  by.className = 'muted';
+  by.textContent = `${row.invited_by_name || '未知发起人'} 发出 · ${fmtDate(row.invitation_created_at)}`;
+  const meta = document.createElement('span');
+  meta.className = 'muted';
+  meta.textContent = `有效期至 ${fmtDate(row.invitation_expires_at)}`;
+  who.append(name, by, meta);
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.textContent = row.invitation_role;
+  const actions = document.createElement('div');
+  actions.className = 'row gap-sm';
+  const accept = document.createElement('button');
+  accept.type = 'button';
+  accept.textContent = '接受';
+  const decline = document.createElement('button');
+  decline.type = 'button';
+  decline.className = 'ghost';
+  decline.textContent = '谢绝';
+  accept.onclick = () => invitationClaim(row, 'accept', accept, actions);
+  decline.onclick = () => invitationClaim(row, 'decline', decline, actions);
+  actions.append(accept, decline);
+  node.append(who, tag, actions);
+  return node;
+}
+
+function renderInbox(data) {
+  const rows = data.invitations || [];
+  $('#inboxError').textContent = '';
+  $('#inboxState').textContent = (rows.length ? `${rows.length} 份待处理` : '没有待处理')
+    + (data.email ? ` · ${data.email}` : '');
+  // Only live offers come back, so an empty inbox is a real answer; it still gets its own sentence so
+  // it cannot be mistaken for a list that failed to load.
+  $('#inboxList').replaceChildren(...(rows.length
+    ? rows.map(inboxRow)
+    : [emptyLine(`没有发给 ${data.email || '本账户'} 的待接受邀请。`)]));
+}
+
+async function loadInbox() {
+  try {
+    renderInbox(await api('/api/account/invitations'));
+    return { ok: true, message: '' };
+  } catch (err) {
+    $('#inboxState').textContent = '不可用';
+    $('#inboxList').replaceChildren(emptyLine(`邀请收件箱读不到：${err.message}`));
+    $('#inboxError').textContent = err.message;
+    return { ok: false, message: err.message };
+  }
+}
+
+// Top-bar workspace choices come from /api/auth/me, and accepting an offer changes exactly that list,
+// so both the init path and the claim path build it from one place.
+function renderWorkspaceOptions() {
+  if (!state.memberships.some(w => w.id === state.workspace)) state.workspace = state.memberships[0]?.id || '';
+  localStorage.setItem('resonance_workspace', state.workspace);
+  const ws = $('#workspace');
+  ws.replaceChildren(...state.memberships.map(w => {
+    const option = document.createElement('option');
+    option.value = w.id;
+    option.textContent = `${w.name} · ${w.role}`;
+    return option;
+  }));
+  ws.value = state.workspace;
+}
+
+async function refreshMemberships() {
+  const before = state.workspace;
+  try {
+    const me = await api('/api/auth/me');
+    state.user = me.user;
+    state.memberships = me.workspaces;
+    $('#identity').textContent = state.user.display_name;
+    renderWorkspaceOptions();
+    return { ok: true, message: '', switched: before !== state.workspace };
+  } catch (err) {
+    return { ok: false, message: err.message, switched: false };
+  }
+}
+
+// Accepting is sometimes the first seat an account ever gets, and the top-bar switcher is the one
+// place that knows how to move every pane at once, so a claim that changed the selected workspace
+// hands control to it instead of leaving the other panes painted from a context that no longer exists.
+async function followWorkspaceSwitch(seats) {
+  if (!seats.switched) return seats;
+  const ws = $('#workspace');
+  if (typeof ws.onchange !== 'function') return seats;
+  try {
+    await ws.onchange();
+  } catch (err) {
+    return { ok: false, message: err.message, switched: seats.switched };
+  }
+  return seats;
+}
+
+// A claim changes the inbox and, if this account happens to be looking at that very workspace's panel
+// (a platform administrator can add someone by hand while an offer is still live), the roster too.
+async function reloadAfterClaim(workspaceId) {
+  const inboxResult = await loadInbox();
+  if (state.workspace && state.workspace === workspaceId) {
+    return combine(inboxResult, await loadTeam());
+  }
+  return inboxResult;
+}
+
+function acceptMessage(result, name) {
+  const r = result || {};
+  return r.added
+    ? `已加入「${name}」，角色 ${r.role}。顶栏的工作区列表里现在有它了。`
+    : `你已经是「${name}」的成员（角色 ${r.role}），这份邀请只被标记为已接受，没有重复加入。`;
+}
+
+function declineMessage(result, row) {
+  const r = result || {};
+  return r.already_settled
+    ? `「${row.workspace_name}」的这份邀请已经落定，谢绝没有改动任何东西。`
+    : `已谢绝「${row.workspace_name}」的 ${row.invitation_role} 邀请。`;
+}
+
+async function invitationClaim(row, kind, btn, actions) {
+  const accepting = kind === 'accept';
+  const confirmed = await confirmDialog({
+    title: accepting ? '接受这份邀请' : '谢绝这份邀请',
+    message: accepting
+      ? `接受后你会以 ${row.invitation_role} 角色加入「${row.workspace_name}」，那里的工作区数据立刻对你可见。这一步只能由本人做：数据库比对的是登录账户的邮箱和邀请邮箱，不一致就直接拒绝。`
+      : `谢绝「${row.workspace_name}」发来的 ${row.invitation_role} 邀请？落定之后那串口令就再也用不了，要来就得重新发一份。`,
+    confirmText: accepting ? '接受并加入' : '谢绝',
+    danger: !accepting
+  });
+  if (!confirmed) return;
+  rowBusy(actions, true);
+  setLoading(btn, true, accepting ? '接受中…' : '处理中…');
+  try {
+    const result = await api(accepting ? '/api/account/invitations/accept' : '/api/account/invitations/decline',
+      { method: 'POST', body: JSON.stringify({ invitation_id: row.invitation_id }) });
+    // The membership list is refreshed before the panel reload because it is the refresh that can make
+    // this workspace the one the panel is now allowed to look at.
+    const seats = accepting && result.added ? await refreshMemberships() : { ok: true, message: '', switched: false };
+    await followWorkspaceSwitch(seats);
+    const refreshed = combine(seats, await reloadAfterClaim(row.invitation_workspace));
+    reportWrite(accepting
+      ? acceptMessage(result, workspaceName(result.workspace_id || row.invitation_workspace))
+      : declineMessage(result, row), refreshed);
+  } catch (err) {
+    // Every refusal is a 409 carrying the database's own sentence -- not found, already used,
+    // withdrawn, expired, or addressed to a different account -- and the panel repeats it rather than
+    // guessing which one it was.
+    $('#inboxError').textContent = err.message;
+    rowBusy(actions, false);
+    setLoading(btn, false);
+  }
+}
+
+// The share string is the token itself, so the redemption field has to survive someone pasting it out
+// of a link: a query or fragment wrapper ends in `token=`/`invite=` and a bare path ends in the token.
+function invitationTokenFrom(value) {
+  const raw = String(value || '').trim();
+  const wrapped = raw.match(/[?&#]?(?:token|invite)=([A-Za-z0-9_-]+)/);
+  if (wrapped) return wrapped[1];
+  const segment = raw.split(/[/?#&=]/).filter(Boolean).pop() || raw;
+  return segment.length >= 20 ? segment : raw;
+}
+
+$('#inboxTokenAccept').onclick = async () => {
+  const token = invitationTokenFrom($('#inboxToken').value);
+  const btn = $('#inboxTokenAccept');
+  $('#inboxError').textContent = '';
+  if (token.length < 20) {
+    $('#inboxError').textContent = '这串口令看起来不完整，请把对方给你的内容整段粘贴进来。';
+    return;
+  }
+  setLoading(btn, true, '接受中…');
+  try {
+    // Same call as the row button, keyed on the token instead of the id: 019 hashes it and looks the
+    // row up by the hash, so a pasted offer redeems without ever naming a workspace.
+    const result = await api('/api/account/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) });
+    const seats = result.added ? await refreshMemberships() : { ok: true, message: '', switched: false };
+    await followWorkspaceSwitch(seats);
+    const refreshed = combine(seats, await reloadAfterClaim(result.workspace_id));
+    if (refreshed.ok) $('#inboxToken').value = '';
+    reportWrite(acceptMessage(result, workspaceName(result.workspace_id)), refreshed);
+  } catch (err) {
+    $('#inboxError').textContent = err.message;
+  } finally {
+    setLoading(btn, false);
   }
 };
 
@@ -2149,7 +2607,23 @@ async function loadAccount() {
   // is armed and how they take it back off.
   await loadMfa();
   privacyTarget();
+  // Then the invitee's own inbox, ahead of anything workspace-scoped: an account that belongs to no
+  // workspace at all still has to be able to read the offer that would change that.
+  await loadInbox();
   await loadTeam();
+  if (!state.workspace) {
+    // The three workspace-scoped panels and the ticket list have nothing to ask. They are written out
+    // as empty rather than left alone: a number from the last workspace this browser had open would
+    // otherwise keep sitting on screen under a session that can no longer see it.
+    $('#analyticsCards').innerHTML = '';
+    $('#preferences').value = '{}';
+    $('#learningEnabled').checked = true;
+    $('#ledgerBalances').innerHTML = '';
+    $('#ledgerTransactions').replaceChildren(noSeatNote());
+    $('#tickets').replaceChildren(noSeatNote());
+    $('#ticketPager').innerHTML = '';
+    return;
+  }
   const [analytics, prefs, ledger] = await Promise.all([api('/api/analytics/overview'), api('/api/preferences'), api('/api/ledger')]);
   const m = analytics.metrics;
   const cards = [['28 天生成', m.generations], ['成功任务', m.successful_jobs], ['Master', m.masters], ['Master 转化', `${(Number(m.master_conversion) * 100).toFixed(1)}%`], ['平均质量', Number(m.avg_quality || 0).toFixed(1)], ['许可', m.licenses]];
