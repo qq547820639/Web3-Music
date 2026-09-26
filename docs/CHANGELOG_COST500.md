@@ -33,6 +33,6 @@
 
 本节按下述时间线记录：写作当时交付打包环境没有 Docker daemon，因此跨容器 E2E 未被宣称通过（这一保留是正确的做法，未被用静态验证冒充）。
 
-2026-09-26 更新：跨容器 E2E、Provider/Payment 契约、Worker Kill-9 与双 Worker Lease 竞争、备份恢复绝对指纹、商业全链路、跨租户隔离、100 次生成回归、账户导出/删除、第二因子、成员角色三条常驻演练，以及**真实浏览器 + axe 无障碍/移动端验收**，已在真实 Compose 栈执行并留证（权威运行 `release-evidence/acceptance-20260926T075659Z/`，commit `93b4984`，20 行里 19 步 PASS + capacity 按开关跳过；前序 9 次 `FAIL=0` 为 `82f2ffe`→`5028686`→`28deafc`→`1d8534e`→`01e61d1`→`2c3ef7f`→`96d5955`→`b79e70b`→`3da3920`，行数 15→20，套件每轮在变宽；四次判红保留为发现记录：`acceptance-20260925T223656Z`、`acceptance-20260925T223811Z`、`acceptance-20260926T021711Z`、`acceptance-20260926T022643Z`；浏览器结果 `release-evidence/browser-a11y-20260926T080723Z/report.json`，见 `docs/FINAL_RELEASE_STATUS.md`）。
+2026-09-26 更新：跨容器 E2E、Provider/Payment 契约、Worker Kill-9 与双 Worker Lease 竞争、备份恢复绝对指纹、商业全链路、跨租户隔离、100 次生成回归、账户导出/删除、第二因子、成员角色三条常驻演练，以及**真实浏览器 + axe 无障碍/移动端验收**，已在真实 Compose 栈执行并留证（权威运行 `release-evidence/acceptance-20260926T083402Z/`，commit `99d5847`，20 行里 19 步 PASS + capacity 按开关跳过；前序 10 次 `FAIL=0` 为 `82f2ffe`→`5028686`→`28deafc`→`1d8534e`→`01e61d1`→`2c3ef7f`→`96d5955`→`b79e70b`→`3da3920`→`93b4984`，行数 15→20，套件每轮在变宽；四次判红保留为发现记录：`acceptance-20260925T223656Z`、`acceptance-20260925T223811Z`、`acceptance-20260926T021711Z`、`acceptance-20260926T022643Z`；浏览器结果 `release-evidence/browser-a11y-20260926T084328Z/report.json`，见 `docs/FINAL_RELEASE_STATUS.md`）。
 
 仍未取得、也不得以本机结果签字的证据：真实 500 用户压测（本机 4 vCPU / 6 GiB 低于该 profile 自身资源请求，Gate 实测判红，见 `docs/COST_OPTIMIZED_500_CONCURRENCY.md` 实测记录）、500 同时音乐生成、正式 Provider 合同容量、云数据库故障转移、独立渗透测试，以及正式支付与目标云账号相关项。

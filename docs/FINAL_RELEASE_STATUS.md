@@ -11,10 +11,10 @@ was actually executed.
 
 Authoritative run: `scripts/acceptance-all.sh` on a fresh database (volumes removed
 before start), **19 steps PASS and 1 recorded as skipped** across 20 rows, commit
-`93b4984`, 2026-09-26T07:56:59Z → 2026-09-26T08:10:12Z, evidence in
-`release-evidence/acceptance-20260926T075659Z/` (per-step logs, `SUMMARY.txt`, full
+`99d5847`, 2026-09-26T08:34:02Z → 2026-09-26T08:46:44Z, evidence in
+`release-evidence/acceptance-20260926T083402Z/` (per-step logs, `SUMMARY.txt`, full
 `compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
-machine-readable record at `release-evidence/browser-a11y-20260926T080723Z/report.json` (stamped with the same commit).
+machine-readable record at `release-evidence/browser-a11y-20260926T084328Z/report.json` (stamped with the same commit).
 What is version-controlled from that directory is only `SUMMARY.txt` (per-step verdicts and timestamps) and the
 browser run's `report.json`; the per-step logs and the two compose log files stay on the host that ran the pipeline.
 So a clone can re-check the step ledger and the whole browser reading (views, scans, violations per impact, CSP,
@@ -22,9 +22,9 @@ So a clone can re-check the step ledger and the whole browser reading (views, sc
 below come from per-step logs that exist only on that host -- re-running the pipeline is how a reader verifies those.
 The pipeline is 20 rows wide now: `mfa-drill` joined at step 12 and `member-drill` at step 13, which
 is also where the erasure drill's step 11 reading comes from.
-Nine green runs precede it on this host
-(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920` — older → newer, at
-15/15/16/16/17/18/19/20/20 rows with `FAIL=0` in every `SUMMARY.txt`), so the pass is reproducible rather
+Ten green runs precede it on this host
+(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984` —
+older → newer, at 15/15/16/16/17/18/19/20/20/20 rows with `FAIL=0` in every `SUMMARY.txt`), so the pass is reproducible rather
 than a single lucky run. The pipeline widened as steps were added, so what those runs share is "each
 passed every row that existed then", not "the same 20 rows seven times".
 Two discovery records from today are kept because each is the evidence for a defect that is now fixed:
@@ -69,10 +69,10 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
 - **100-run generation regression** (new): `100/100 completed, error rate 0.0%`, per-job
   ready count, 64-hex media hash, sampled real download, `settled_credits == quoted price`,
   and a ledger that moved by exactly the summed settlement with no dangling hold.
-  Across all ten green runs, in run order: **p50 8.18s / p95 20.77s**, **p50 7.615s / p95 11.37s**,
+  Across all eleven green runs, in run order: **p50 8.18s / p95 20.77s**, **p50 7.615s / p95 11.37s**,
   **p50 6.25s / p95 8.31s**, **p50 8.525s / p95 13.64s**, **p50 5.195s / p95 9.89s**,
-  **p50 7.18s / p95 15.66s**, **p50 5.09s / p95 5.37s**, **p50 4.09s / p95 5.33s**, **p50 5.06s / p95 5.26s**
-  and **p50 6.84s / p95 8.21s** (the authoritative run, step 17) -- every one of them `100/100 completed, error rate 0.0%` with 1000
+  **p50 7.18s / p95 15.66s**, **p50 5.09s / p95 5.37s**, **p50 4.09s / p95 5.33s**, **p50 5.06s / p95 5.26s**,
+  **p50 6.84s / p95 8.21s** and **p50 5.215s / p95 7.16s** (the authoritative run, step 17) -- every one of them `100/100 completed, error rate 0.0%` with 1000
   credits settled, so the count is constant while the timing spans 4-21s;
   the red run at `1f8010e` read p50 31.88s / p95 81.81s on the same code path with 87/100
   finished. The timing reading moves with host I/O, so it must be quoted per run, not as a
@@ -83,11 +83,11 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
   `/api/bootstrap` reports that identity (measured both ways: with the overlay off it exits
   `expected provider 'generic_rest', the stack reports 'emulator' ... the overlay did not take
   effect`; with a dead base URL it fails a job and prints the reason the worker stored,
-  `job_error={'type': 'ConnectError', ...}`). The step has run five times and read `25/25 completed,
+  `job_error={'type': 'ConnectError', ...}`). The step has run six times and read `25/25 completed,
   error rate 0.0%, settled 250 credits` every time (p50/p95 5.21s/6.37s at step 16 of `2c3ef7f`,
   4.14s/4.19s at step 17 of `96d5955`, 4.14s/4.18s at step 18 of `b79e70b`, 4.11s/4.2s at step 18 of
-  `3da3920` and 5.14s/6.34s at step 18 of the authoritative run), so the count is the reading that travels
-  and the timing is not. This is the adapter and contract plumbing, not
+  `3da3920`, 5.14s/6.34s at step 18 of `93b4984` and 4.11s/5.23s at step 18 of the authoritative run), so the
+  count is the reading that travels and the timing is not. This is the adapter and contract plumbing, not
   a provider: the endpoint behind it is still our emulator, so the gate for 100 *real*
   provider runs stays open.
 - **Real-browser walkthrough + axe audit** (new): Playwright driving axe-core 4.13.0
@@ -130,7 +130,7 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
   two that issue a raw `INSERT` and a self-promoting `UPDATE` as the application role and require the
   database to answer `permission denied`, and the loop that closes the erasure dead end: sole owner →
   erasure refused → transfer → erasure succeeds.
-- Static verification and unit tests: 189 unit tests (183 at the previous authoritative run `3da3920`, 176 at the one before that; this file had recorded 23, then 54, 66, 70 and 78 in earlier revisions), of which 36 arrived with the provider contract: 26 on the generic
+- Static verification and unit tests: 196 unit tests (189 at the previous authoritative run `93b4984`, 183 at the one before that; this file had recorded 23, then 54, 66, 70 and 78 in earlier revisions), of which 36 arrived with the provider contract: 26 on the generic
   REST adapter's own surface and 10 validating the adapter's payload against the written
   schema.
 
@@ -600,3 +600,36 @@ critical 0 / serious 0, 96 moderate (`region` 56, `heading-order` 32, `landmark-
 exceptions, 10 console entries all from the network layer (8 expected 401s, 2 expected 409s from the roster
 refusal), and the two walks reporting `2 exports downloaded and parsed, 2 probe accounts erased` and
 `2 roster walks with add/re-role/remove exercised`.
+
+## 2026-09-26 who-can-do-what becomes a measurement instead of folklore
+
+G12's approval-flow row asks for a written answer to "who approves what". Half of that is not a
+business decision at all: it is already in the code, as the role set each mutating endpoint demands.
+`scripts/authority_matrix.py` reads the route decorators and dependency signatures with an AST and
+emits two paired artefacts -- `docs/AUTHORITY_MATRIX.md` for humans and
+`shared/contracts/authority-matrix.json` for machines -- bucketing 89 `/api` routes (48 writes) by how
+each learns who is calling: an explicit `require_roles` list, platform admin, any workspace member, a
+live session, or nothing at the door. `static-verify.sh` runs `--check`, which CI already executes, so
+removing a role check from an endpoint fails the build rather than quietly contradicting a document.
+
+Writing the reader surfaced two of its own bugs, and the only reason they were caught is that the
+matrix is compared against something independent: the running app's own route table. The first version
+reported 36 routes because it filtered on the decorator string before prepending the router prefix, so
+all 24 router-mounted sub-paths were dropped -- and the total still looked confident. The second blind
+spot was visiting only `ast.FunctionDef`, which silently skipped the three `async def` endpoints
+(project chat and both webhook receivers). Both are now pinned by fixtures fed to `derive_file`, and
+the committed matrix is cross-checked against `app.routes` (89 = 89) in a unit test, so a reader that
+goes partially blind fails instead of under-reporting.
+
+The five writes that carry no role check are listed with the carrier that actually decides --
+`verify_password`, `validate_refresh_session`, the per-account challenge limiter, and
+`hmac.compare_digest` on both webhook receivers -- and the test asserts each marker is still literally
+present in that endpoint's body. A new unauthenticated write cannot be added without naming what
+protects it: five controls fired (role check downgraded to member, an anonymous write route planted,
+the generated document hand-edited, a path renamed in the matrix, a claimed marker removed).
+
+What this does *not* close is the other half of the row: there is still no written sequence across the
+approval surfaces the matrix names (rights review, moderation case, comment resolve, brand-submission
+review, payouts, switches) -- no defined order, escalation, timeout or reversal path. That is a process
+design to settle with operations, and it stays an open item rather than being renamed as done because a
+table now exists.

@@ -116,6 +116,7 @@ GENERIC_PROVIDER_MODEL=...
 ## 安全边界
 
 - JWT 只证明用户身份；每个请求仍从数据库解析 Workspace Membership。
+- 「谁能调用哪个端点」不靠记忆：`./scripts/authority_matrix.py --write` 从代码派生 `docs/AUTHORITY_MATRIX.md`，`--check`（已接进 `static-verify.sh`）会重算并比对；改了某个端点的角色名单却忘了改文档，红的是构建。
 - PostgreSQL RLS 为多租户隔离提供第二层保护。
 - AI 只能提出 Patch，不能扣费、调用 Provider、选定 Master、修改 Rights Manifest 或签发 License。
 - Ledger Transaction 与 Entry 追加保存，余额只能由分录聚合。
