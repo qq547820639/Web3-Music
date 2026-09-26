@@ -169,6 +169,13 @@ step_erasure_drill() {
   python scripts/erasure_drill.py
 }
 
+step_mfa_drill() {
+  # 两步验证的整条路径：暂存待确认的种子、证明已知后才武装、待用凭据不能当访问令牌用、
+  # 重放被拒、恢复码一次性、窗口过期、关闭需当前码、换种子后旧恢复码失效、以及码猜测的固定窗口。
+  # 慢在两处真实等待：验证码每 30 秒换一码，限流窗口要等它自己过去才能测「解除」而非「永久锁」。
+  python scripts/mfa_drill.py
+}
+
 step_commercial() {
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial
@@ -221,6 +228,7 @@ run_step "backup-restore" step_backup_restore
 run_step "restore-fidelity-compare" step_fidelity_compare
 run_step "acceptance-rerun" step_acceptance_rerun
 run_step "erasure-drill" step_erasure_drill
+run_step "mfa-drill" step_mfa_drill
 run_step "commercial-flow" step_commercial
 run_step "reservation-race" step_reservation_race
 run_step "market-reconciliation" step_reconcile_market

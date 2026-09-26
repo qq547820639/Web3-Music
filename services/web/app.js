@@ -307,12 +307,69 @@ function setAuthScreen(logged) {
   $('#login').hidden = logged;
   $('#app').hidden = !logged;
 }
+// The second factor has exactly one piece of state: a pending token that a code can be spent on.
+// It lives only in this variable and only until it is spent, expires, or the user goes back.
+const mfaChallenge = { token: '', expiresAt: 0, timer: 0 };
+
+function showMfaStep(data) {
+  mfaChallenge.token = data.pending_token;
+  const minutes = Math.max(1, Math.round((data.pending_expires_in || 300) / 60));
+  mfaChallenge.expiresAt = Date.now() + (data.pending_expires_in || 300) * 1000;
+  $('#credentialFields').hidden = true;
+  $('#mfaStep').hidden = false;
+  $('#loginTitle').textContent = '第二步：验证码';
+  // A per-second countdown inside role="status" would have a screen reader announcing every
+  // tick, so the line is written once and rewritten only when the request actually expires.
+  $('#mfaExpiry').textContent = `这个验证请求 ${minutes} 分钟内有效。`;
+  clearTimeout(mfaChallenge.timer);
+  mfaChallenge.timer = setTimeout(() => {
+    if (!mfaChallenge.token) return;
+    resetLoginStep('验证请求已超时，请重新登录。');
+  }, Math.max(0, mfaChallenge.expiresAt - Date.now()));
+  $('#mfaCode').value = '';
+  $('#mfaCode').focus();
+}
+
+function resetLoginStep(message = '') {
+  clearTimeout(mfaChallenge.timer);
+  mfaChallenge.token = '';
+  mfaChallenge.expiresAt = 0;
+  $('#mfaStep').hidden = true;
+  $('#credentialFields').hidden = false;
+  $('#loginTitle').textContent = '进入工作室';
+  $('#mfaExpiry').textContent = '';
+  $('#mfaCode').value = '';
+  if (message) $('#loginError').textContent = message;
+  $('#email').focus();
+}
+
+async function finishLogin(data) {
+  clearTimeout(mfaChallenge.timer);
+  mfaChallenge.token = '';
+  state.token = '';
+  state.workspace = data.workspaces[0]?.id || '';
+  localStorage.setItem('resonance_workspace', state.workspace);
+  await init();
+}
+
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
   $('#loginError').textContent = '';
-  const btn = $('#loginForm button[type="submit"]');
-  setLoading(btn, true, '登录中…');
+  // Two submit buttons share this form; whichever was pressed is the one that has to show progress.
+  const btn = e.submitter || $('#mfaStep:not([hidden]) button[type="submit"]') || $('#loginForm button[type="submit"]');
+  const secondStep = Boolean(mfaChallenge.token);
+  setLoading(btn, true, secondStep ? '验证中…' : '登录中…');
   try {
+    if (secondStep) {
+      const code = $('#mfaCode').value.trim();
+      if (!code) throw new Error('请输入验证码或一次性恢复码。');
+      const data = await api('/api/auth/mfa/challenge', {
+        method: 'POST',
+        body: JSON.stringify({ pending_token: mfaChallenge.token, code })
+      });
+      await finishLogin(data);
+      return;
+    }
     const data = await api('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({
@@ -320,16 +377,22 @@ $('#loginForm').addEventListener('submit', async e => {
         password: $('#password').value
       })
     });
-    state.token = '';
-    state.workspace = data.workspaces[0]?.id || '';
-    localStorage.setItem('resonance_workspace', state.workspace);
-    await init();
+    if (data.mfa_required) {
+      showMfaStep(data);
+      return;
+    }
+    await finishLogin(data);
   } catch (err) {
     $('#loginError').textContent = err.message;
+    if (secondStep) $('#mfaCode').select();
   } finally {
     setLoading(btn, false);
   }
 });
+$('#mfaCancel').onclick = () => {
+  $('#loginError').textContent = '';
+  resetLoginStep();
+};
 $('#logout').onclick = async () => {
   try {
     await api('/api/auth/logout', {
@@ -1561,7 +1624,144 @@ async function refundOrder(id, btn) {
 }
 
 // Intelligence / Account
+// ---- second factor management (the 数据与账户 panel) ----------------------------------------
+const mfaPanel = { secret: '', enrolUntil: 0 };
+
+function mfaFail(err) {
+  $('#mfaError').textContent = err.message;
+}
+
+function renderRecoveryCodes(codes) {
+  // Built node by node: the codes arrive over the wire, and nothing from an API belongs in
+  // innerHTML even when the generator that produced it only emits [a-z0-9].
+  const list = $('#mfaRecoveryList');
+  list.replaceChildren(...codes.map(code => {
+    const item = document.createElement('li');
+    const value = document.createElement('code');
+    value.textContent = code;
+    item.append(value);
+    return item;
+  }));
+  $('#mfaRecovery').hidden = !codes.length;
+}
+
+function renderMfa(status) {
+  const armed = Boolean(status.armed);
+  const pending = Boolean(status.pending_since) && !armed;
+  $('#mfaState').textContent = armed ? '已开启' : pending ? '等待确认' : '未开启';
+  $('#mfaStart').hidden = armed || (pending && mfaPanel.secret);
+  $('#mfaEnrol').hidden = !(pending && mfaPanel.secret);
+  $('#mfaArmed').hidden = !armed;
+  if (armed) {
+    const at = status.enrolled_at ? new Date(status.enrolled_at) : null;
+    $('#mfaArmedAt').textContent = `开启时间：${at ? at.toLocaleString() : '未知'}；剩余恢复码 ${status.recovery_codes_remaining} 个。`
+      + (status.session_amr && status.session_amr.includes('totp') ? ' 本次登录已用第二步验证。' : '');
+  }
+  if (!armed) mfaPanel.secret = '';
+}
+
+async function loadMfa() {
+  try {
+    const status = await api('/api/auth/mfa/status');
+    renderMfa(status);
+  } catch (err) {
+    // 503 is a real state, not a mystery: the sealing key is unset on this deployment.
+    $('#mfaState').textContent = '不可用';
+    $('#mfaError').textContent = err.message;
+  }
+}
+
+$('#mfaStart').onclick = async () => {
+  $('#mfaError').textContent = '';
+  setLoading($('#mfaStart'), true, '生成中…');
+  try {
+    const data = await api('/api/auth/mfa/enroll', { method: 'POST', body: '{}' });
+    mfaPanel.secret = data.secret;
+    mfaPanel.enrolUntil = Date.now() + (data.confirm_within_seconds || 900) * 1000;
+    $('#mfaSecret').textContent = data.secret;
+    await loadMfa();
+    $('#mfaEnrolCode').focus();
+  } catch (err) {
+    mfaFail(err);
+    await loadMfa();
+  } finally {
+    setLoading($('#mfaStart'), false);
+  }
+};
+
+$('#mfaConfirm').onclick = async () => {
+  const code = $('#mfaEnrolCode').value.trim();
+  $('#mfaError').textContent = '';
+  if (!code) {
+    mfaFail(new Error('请输入验证器里的当前验证码。'));
+    return;
+  }
+  if (Date.now() > mfaPanel.enrolUntil) {
+    mfaFail(new Error('这次申请已经超时，请重新点「开启两步验证」。'));
+    mfaPanel.secret = '';
+    await loadMfa();
+    return;
+  }
+  setLoading($('#mfaConfirm'), true, '确认中…');
+  try {
+    const data = await api('/api/auth/mfa/enroll/verify', { method: 'POST', body: JSON.stringify({ code }) });
+    renderRecoveryCodes(data.recovery_codes || []);
+    mfaPanel.secret = '';
+    $('#mfaEnrolCode').value = '';
+    await loadMfa();
+    toast('两步验证已开启，恢复码只显示这一次。', 'ok');
+  } catch (err) {
+    mfaFail(err);
+  } finally {
+    setLoading($('#mfaConfirm'), false);
+  }
+};
+
+$('#mfaAbort').onclick = async () => {
+  // There is no server-side cancel: an unconfirmed seed simply expires and is replaced by the next
+  // 开启 request, so aborting here only drops the copy this page is holding.
+  mfaPanel.secret = '';
+  $('#mfaEnrolCode').value = '';
+  await loadMfa();
+};
+
+$('#mfaDisable').onclick = async () => {
+  const code = $('#mfaDisableCode').value.trim();
+  $('#mfaError').textContent = '';
+  if (!code) {
+    mfaFail(new Error('关闭两步验证需要一个当前有效的验证码或恢复码。'));
+    return;
+  }
+  setLoading($('#mfaDisable'), true, '关闭中…');
+  try {
+    await api('/api/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ code }) });
+    $('#mfaDisableCode').value = '';
+    $('#mfaRecovery').hidden = true;
+    await loadMfa();
+    toast('两步验证已关闭。', 'ok');
+  } catch (err) {
+    mfaFail(err);
+  } finally {
+    setLoading($('#mfaDisable'), false);
+  }
+};
+
+async function copyText(value, label) {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast(label + '已复制。', 'success');
+  } catch {
+    toast('浏览器不允许自动复制，请手动选中复制。', 'error');
+  }
+}
+$('#copySecret').onclick = () => copyText(mfaPanel.secret || $('#mfaSecret').textContent, '密钥');
+$('#copyRecovery').onclick = () => copyText([...$('#mfaRecoveryList').querySelectorAll('code')].map(c => c.textContent).join('\n'), '恢复码');
+
 async function loadAccount() {
+  // First, and on its own: the second-factor panel is the one part of this view that has to render
+  // even when the analytics or ledger calls fail, because it is how a user discovers that a factor
+  // is armed and how they take it back off.
+  await loadMfa();
   const [analytics, prefs, ledger] = await Promise.all([api('/api/analytics/overview'), api('/api/preferences'), api('/api/ledger')]);
   const m = analytics.metrics;
   const cards = [['28 天生成', m.generations], ['成功任务', m.successful_jobs], ['Master', m.masters], ['Master 转化', `${(Number(m.master_conversion) * 100).toFixed(1)}%`], ['平均质量', Number(m.avg_quality || 0).toFixed(1)], ['许可', m.licenses]];

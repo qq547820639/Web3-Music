@@ -12,7 +12,12 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.security import APIKeyCookie, HTTPBearer
 from pydantic import BaseModel, Field
 
-from .auth import ACCESS_COOKIE, CSRF_COOKIE, REFRESH_COOKIE, Actor, UserIdentity, create_browser_session, get_actor, get_user, list_memberships, require_platform_admin, require_roles, token_hash, validate_browser_csrf, validate_refresh_session, verify_password
+from .auth import ACCESS_COOKIE, CSRF_COOKIE, REFRESH_COOKIE, Actor, UserIdentity, create_browser_session, decode_pending, \
+                   get_actor, get_user, issue_token, list_memberships, require_platform_admin, require_roles, token_hash, \
+                   validate_browser_csrf, validate_refresh_session, verify_password
+from .mfa import hash_recovery as mfa_hash_recovery, new_recovery_codes as mfa_new_recovery_codes, \
+    new_secret as mfa_new_secret, provisioning_uri as mfa_provisioning_uri, seal as mfa_seal, unseal as mfa_unseal, \
+    verify_code as mfa_verify_code
 from .common import PAGE_LIMIT_DEFAULT, PAGE_LIMIT_MAX, audit, serialize, setting_enabled
 from .db import close_pool, fetch_all, fetch_one, transaction, wait_for_db
 from .contracts import validate_song_spec
@@ -160,10 +165,23 @@ def login(body:LoginBody,request:Request,response:Response):
     if attempts>settings.login_rate_limit_per_minute: raise HTTPException(429,"too many login attempts")
     row=fetch_one("SELECT * FROM users WHERE lower(email)=lower(%s)",(body.email,))
     if not row or row["status"]!="active" or not verify_password(body.password,row["password_hash"]): raise HTTPException(401,"invalid credentials")
+    if row["mfa_enrolled_at"] is not None:
+        # No session and no cookies yet: the password alone must not produce anything a client can
+        # mistake for an authenticated credential. The key names below are deliberately the ones
+        # /auth/mfa/challenge also returns, so a login helper handles one extra branch instead of
+        # a second response shape.
+        return serialize({"mfa_required":True,
+                          "pending_token":issue_token(str(row["id"]),amr=["pwd"],purpose="mfa_pending",ttl_seconds=settings.mfa_pending_ttl_seconds),
+                          "pending_expires_in":settings.mfa_pending_ttl_seconds})
+    return _login_response(response,request,row,["pwd"],None)
+
+
+def _login_response(response: Response, request: Request, row, amr: list[str], mfa_at):
+    """Mint the session and build the login body; shared by /auth/login and the challenge."""
     memberships=list_memberships(str(row["id"]))
     with transaction() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        session=create_browser_session(cur,str(row["id"]),request.headers.get("User-Agent",""),request.client.host if request.client else "")
-        audit(cur,None,"auth.login","user",str(row["id"]),{"email":row["email"],"session_id":session["session_id"]},request.state.request_id)
+        session=create_browser_session(cur,str(row["id"]),request.headers.get("User-Agent",""),request.client.host if request.client else "",amr=amr,mfa_at=mfa_at)
+        audit(cur,None,"auth.login","user",str(row["id"]),{"email":row["email"],"session_id":session["session_id"],"amr":amr},request.state.request_id)
     _set_session_cookies(response,session)
     return serialize({"access_token":session["access_token"],"token_type":"bearer","csrf_token":session["csrf_token"],"expires_at":session["expires_at"],"user":{"id":row["id"],"email":row["email"],"display_name":row["display_name"]},"workspaces":memberships})
 
@@ -175,8 +193,11 @@ def refresh(request:Request,response:Response):
     existing=validate_refresh_session(refresh_token)
     with transaction() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("UPDATE auth_sessions SET revoked_at=now(),revoke_reason='rotated' WHERE id=%s AND revoked_at IS NULL",(existing["id"],))
-        session=create_browser_session(cur,str(existing["user_id"]),request.headers.get("User-Agent",""),request.client.host if request.client else "")
-        audit(cur,None,"auth.refresh","auth_session",str(existing["id"]),{"new_session_id":session["session_id"]},request.state.request_id)
+        # validate_refresh_session returns the whole row, so the factor proof and the method list
+        # move to the new session instead of being silently reset to "password only" by rotation.
+        amr=(existing["amr"] or "pwd").split(",")
+        session=create_browser_session(cur,str(existing["user_id"]),request.headers.get("User-Agent",""),request.client.host if request.client else "",amr=amr,mfa_at=existing["mfa_at"])
+        audit(cur,None,"auth.refresh","auth_session",str(existing["id"]),{"new_session_id":session["session_id"],"amr":amr},request.state.request_id)
     _set_session_cookies(response,session)
     return {"access_token":session["access_token"],"csrf_token":session["csrf_token"],"expires_at":session["expires_at"]}
 
@@ -189,6 +210,169 @@ def logout(request:Request,response:Response,user:UserIdentity=Depends(get_user)
             audit(cur,None,"auth.logout","auth_session",user.session_id,request_id=request.state.request_id)
     _clear_session_cookies(response)
     return None
+
+
+_mfa_incr = rq.register_script("local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; return n")
+
+
+def _mfa_throttle(kind: str, subject: str):
+    """A fixed window, unlike the login limiter.
+
+    The login counter refreshes its TTL on every attempt (main.py:50 runs EXPIRE
+    unconditionally), which is what makes a locked account stay locked while it is being
+    prodded; that behaviour is a documented open decision for the owner and is left alone. A
+    six-digit code oracle gets the stricter shape from the start: only the first INCR sets the
+    expiry, so the window cannot be extended by the attempts it is counting.
+    """
+    key=f"mfa:{kind}:{hashlib.sha256(subject.encode()).hexdigest()}"
+    n=int(_mfa_incr(keys=[key], args=[60]))
+    if n>settings.mfa_challenge_rate_limit_per_minute: raise HTTPException(429,"too many second-factor attempts")
+
+
+def _mfa_account(user_id: str):
+    row=fetch_one("SELECT id,email,display_name,status,mfa_enrolled_at,mfa_secret_enc,mfa_recovery FROM users WHERE id=%s",(user_id,))
+    if not row or row["status"]!="active": raise HTTPException(401,"user unavailable")
+    return row
+
+
+def _mfa_keyed(action, *args, **kwargs):
+    """Run something that needs MFA_ENCRYPTION_KEY and say so instead of 500-ing.
+
+    mfa.py raises RuntimeError when the key is unset rather than sealing under a guessable
+    default, which is the fail-closed half of G10. A raw RuntimeError would reach the client as an
+    opaque 500, so the two states are separated here: never configured (503, operator problem) and
+    configured-but-different (503 from the seal opening, below).
+    """
+    try:
+        return action(*args, **kwargs)
+    except RuntimeError as exc:
+        raise HTTPException(503,f"second factors are unavailable: {exc}") from exc
+
+
+def _mfa_pass_code(cur, user_id: str, code: str, secret_enc: str | None) -> str | None:
+    """Accept a TOTP code or exactly one recovery code. Returns the method name or None.
+
+    psycopg2's execute() returns None, so the result is fetched as a second statement; there is
+    no chained .fetchone() in this repo's other SELECT-of-a-function calls either.
+    """
+    code=code.strip()
+    if code.isdigit():
+        if not secret_enc: return None
+        try: secret=mfa_unseal(secret_enc)
+        except RuntimeError as exc:
+            raise HTTPException(503,f"second factors are unavailable: {exc}") from exc
+        except Exception as exc:
+            # Only the seal opening can fail this way, and it fails when MFA_ENCRYPTION_KEY changed
+            # after enrolment. That is an outage for the affected accounts, not a wrong code: saying
+            # 401 here would send the user to re-enter a code that can never be accepted.
+            raise HTTPException(503,"the stored second factor could not be opened; the sealing key may have changed") from exc
+        step=mfa_verify_code(secret, code)
+        if step is None: return None
+        # The step must be strictly newer than the last accepted one, and that comparison lives
+        # in the database, so a captured code cannot be replayed inside its own 30s window and
+        # the guard does not depend on which worker process served the request.
+        cur.execute("SELECT accept_mfa_step(%s,%s) AS ok",(user_id,step))
+        return "totp" if cur.fetchone()["ok"] else None
+    recovery_hash=_mfa_keyed(mfa_hash_recovery,code.lower())
+    cur.execute("SELECT consume_mfa_recovery_code(%s,%s) AS ok",(user_id,recovery_hash))
+    return "recovery" if cur.fetchone()["ok"] else None
+
+
+class MfaChallengeBody(BaseModel): pending_token:str; code:str
+class MfaCodeBody(BaseModel): code:str
+
+
+@app.post("/api/auth/mfa/challenge")
+def mfa_challenge(body:MfaChallengeBody,request:Request,response:Response):
+    user_id=decode_pending(body.pending_token)
+    _mfa_throttle("challenge",user_id)
+    row=_mfa_account(user_id)
+    if row["mfa_enrolled_at"] is None: raise HTTPException(409,"no second factor is armed for this account")
+    with transaction() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        method=_mfa_pass_code(cur,user_id,body.code,row["mfa_secret_enc"])
+        if not method:
+            audit(cur,None,"auth.mfa.challenge_failed","user",user_id,{"method":"recovery" if not body.code.strip().isdigit() else "totp"},request.state.request_id)
+            conn.commit()
+            raise HTTPException(401,"invalid second factor")
+        audit(cur,None,"auth.mfa.challenge_passed","user",user_id,{"method":method},request.state.request_id)
+    return _login_response(response,request,row,["pwd",method],datetime.now(timezone.utc))
+
+
+@app.get("/api/auth/mfa/status")
+def mfa_status(user:UserIdentity=Depends(get_user)):
+    row=fetch_one("""SELECT mfa_enrolled_at,mfa_secret_issued_at,
+                            coalesce(jsonb_array_length(nullif(mfa_recovery,'null'::jsonb)),0) AS codes
+                     FROM users WHERE id=%s""",(user.user_id,))
+    session=None
+    if user.session_id:
+        session=fetch_one("SELECT amr,mfa_at FROM auth_sessions WHERE id=%s",(user.session_id,))
+    return serialize({"armed":row["mfa_enrolled_at"] is not None,"enrolled_at":row["mfa_enrolled_at"],
+                      "pending_since":row["mfa_secret_issued_at"],"recovery_codes_remaining":row["codes"],
+                      "session_amr":(session or {}).get("amr"),"session_second_factor_at":(session or {}).get("mfa_at")})
+
+
+@app.post("/api/auth/mfa/enroll")
+def mfa_enroll(request:Request,user:UserIdentity=Depends(get_user)):
+    _mfa_throttle("enrol",user.user_id)
+    row=_mfa_account(user.user_id)
+    if row["mfa_enrolled_at"] is not None: raise HTTPException(409,"a second factor is already armed; disable it first")
+    secret=mfa_new_secret()
+    sealed=_mfa_keyed(mfa_seal,secret)
+    with transaction() as conn,conn.cursor() as cur:
+        try:
+            cur.execute("SELECT begin_mfa_enrolment(%s,%s)",(user.user_id,sealed))
+        except psycopg2.errors.RaiseException as exc:
+            conn.rollback()
+            raise HTTPException(409,str(exc).strip().splitlines()[0]) from exc
+        audit(cur,Actor(user.user_id,user.email,user.display_name,user.is_platform_admin,user.session_id,None,"self"),
+              "auth.mfa.enrol_begin","user",user.user_id,{"secret_issued":True},request.state.request_id)
+    # The seed is returned so the authenticator app can be shown a QR or typed in; the database
+    # only ever holds the sealed form.
+    return serialize({"secret":secret,"provisioning_uri":mfa_provisioning_uri(secret,row["email"]),
+                      "confirm_within_seconds":settings.mfa_enrolment_window_seconds})
+
+
+@app.post("/api/auth/mfa/enroll/verify")
+def mfa_enroll_verify(body:MfaCodeBody,request:Request,user:UserIdentity=Depends(get_user)):
+    _mfa_throttle("verify",user.user_id)
+    row=_mfa_account(user.user_id)
+    if row["mfa_enrolled_at"] is not None: return serialize({"already_armed":True})
+    if row["mfa_secret_enc"] is None: raise HTTPException(409,"start enrolment before confirming it")
+    codes,stored=_mfa_keyed(mfa_new_recovery_codes)
+    with transaction() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        if not _mfa_pass_code(cur,user.user_id,body.code,row["mfa_secret_enc"]):
+            conn.commit()
+            raise HTTPException(401,"that code does not match the pending second factor")
+        try:
+            cur.execute("SELECT * FROM confirm_mfa_enrolment(%s,%s::jsonb,%s)",
+                        (user.user_id,psycopg2.extras.Json(stored),settings.mfa_enrolment_window_seconds))
+            confirmed=cur.fetchone()
+        except psycopg2.errors.RaiseException as exc:
+            conn.rollback()
+            raise HTTPException(409,str(exc).strip().splitlines()[0]) from exc
+        if user.session_id:
+            # Arming must not lock out the session that just proved the code. amr/mfa_at are not
+            # on 005's immutable list, which is what made the first erasure write fail (013->014).
+            cur.execute("UPDATE auth_sessions SET mfa_at=now(),amr='pwd,totp' WHERE id=%s",(user.session_id,))
+        audit(cur,Actor(user.user_id,user.email,user.display_name,user.is_platform_admin,user.session_id,None,"self"),
+              "auth.mfa.enrol_confirm","user",user.user_id,{"armed_at":str(confirmed["armed_at"]),"already_armed":confirmed["already_armed"]},request.state.request_id)
+    return serialize({"armed":True,"recovery_codes":codes,"note":"shown once; store them somewhere the phone that holds the authenticator is not"})
+
+
+@app.post("/api/auth/mfa/disable")
+def mfa_disable(body:MfaCodeBody,request:Request,user:UserIdentity=Depends(get_user)):
+    _mfa_throttle("disable",user.user_id)
+    row=_mfa_account(user.user_id)
+    if row["mfa_enrolled_at"] is None: return serialize({"armed":False})
+    with transaction() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        if not _mfa_pass_code(cur,user.user_id,body.code,row["mfa_secret_enc"]):
+            conn.commit()
+            raise HTTPException(401,"a current code is required to drop the second factor")
+        cur.execute("SELECT disable_mfa(%s) AS was_armed",(user.user_id,))
+        was=cur.fetchone()["was_armed"]
+        audit(cur,Actor(user.user_id,user.email,user.display_name,user.is_platform_admin,user.session_id,None,"self"),
+              "auth.mfa.disable","user",user.user_id,{"was_armed":bool(was)},request.state.request_id)
+    return serialize({"armed":False})
 
 
 @app.get("/api/auth/me")
@@ -212,18 +396,38 @@ PERSONAL_TABLES=(("song_projects","created_by","workspace_id"),("project_branche
   ("support_tickets","opened_by","workspace_id"),("support_tickets","assigned_to","workspace_id"),
   ("moderation_cases","assigned_to","workspace_id"),("audit_events","actor_id","workspace_id"),
   ("ledger_transactions","created_by","workspace_id"))
+# The account record a subject access response is built from. This list, not a SELECT *, so adding
+# a column to users cannot silently widen what the endpoint hands out -- and 015's six
+# authentication columns are in it deliberately: a sealed seed and a set of code hashes are still
+# personal data about the subject, and Art. 15 does not get to omit them because they are unreadable
+# without the server's key.
+USER_ACCOUNT_COLUMNS=("email","display_name","status","is_platform_admin","created_at","erased_at",
+  "mfa_enrolled_at","mfa_secret_issued_at","mfa_secret_enc","mfa_last_step","mfa_recovery",
+  "mfa_recovery_generated_at")
+# What a subject-access response deliberately does not carry, with the reason stated in the
+# payload itself. This exists so the column census in scripts/erasure_drill.py can demand that
+# every column of every exported table is either handed over or named here: without a declared
+# exclusion list, "the export covers everything" is only true of the columns somebody happened to
+# think about when writing the SELECT.
+EXPORT_EXCLUSIONS={"password_hash":"a salted PBKDF2 digest is a credential rather than data about "
+                                        "the subject, and disclosing it only gives whoever reads the "
+                                        "response a new offline cracking target"}
 # Every store the export reads, as table.column, declared in the payload so coverage is a fact a
 # caller (and the drill) can check rather than an implication of which keys happened to come back.
+# The users.* entries are listed individually rather than as "users.*" because the check the drill
+# runs is against information_schema: a wildcard would also match a column nobody selected.
 EXPORT_COVERAGE=tuple(f"{table}.{column}" for table,column,_ in PERSONAL_TABLES)+(
-  "users.id","auth_sessions.user_id","user_preferences.user_id","product_events.user_id","workspace_members.user_id")
+  "users.id","auth_sessions.user_id","user_preferences.user_id","product_events.user_id","workspace_members.user_id",
+  *(f"users.{column}" for column in USER_ACCOUNT_COLUMNS))
 
 @app.get("/api/account/export")
 def account_export(user:UserIdentity=Depends(get_user)):
     """Subject access request: everything the platform links to this account."""
     memberships=list_memberships(user.user_id)
     bundle={"exported_at":datetime.now(timezone.utc),"account":fetch_one(
-        "SELECT id,email,display_name,status,is_platform_admin,created_at,erased_at FROM users WHERE id=%s",(user.user_id,)),
+        "SELECT id," + ",".join(USER_ACCOUNT_COLUMNS) + " FROM users WHERE id=%s",(user.user_id,)),
       "coverage":list(EXPORT_COVERAGE),
+      "excluded":EXPORT_EXCLUSIONS,
       "workspaces":memberships,
       "sessions":fetch_all("SELECT id,created_at,last_seen_at,expires_at,revoked_at,revoke_reason,user_agent_hash,ip_hash FROM auth_sessions WHERE user_id=%s ORDER BY created_at",(user.user_id,)),
       "preferences":[],

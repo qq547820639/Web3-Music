@@ -50,25 +50,32 @@ def token_hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def issue_token(user_id: str, session_id: str | None = None) -> str:
+def issue_token(user_id: str, session_id: str | None = None, *, amr: list[str] | None = None,
+                purpose: str | None = None, ttl_seconds: int | None = None) -> str:
+    """Access token. A `purpose` token is NOT an access token -- see decode_pending."""
     now = datetime.now(timezone.utc)
+    lifetime = timedelta(seconds=ttl_seconds) if ttl_seconds else timedelta(minutes=settings.jwt_ttl_minutes)
     claims: dict[str, Any] = {
         "sub": user_id,
         "iat": now,
         "nbf": now,
-        "exp": now + timedelta(minutes=settings.jwt_ttl_minutes),
+        "exp": now + lifetime,
         "aud": "music-platform-v13",
         "iss": "resonance",
         "jti": secrets.token_hex(16),
     }
     if session_id:
         claims["sid"] = session_id
+    if amr:
+        claims["amr"] = amr
+    if purpose:
+        claims["purpose"] = purpose
     return jwt.encode(claims, settings.jwt_secret, algorithm="HS256")
 
 
-def decode_token(value: str) -> tuple[str, str | None]:
+def decode_claims(value: str) -> dict[str, Any]:
     try:
-        data = jwt.decode(
+        return jwt.decode(
             value,
             settings.jwt_secret,
             algorithms=["HS256"],
@@ -76,12 +83,38 @@ def decode_token(value: str) -> tuple[str, str | None]:
             issuer="resonance",
             options={"require": ["sub", "iat", "exp", "jti"]},
         )
-        return str(data["sub"]), str(data["sid"]) if data.get("sid") else None
     except Exception:
         raise HTTPException(401, "invalid or expired access token")
 
 
-def create_browser_session(cur, user_id: str, user_agent: str, client_ip: str) -> dict[str, str]:
+def decode_pending(value: str) -> str:
+    """The user id behind a second-factor pending token, and nothing else.
+
+    Refusing in both directions is the point: a pending token cannot be spent as an access token
+    (checked by purpose here and rejected in get_user), and an access token cannot be presented
+    at the challenge endpoint.
+    """
+    claims = decode_claims(value)
+    if claims.get("purpose") != "mfa_pending":
+        raise HTTPException(401, "not a pending second-factor token")
+    return str(claims["sub"])
+
+
+def decode_token(value: str) -> tuple[str, str | None]:
+    data = decode_claims(value)
+    return str(data["sub"]), str(data["sid"]) if data.get("sid") else None
+
+
+def create_browser_session(cur, user_id: str, user_agent: str, client_ip: str, *,
+                           amr: list[str] | None = None,
+                           mfa_at: datetime | None = None) -> dict[str, str]:
+    """The only place a session is minted. `amr`/`mfa_at` travel with it deliberately: refresh
+    rotation revokes a row and creates another (main.py:171-181), so the proof that a second
+    factor was presented has to be carried into the replacement or the assurance level of a live
+    session changes silently. Both are new columns from 015, which matters because
+    005's guard_auth_session_update raises on any change to id, user_id, refresh_token_hash,
+    csrf_token_hash, created_at or expires_at -- the trigger that made erasure fail in 013.
+    """
     session_id = str(__import__("uuid").uuid4())
     refresh_token = secrets.token_urlsafe(48)
     csrf_token = secrets.token_urlsafe(32)
@@ -89,8 +122,8 @@ def create_browser_session(cur, user_id: str, user_agent: str, client_ip: str) -
     cur.execute(
         """
         INSERT INTO auth_sessions(
-          id,user_id,refresh_token_hash,csrf_token_hash,user_agent_hash,ip_hash,expires_at
-        ) VALUES(%s,%s,%s,%s,%s,%s,%s)
+          id,user_id,refresh_token_hash,csrf_token_hash,user_agent_hash,ip_hash,expires_at,amr,mfa_at
+        ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
         (
             session_id,
@@ -100,11 +133,13 @@ def create_browser_session(cur, user_id: str, user_agent: str, client_ip: str) -
             token_hash(user_agent or ""),
             token_hash(client_ip or ""),
             expires_at,
+            ",".join(amr or ["pwd"]),
+            mfa_at,
         ),
     )
     return {
         "session_id": session_id,
-        "access_token": issue_token(user_id, session_id),
+        "access_token": issue_token(user_id, session_id, amr=amr or ["pwd"]),
         "refresh_token": refresh_token,
         "csrf_token": csrf_token,
         "expires_at": expires_at.isoformat(),
@@ -136,12 +171,13 @@ def get_user(request: Request, authorization: str | None = Header(default=None, 
     token, from_cookie = request_token(request, authorization)
     if not token:
         raise HTTPException(401, "authentication required")
-    user_id, session_id = decode_token(token)
+    claims = decode_claims(token)
+    user_id, session_id = str(claims["sub"]), str(claims["sid"]) if claims.get("sid") else None
     if from_cookie and not session_id:
         raise HTTPException(401, "browser session is invalid")
     if session_id:
         session = fetch_one(
-            "SELECT id,user_id,expires_at,revoked_at FROM auth_sessions WHERE id=%s",
+            "SELECT id,user_id,expires_at,revoked_at,mfa_at FROM auth_sessions WHERE id=%s",
             (session_id,),
         )
         if (
@@ -151,16 +187,33 @@ def get_user(request: Request, authorization: str | None = Header(default=None, 
             or session["expires_at"] <= datetime.now(timezone.utc)
         ):
             raise HTTPException(401, "session has been revoked or expired")
-    user = fetch_one("SELECT id,email,display_name,status,is_platform_admin FROM users WHERE id=%s", (user_id,))
+    if claims.get("purpose"):
+        raise HTTPException(401, "this credential is not an access token")
+    user = fetch_one(
+        "SELECT id,email,display_name,status,is_platform_admin,mfa_enrolled_at FROM users WHERE id=%s",
+        (user_id,),
+    )
     if not user or user["status"] != "active":
         raise HTTPException(401, "user unavailable")
+    # Second factor enforcement. A session that never presented one is refused once the account
+    # is armed; confirming an enrolment stamps the session that proved the code, so enrolling
+    # cannot lock the person who is doing it out mid-flight.
+    if user["mfa_enrolled_at"] is not None and not (session_id and session.get("mfa_at")):
+        raise HTTPException(401, "second factor required")
     return UserIdentity(str(user["id"]), user["email"], user["display_name"], bool(user["is_platform_admin"]), session_id)
 
 
 def validate_browser_csrf(request: Request) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
-    if request.url.path in {"/api/auth/login", "/api/auth/refresh", "/api/provider/webhook", "/api/payments/webhook"}:
+    # /auth/mfa/challenge is the second half of the login handshake, so it is exempt for the same
+    # reason /auth/login is: there is no session yet, and a browser that still carries an old
+    # access cookie from another account would otherwise be 403'd before it ever got one. The
+    # residual is login-CSRF (an attacker who supplies their own pending_token can get the victim's
+    # browser a session as the attacker) -- which /auth/login already carries, and which the
+    # per-account challenge limiter bounds. Every other MFA endpoint is authenticated and checks.
+    if request.url.path in {"/api/auth/login", "/api/auth/refresh", "/api/auth/mfa/challenge",
+                            "/api/provider/webhook", "/api/payments/webhook"}:
         return
     if request.headers.get("Authorization", "").lower().startswith("bearer "):
         return

@@ -78,6 +78,71 @@ def users_key_census() -> set[str]:
     return {r for r in rows.splitlines() if r}
 
 
+# Columns that may keep a value on an erased account. Anything else the schema makes nullable has
+# to be NULL once erase_user_identity has run -- the point of deriving the list from
+# information_schema rather than keeping it here is that a future ALTER TABLE users ADD COLUMN
+# fails this drill instead of quietly escaping it, which is exactly how 015's six authentication
+# columns got past a 34-check erasure drill that had just been certified.
+RETAINED_NULLABLE = {"erased_at": "the erasure record itself, written by erase_user_identity"}
+SENTINELS = {
+    "text": lambda c: f"'seed:{c}'",
+    "character varying": lambda c: f"'seed:{c}'",
+    "timestamp with time zone": lambda c: "'2019-01-02T03:04:05+00:00'",
+    "date": lambda c: "'2019-01-02'",
+    "bigint": lambda c: "72340",
+    "integer": lambda c: "72340",
+    "numeric": lambda c: "1",
+    "boolean": lambda c: "true",
+    "uuid": lambda c: "'00000000-0000-0000-0000-0000000000fe'",
+    "json": lambda c: """'{"seed":1}'::json""",
+    "jsonb": lambda c: """'{"seed":1}'::jsonb""",
+}
+
+
+def nullable_columns() -> dict[str, str]:
+    rows = sql("SELECT column_name||'|'||data_type FROM information_schema.columns "
+               "WHERE table_schema='public' AND table_name='users' AND is_nullable='YES'")
+    return dict(r.split("|", 1) for r in rows.splitlines() if r)
+
+
+def row_json(user_id: str) -> dict:
+    import json
+    return json.loads(sql(f"SELECT row_to_json(u) FROM users u WHERE id='{user_id}'"))
+
+
+def seed_nullable(user_id: str) -> list[str]:
+    """Give every currently-empty nullable column a value, so 'it was NULL after erasure' can only
+    mean the eraser cleared it."""
+    empty = [name for name, value in row_json(user_id).items() if value is None]
+    unseedable = [name for name in empty if nullable_columns()[name] not in SENTINELS]
+    if unseedable:
+        return unseedable
+    if empty:
+        assignments = ", ".join(f"{name}={SENTINELS[nullable_columns()[name]](name)}" for name in empty)
+        sql(f"UPDATE users SET {assignments} WHERE id='{user_id}'")
+    return []
+
+
+def erasure_violations(after: dict, seeded: dict) -> list[str]:
+    """Pure function, so the must-fire control can hand it a row the database would never produce.
+
+    Only nullable columns are judged. A NOT NULL column is already self-policing -- the eraser has
+    to write something into it or the UPDATE raises -- and its contract (email, display_name,
+    password_hash, status, is_platform_admin) is asserted by name further down. Nullable columns are
+    the ones that can quietly keep a value, which is what 015 introduced six of.
+    """
+    problems = []
+    for name, value in after.items():
+        if name not in seeded or value is None:
+            continue
+        if name in RETAINED_NULLABLE:
+            if value == seeded[name]:
+                problems.append(f"{name} still holds the seeded value, so nothing rewrote it")
+            continue
+        problems.append(f"{name} still holds {value!r}")
+    return problems
+
+
 def declared_columns() -> set[str]:
     """Every table.column that actually exists, so coverage cannot name a dead store."""
     rows = sql("SELECT table_name||'.'||column_name FROM information_schema.columns WHERE table_schema='public'")
@@ -130,6 +195,50 @@ def main() -> int:
               f"missing: {sorted(census - coverage)}")
         check("every store the export claims exists in the schema", not (coverage - declared_columns()),
               f"dead entries: {sorted(coverage - declared_columns())}")
+        # The account record the export hands back, plus what coverage declares, is what the column
+        # census is checked against -- so a new column on users fails here rather than going unread.
+        declared_user_columns = {entry.split(".", 1)[1] for entry in coverage if entry.startswith("users.")} \
+            | set((body.get("account") or {}).keys())
+
+        # Arm a second factor on the probe before erasing it. 015 added six authentication columns
+        # to `users` after this drill had already been certified, and neither the export nor the
+        # eraser touched them -- which is precisely the drift the census below is built to catch, so
+        # it is exercised through the real endpoints rather than by hand-writing values.
+        enrol = httpx.post(BASE + "/auth/mfa/enroll", headers=headers, timeout=40)
+        seed = enrol.json().get("secret", "") if enrol.status_code == 200 else ""
+        confirmed = httpx.post(BASE + "/auth/mfa/enroll/verify", json={"code": e2e_client.totp_code(seed)},
+                               headers=headers, timeout=40)
+        check("a probe can arm a second factor through the real endpoints",
+              enrol.status_code == 200 and confirmed.status_code == 200 and confirmed.json().get("armed") is True,
+              f"{enrol.status_code}/{confirmed.status_code} {confirmed.text[:160]}")
+        check("and arming does not lock out the session that proved the code",
+              httpx.get(BASE + "/account/export", headers=headers, timeout=40).status_code == 200)
+
+        # The subject-access response has to cover every column of the account record, not just the
+        # ones that existed when the endpoint was written.
+        account_columns = {r for r in sql("SELECT column_name FROM information_schema.columns "
+                                          "WHERE table_schema='public' AND table_name='users'").splitlines() if r}
+        excluded = set((body.get("excluded") or {}).keys())
+        check("every column users has is exported, or declared excluded with a reason",
+              not (account_columns - declared_user_columns - excluded),
+              f"undeclared: {sorted(account_columns - declared_user_columns - excluded)}")
+        check("and an exclusion is only creditable if it says why",
+              all(str((body.get("excluded") or {}).get(name) or "").strip() for name in excluded),
+              str(body.get("excluded")))
+        check("and an exclusion names a column that actually exists, or it excuses nothing",
+              not (excluded - account_columns), f"dead exclusions: {sorted(excluded - account_columns)}")
+
+        nullable = nullable_columns()
+        check("the nullable census is non-empty, or the erasure guard below would be blind",
+              len(nullable) >= 1, str(nullable))
+        unseedable = seed_nullable(probe_id)
+        check("every nullable users column has a type the drill can seed, or it cannot be judged",
+              not unseedable, f"unseedable: {unseedable}")
+        armed_row = row_json(probe_id)
+        seeded = {name: value for name, value in armed_row.items() if name in nullable and value is not None}
+        check("the probe holds a value in every nullable users column before erasure",
+              len(seeded) == len(nullable), f"{len(seeded)}/{len(nullable)}: "
+                                            f"{sorted(set(nullable) - set(seeded))}")
 
         expiry_before = scalar(f"SELECT expires_at FROM auth_sessions WHERE user_id='{probe_id}'")
         refused = httpx.post(BASE + "/account/erasure", json={"confirmation": "wrong@example.local"}, headers=headers, timeout=40)
@@ -155,6 +264,26 @@ def main() -> int:
         check("identity columns are anonymised",
               email == f"erased-{probe_id}@invalid.invalid" and display_name == "已删除用户" and status == "erased",
               email + "|" + display_name + "|" + status)
+        # Derived from information_schema, so this is the check that fails when somebody adds a
+        # nullable column to users and forgets the eraser. 015 did exactly that, and its six
+        # authentication columns -- one of them an openable authenticator seed -- survived a
+        # 34-check drill that had already been certified; 016 clears them and this closes the door.
+        erased_row = row_json(probe_id)
+        violations = erasure_violations(erased_row, seeded)
+        check("erasure clears every nullable users column but the declared retention list",
+              not violations, "; ".join(violations))
+        check("the eraser says it destroyed an armed second factor",
+              str(detail.get("second_factor_removed")).lower() == "true", str(detail))
+        # The same guard has to be able to fail, so hand it the row it is meant to refuse: a
+        # recovery set that was merely unreferenced rather than removed.
+        left_behind = dict(erased_row, mfa_recovery=seeded["mfa_recovery"])
+        fired = erasure_violations(left_behind, seeded)
+        check("and the classifier does report a nullable column the eraser left behind",
+              len(fired) == 1 and fired[0].startswith("mfa_recovery "), str(fired))
+        retained = erasure_violations(dict(erased_row, erased_at=seeded["erased_at"]), seeded)
+        check("and it separates a retained column from an inherited one",
+              len(retained) == 1 and retained[0].startswith("erased_at "), str(retained))
+
         check("memberships are gone from the database",
               scalar(f"SELECT count(*) FROM workspace_members WHERE user_id='{probe_id}'") == "0")
         check("preferences are gone from the database",

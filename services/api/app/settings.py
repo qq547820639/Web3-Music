@@ -49,6 +49,12 @@ class Settings:
     db_pool_acquire_timeout_seconds: float = max(0.1, float(os.getenv("DB_POOL_ACQUIRE_TIMEOUT_SECONDS", "5")))
     db_statement_timeout_ms: int = max(1000, int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "15000")))
     media_delivery_mode: str = os.getenv("MEDIA_DELIVERY_MODE", "proxy").strip().lower()
+    # No default on purpose: an unset key disables the second-factor endpoints with a clear
+    # error instead of sealing secrets under a value anyone could guess.
+    mfa_encryption_key: str = os.getenv("MFA_ENCRYPTION_KEY", "")
+    mfa_enrolment_window_seconds: int = max(60, int(os.getenv("MFA_ENROLMENT_WINDOW_SECONDS", "900")))
+    mfa_pending_ttl_seconds: int = max(60, int(os.getenv("MFA_PENDING_TTL_SECONDS", "300")))
+    mfa_challenge_rate_limit_per_minute: int = int(os.getenv("MFA_CHALLENGE_RATE_LIMIT_PER_MINUTE", "6"))
     s3_public_endpoint_url: str = os.getenv("S3_PUBLIC_ENDPOINT_URL", "").rstrip("/")
 
 

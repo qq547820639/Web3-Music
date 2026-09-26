@@ -98,6 +98,15 @@ jobs:
             exit 1
           fi
           tail -5 /tmp/erasure.log
+      - name: Second factor lifecycle drill
+        shell: bash
+        run: |
+          if ! python scripts/mfa_drill.py > /tmp/mfa.log 2>&1; then
+            echo "::error title=mfa-drill::$(grep -E '^  - |FAIL|failed' /tmp/mfa.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            tail -40 /tmp/mfa.log
+            exit 1
+          fi
+          tail -5 /tmp/mfa.log
       - name: Third-party provider adapter round trip
         shell: bash
         run: |

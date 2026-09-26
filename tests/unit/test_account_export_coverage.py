@@ -56,6 +56,26 @@ def test_export_coverage_derives_from_the_table_list_and_names_the_rest():
     derived, tail = value.left, [e.value for e in value.right.elts]
     assert isinstance(derived, ast.Call) and isinstance(derived.args[0], ast.GeneratorExp), \
         "coverage must be built from PERSONAL_TABLES rather than restated by hand"
-    # The literal tail is what makes the four separately-exported stores checkable by the drill.
-    assert {"users.id", "auth_sessions.user_id", "user_preferences.user_id",
-            "product_events.user_id", "workspace_members.user_id"} <= set(tail), tail
+    # The literal tail is what makes the separately-exported stores checkable by the drill, and a
+    # starred element is not a string: read it as what it is rather than letting it slip through a
+    # set comparison against ast nodes (which is exactly how this assertion survived the first time
+    # the tail grew a derived part).
+    literals = [element.value for element in value.right.elts if isinstance(element, ast.Constant)]
+    starred = [element for element in value.right.elts if isinstance(element, ast.Starred)]
+    assert {"auth_sessions.user_id", "user_preferences.user_id", "product_events.user_id",
+            "workspace_members.user_id"} <= set(literals), literals
+    assert "users.id" in literals or any("users.id" in str(node) for node in starred), literals
+    assert len(starred) == 1, "the users.* coverage entries must be derived, not restated by hand"
+    names = [node.id for node in ast.walk(starred[0]) if isinstance(node, ast.Name)]
+    assert "USER_ACCOUNT_COLUMNS" in names, ast.dump(starred[0])
+
+
+def test_account_columns_are_bare_identifiers_and_do_not_repeat_the_key():
+    """They are joined straight into the account SELECT, and 'id' is already listed separately."""
+    columns = literal_assigned("USER_ACCOUNT_COLUMNS")
+    assert all(isinstance(name, str) and IDENTIFIER.match(name) for name in columns), columns
+    assert "id" not in columns, "users.id is its own coverage entry"
+    assert len(columns) == len(set(columns)), "a repeated column would appear twice in the SELECT"
+    # The second factor is personal data about the account; the export naming it is the fix for a
+    # subject-access response that omitted 015's six columns because nothing demanded them.
+    assert any(name.startswith("mfa_") for name in columns), columns

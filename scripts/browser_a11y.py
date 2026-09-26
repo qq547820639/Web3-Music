@@ -464,6 +464,111 @@ def self_test(auditor: Auditor) -> int:
     return 0
 
 
+# ---- the second factor's own surfaces -------------------------------------------------------
+# axe has to see the four states the feature adds: the login step, the pending enrolment, the
+# recovery list, and the armed panel. The account they run on is created for this run and deleted
+# afterwards, because a resident gate must never arm one of the demo accounts -- every other drill
+# authenticates those with a password alone, and scripts/e2e_client.py stops with an explicit error
+# rather than guessing when a second factor is armed.
+
+def compose_sql(statement: str) -> str:
+    out = subprocess.run(["docker", "compose", "exec", "-T", "postgres", "psql", "-U", "music_admin", "-d", "music",
+                          "-tAc", " ".join(statement.split())], capture_output=True, text=True)
+    if out.returncode != 0:
+        raise SystemExit(f"psql failed: {(out.stderr or out.stdout).strip()[:300]}")
+    return out.stdout.strip().splitlines()[0].strip() if out.stdout.strip() else ""
+
+
+def api_post(path: str, body: dict, token: str = "") -> dict:
+    request = urllib.request.Request(WEB_URL + path, data=json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json",
+                                              **({"Authorization": "Bearer " + token} if token else {})})
+    with urllib.request.urlopen(request, timeout=40) as response:
+        return json.loads(response.read().decode())
+
+
+class SecondFactor:
+    """A seed, plus the step this run last let through the single-use guard.
+
+    A code is only accepted for a step strictly newer than the last one, so a walk that fires three
+    of them back to back has to let the clock move. That waiting is the feature working, not the
+    fixture being slow.
+    """
+
+    def __init__(self, seed: str, used: int = 0):
+        self.seed = seed
+        self.used = used
+
+    def code(self, page) -> str:
+        from e2e_client import totp_code
+        step = int(time.time() // 30)
+        while step <= self.used:
+            page.wait_for_timeout(500)
+            step = int(time.time() // 30)
+        self.used = step
+        return totp_code(self.seed, at=step * 30 + 5)
+
+
+def provision_second_factor() -> tuple[str, "SecondFactor"]:
+    """Create the probe and arm it over the API, so no scan cycle spends a code to get in."""
+    from e2e_client import totp_code
+    email = f"a11y-mfa-{time.strftime('%m%dT%H%M%SZ', time.gmtime())}@example.local"
+    user_id = compose_sql(f"""INSERT INTO users(email,display_name,password_hash,is_platform_admin)
+      SELECT '{email}','A11y MFA Probe',password_hash,false FROM users WHERE email='{EMAIL}' RETURNING id""")
+    # The demo owner's workspace, named rather than "the first active one": the isolation suites
+    # leave other tenants on this stack and the probe must not appear in any of them.
+    compose_sql("INSERT INTO workspace_members(workspace_id,user_id,role) SELECT m.workspace_id,'%s','creator' "
+                "FROM workspace_members m JOIN users o ON o.id=m.user_id "
+                "WHERE o.email='%s' AND m.role='owner' LIMIT 1" % (user_id, EMAIL))
+    token = api_post("/api/auth/login", {"email": email, "password": PASSWORD})["access_token"]
+    seed = api_post("/api/auth/mfa/enroll", {}, token)["secret"]
+    time.sleep(1)
+    api_post("/api/auth/mfa/enroll/verify", {"code": totp_code(seed)}, token)
+    return email, SecondFactor(seed, used=int(time.time() // 30))
+
+
+def retire_second_factor(email: str):
+    user_id = compose_sql(f"SELECT id FROM users WHERE email='{email}'")
+    if not user_id:
+        return
+    for table, column in (("auth_sessions", "user_id"), ("user_preferences", "user_id"),
+                          ("workspace_members", "user_id"), ("users", "id")):
+        compose_sql(f"DELETE FROM {table} WHERE {column}='{user_id}'")
+
+
+def walk_mfa(page, auditor: Auditor, viewport: str, probe: "SecondFactor", email: str):
+    """Login step -> armed panel -> drop it -> enrolment -> recovery list. Ends armed again."""
+    page.wait_for_selector("#login:not([hidden])", timeout=20000)
+    page.fill("#email", email)
+    page.fill("#password", PASSWORD)
+    page.press("#password", "Enter")
+    page.wait_for_selector("#mfaStep:not([hidden])", timeout=20000)
+    auditor.scan(page, "login-second-factor", viewport)
+    page.fill("#mfaCode", probe.code(page))
+    page.get_by_role("button", name="验证并登录").click()
+    page.wait_for_selector("#app:not([hidden])", timeout=20000)
+    goto_view(page, "数据与账户", "view-account")
+    page.wait_for_selector("#mfaArmed:not([hidden])", timeout=20000)
+    auditor.scan(page, "account-mfa-armed", viewport)
+
+    page.fill("#mfaDisableCode", probe.code(page))
+    page.get_by_role("button", name="关闭两步验证").click()
+    page.wait_for_selector("#mfaState:text-is('未开启')", timeout=20000)
+    page.get_by_role("button", name="开启两步验证").click()
+    page.wait_for_selector("#mfaEnrol:not([hidden])", timeout=20000)
+    probe.seed = (page.text_content("#mfaSecret") or "").strip()
+    auditor.scan(page, "account-mfa-enrolment", viewport)
+
+    page.fill("#mfaEnrolCode", probe.code(page))
+    page.get_by_role("button", name="确认开启").click()
+    page.wait_for_selector("#mfaRecovery:not([hidden])", timeout=20000)
+    if page.locator("#mfaRecoveryList code").count() != 10:
+        raise SystemExit("the recovery list did not render ten codes, so that state was not exercised")
+    auditor.scan(page, "account-mfa-recovery", viewport)
+    page.get_by_role("button", name="退出").click()
+    page.wait_for_selector("#login:not([hidden])", timeout=20000)
+
+
 def git_commit() -> str:
     try:
         return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10).stdout.strip() or "unavailable"
@@ -487,6 +592,15 @@ def main() -> int:
 
     from playwright.sync_api import sync_playwright
 
+    # Audited with axe present, in the axe stage only -- the same scoping the keyboard checks use.
+    # The probe is armed here so that reaching the login step costs no code inside the scan loop.
+    probe = probe_email = None
+    try:
+        probe_email, probe = provision_second_factor()
+    except (SystemExit, OSError, ValueError) as exc:
+        print(f"second-factor probe could not be provisioned ({exc}); the four MFA states will not be audited")
+        probe = probe_email = None
+
     keyboard: list[str] = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
@@ -507,6 +621,8 @@ def main() -> int:
                     keyboard += keyboard_checks(page, auditor, viewport)
                 page.get_by_role("button", name="退出").click()
                 page.wait_for_selector("#login:not([hidden])", timeout=20000)
+                if stage == "axe" and probe:
+                    walk_mfa(page, auditor, viewport, probe, probe_email)
                 admin = context.new_page()
                 auditor.arm(admin)
                 auditor.attach_console(admin, f"{viewport}-{stage}-admin")
@@ -518,6 +634,8 @@ def main() -> int:
                 admin.wait_for_selector("#login:not([hidden])", timeout=20000)
                 context.close()
         browser.close()
+    if probe_email:
+        retire_second_factor(probe_email)
 
     mobile_scans = sum(1 for s in auditor.scans if s["viewport"] == "mobile")
     failures = (gate_failures(auditor.scans)
@@ -534,6 +652,9 @@ def main() -> int:
         "axe_sha256": AXE_SHA256,
         "blocking_impacts": list(BLOCKING_IMPACTS),
         "views_scanned": len(auditor.scans),
+        "second_factor_states": sorted({s["label"] for s in auditor.scans
+                                        if "mfa" in s["label"] or "second-factor" in s["label"]}),
+        "second_factor_probe": probe_email,
         "axe_scans": sum(1 for s in auditor.scans if s["axe"]),
         "violations_by_impact": auditor.summary(),
         "content_security_policy": auditor.security_headers,

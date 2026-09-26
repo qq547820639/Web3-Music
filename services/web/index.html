@@ -24,11 +24,20 @@
   </div>
   <form id="loginForm" class="login-card">
     <p class="eyebrow">RESONANCE V13 FINAL</p>
-    <h2>进入工作室</h2>
-    <label>邮箱<input id="email" autocomplete="username" value="owner@example.local"></label>
-    <label>密码<input id="password" autocomplete="current-password" type="password" value="demo-owner"></label>
-    <button type="submit">登录</button>
-    <div id="loginError" class="error"></div>
+    <h2 id="loginTitle">进入工作室</h2>
+    <div id="credentialFields">
+      <label>邮箱<input id="email" autocomplete="username" value="owner@example.local"></label>
+      <label>密码<input id="password" autocomplete="current-password" type="password" value="demo-owner"></label>
+      <button type="submit">登录</button>
+    </div>
+    <div id="mfaStep" hidden>
+      <p id="mfaHint" class="mfa-hint">这个账户已开启两步验证。请输入验证器里的应用码；手机不在身边时可以输入一次性恢复码。</p>
+      <label>验证码<input id="mfaCode" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="10" aria-describedby="mfaHint mfaExpiry"></label>
+      <button type="submit">验证并登录</button>
+      <button type="button" id="mfaCancel" class="ghost">改用其他账户</button>
+      <p id="mfaExpiry" class="mfa-expiry" role="status"></p>
+    </div>
+    <div id="loginError" class="error" role="alert"></div>
     <div class="demo-accounts"><b>本地演示账户</b><br>Owner：owner@example.local / demo-owner<br>Creator：creator@example.local / demo-creator</div>
   </form>
 </section>
@@ -108,7 +117,7 @@
     <section id="view-account" class="view">
       <div class="page-head"><div><p class="eyebrow">INTELLIGENCE & TRUST</p><h1>指标、偏好与支持</h1><p>理论质量与真人选择、成本、权利可用性和留存共同校准。</p></div></div>
       <div id="analyticsCards" class="metric-grid"></div>
-      <div class="account-grid"><section class="panel"><div class="panel-head"><h3>创作偏好</h3><button id="savePreferences" class="secondary">保存</button></div><label>偏好 JSON<textarea id="preferences" rows="12">{}</textarea></label><label class="check"><input id="learningEnabled" type="checkbox" checked>允许使用我的选择行为改善个人偏好模型</label></section><section class="panel"><div class="panel-head"><h3>支持与问题</h3><button id="newTicket" class="secondary">新建工单</button></div><div id="ticketTools" class="list-tools"></div><div id="tickets" class="ticket-list"></div><div id="ticketPager"></div></section><section class="panel"><h3>账本</h3><div id="ledgerBalances" class="balance-grid"></div><div id="ledgerTransactions" class="ledger-list"></div></section></div>
+      <div class="account-grid"><section class="panel"><div class="panel-head"><h3>创作偏好</h3><button id="savePreferences" class="secondary">保存</button></div><label>偏好 JSON<textarea id="preferences" rows="12">{}</textarea></label><label class="check"><input id="learningEnabled" type="checkbox" checked>允许使用我的选择行为改善个人偏好模型</label></section><section class="panel"><div class="panel-head"><h3>支持与问题</h3><button id="newTicket" class="secondary">新建工单</button></div><div id="ticketTools" class="list-tools"></div><div id="tickets" class="ticket-list"></div><div id="ticketPager"></div></section><section class="panel"><div class="panel-head"><h3>两步验证</h3><span id="mfaState" class="muted">检查中…</span></div><p class="muted">开启后，登录在密码之外还需要验证器应用里的一次性验证码。</p><div id="mfaEnrol" hidden><p class="muted">第一步：在验证器 App 中新建 TOTP 账户，输入下面这组密钥。</p><p class="secret-box"><code id="mfaSecret"></code><button type="button" id="copySecret" class="text-btn">复制密钥</button></p><p class="muted">第二步：输入当前验证码，证明这个密钥真的在你手上。</p><label>验证码<input id="mfaEnrolCode" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="10" aria-describedby="mfaEnrolHint"></label><p id="mfaEnrolHint" class="muted">验证器每 30 秒换一个 6 位码；确认成功后会给出 10 个一次性恢复码。</p><div class="row"><button type="button" id="mfaConfirm">确认开启</button><button type="button" id="mfaAbort" class="ghost">取消</button></div></div><div id="mfaRecovery" hidden><h4>恢复码（只显示这一次）</h4><ul id="mfaRecoveryList" class="recovery-list"></ul><button type="button" id="copyRecovery" class="text-btn">全部复制</button><p class="muted">请存到不放验证器的设备上；每个只能用一次，被用过或关闭验证后即失效。</p></div><div id="mfaArmed" hidden><p id="mfaArmedAt" class="muted"></p><label>验证码<input id="mfaDisableCode" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="10" aria-describedby="mfaDisableHint"></label><p id="mfaDisableHint" class="muted">关闭需要一个当前有效的验证码或恢复码。</p><button type="button" id="mfaDisable" class="secondary">关闭两步验证</button></div><button type="button" id="mfaStart" class="secondary">开启两步验证</button><div id="mfaError" class="error" role="alert"></div></section><section class="panel"><h3>账本</h3><div id="ledgerBalances" class="balance-grid"></div><div id="ledgerTransactions" class="ledger-list"></div></section></div>
     </section>
   </main>
 
