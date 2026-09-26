@@ -125,3 +125,50 @@ def test_the_census_sees_every_installing_image():
         text = (ROOT / "services" / name / "Dockerfile").read_text(encoding="utf-8")
         assert not PIP_INSTALL.search(text), f"{name} installs Python packages in a way the census misses"
     assert {"api", "worker", "migrate", "loadtest"} <= installed, sorted(installed)
+
+
+# --------------------------------------------------------- the chain's own build step ----
+# Retrying inside one image is only half of it: the release chain used to build every image at once,
+# and on the 4 vCPU / 5.8 GiB Colima VM that is what killed an unrelated apt-get with SIGKILL while two
+# other images were pulling wheels.
+
+def compose_up_body(script: str) -> str:
+    """The body of step_stack_up(), the chain's build-and-start step."""
+    found = re.search(r"step_stack_up\(\)\s*\{(.*?)\n\}", script, re.DOTALL)
+    assert found, "acceptance-all.sh no longer defines step_stack_up"
+    return found.group(1)
+
+
+def shell_commands(body: str) -> str:
+    """Only the executable lines.
+
+    The step's own comment explains why `up --build` was dropped, so a text-face search for that flag
+    over the whole body finds it in the prose and reports the shape as still present -- the same trap as
+    an absence assertion blocked by a "do not write this back" note. Comments are stripped first.
+    """
+    return "\n".join(line.strip() for line in body.splitlines()
+                     if line.strip() and not line.strip().startswith("#"))
+
+
+def test_the_chain_builds_one_image_at_a_time():
+    body = shell_commands(compose_up_body((ROOT / "scripts/acceptance-all.sh").read_text(encoding="utf-8")))
+    assert "--build" not in body, \
+        "`up --build` builds every service concurrently; measured on the release VM that killed " \
+        "worker's apt-get with SIGKILL (rc 137) while other images were downloading"
+    assert re.search(r"for\s+\w+\s+in\s+\$\(docker compose config --services\)", body), \
+        "the build loop must enumerate the compose services, not a hand-kept list that goes stale"
+    assert re.search(r"docker compose build \"?\$\{?\w+\}?\"?\s*\|\|\s*return 1", body), \
+        "a failed image build has to fail the step rather than fall through to `up`"
+
+
+def test_the_build_shape_detector_fires_on_the_concurrent_form():
+    old = ("step_stack_up() {\n"
+           "  docker compose up --build -d\n"
+           "  docker compose ps\n"
+           "}\n")
+    body = shell_commands(compose_up_body(old))
+    assert "--build" in body
+    assert not re.search(r"for\s+\w+\s+in\s+\$\(docker compose config --services\)", body)
+    assert "--build" in compose_up_body(old)  # the prose-strip is what makes the reading above honest
+    current = shell_commands(compose_up_body((ROOT / "scripts/acceptance-all.sh").read_text(encoding="utf-8")))
+    assert "--build" not in current

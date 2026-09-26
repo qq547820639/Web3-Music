@@ -143,7 +143,16 @@ step_static_verify() {
 }
 
 step_stack_up() {
-  docker compose up --build -d
+  # 逐个构建，而不是 `up --build`。后者会在 Colima 那台 4 vCPU / 5.8 GiB 的虚机里同时拉起全部镜像，
+  # 实测权威运行 acceptance-20260926T161826Z 第 2 步：worker 的 `apt-get install ffmpeg` 与另外两个
+  # 镜像的 pip 下载挤在同一时刻，apt 那一步被 SIGKILL（退码 137），而同一条链上 payment/provider 两个
+  # 镜像刚靠重试装上依赖建好。峰值并发本身就是这一轮的放大项，把它排成一条队：任一镜像失败即整步失败，
+  # 建好之后 up 只负责起现成的镜像。
+  local service
+  for service in $(docker compose config --services); do
+    docker compose build "$service" || return 1
+  done
+  docker compose up -d
   docker compose ps
 }
 
