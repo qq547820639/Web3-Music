@@ -1,0 +1,927 @@
+{
+  "derived_from": [
+    "services/api/app/main.py",
+    "services/api/app/routers/__init__.py",
+    "services/api/app/routers/admin_v12.py",
+    "services/api/app/routers/assets.py",
+    "services/api/app/routers/creation.py",
+    "services/api/app/routers/market.py"
+  ],
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/api/account/erasure",
+      "authority": "session",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:account_erasure",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/account/export",
+      "authority": "session",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:account_export",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/dashboard",
+      "authority": "require_roles",
+      "roles": "admin,billing,legal,owner,support",
+      "writes": false,
+      "endpoint": "app:admin_dashboard",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/jobs/{job_id}/cancel",
+      "authority": "require_roles",
+      "roles": "admin,owner,support",
+      "writes": true,
+      "endpoint": "app:cancel_job",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/switches/{key}",
+      "authority": "platform_admin",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:update_switch",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v12/dashboard",
+      "authority": "require_roles",
+      "roles": "admin,billing,legal,owner,support",
+      "writes": false,
+      "endpoint": "routers.admin_v12:dashboard",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v12/moderation",
+      "authority": "require_roles",
+      "roles": "admin,legal,owner,support",
+      "writes": false,
+      "endpoint": "routers.admin_v12:moderation",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v12/payments",
+      "authority": "require_roles",
+      "roles": "admin,billing,owner",
+      "writes": false,
+      "endpoint": "routers.admin_v12:payments",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v12/payouts",
+      "authority": "platform_admin",
+      "roles": "",
+      "writes": false,
+      "endpoint": "routers.admin_v12:payout_queue",
+      "app_level_auth": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/v12/payouts/{payout_id}",
+      "authority": "platform_admin",
+      "roles": "",
+      "writes": true,
+      "endpoint": "routers.admin_v12:update_payout",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v12/reconciliation",
+      "authority": "require_roles",
+      "roles": "admin,billing,owner",
+      "writes": false,
+      "endpoint": "routers.admin_v12:reconciliation",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v12/release-evidence",
+      "authority": "platform_admin",
+      "roles": "",
+      "writes": false,
+      "endpoint": "routers.admin_v12:release_evidence",
+      "app_level_auth": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/v12/release-evidence/{gate}/{evidence_key}",
+      "authority": "platform_admin",
+      "roles": "",
+      "writes": true,
+      "endpoint": "routers.admin_v12:update_release_evidence",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v12/release-gate/{gate}",
+      "authority": "platform_admin",
+      "roles": "",
+      "writes": false,
+      "endpoint": "routers.admin_v12:release_gate",
+      "app_level_auth": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/v12/tickets/{ticket_id}",
+      "authority": "require_roles",
+      "roles": "admin,owner,support",
+      "writes": true,
+      "endpoint": "routers.admin_v12:update_ticket",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/analytics/overview",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,owner,reviewer",
+      "writes": false,
+      "endpoint": "routers.creation:analytics_overview",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/assets",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,legal,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.assets:list_assets",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/assets/{asset_id}",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:asset_detail",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/assets/{asset_id}/export",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:export_asset",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/assets/{asset_id}/provenance",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,legal,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.assets:asset_provenance",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/assets/{asset_id}/rights-evidence",
+      "authority": "require_roles",
+      "roles": "admin,creator,legal,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.assets:list_evidence",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/assets/{asset_id}/rights-evidence",
+      "authority": "require_roles",
+      "roles": "admin,creator,legal,owner",
+      "writes": true,
+      "endpoint": "routers.assets:add_evidence",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/assets/{asset_id}/rights-review",
+      "authority": "require_roles",
+      "roles": "admin,legal,owner",
+      "writes": true,
+      "endpoint": "routers.assets:issue_reviewed_manifest",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/login",
+      "authority": "app-level-only",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:login",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "authority": "session",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:logout",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "authority": "session",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:me",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/mfa/challenge",
+      "authority": "app-level-only",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:mfa_challenge",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/mfa/disable",
+      "authority": "session",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:mfa_disable",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/mfa/enroll",
+      "authority": "session",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:mfa_enroll",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/mfa/enroll/verify",
+      "authority": "session",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:mfa_enroll_verify",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/mfa/status",
+      "authority": "session",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:mfa_status",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/refresh",
+      "authority": "app-level-only",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:refresh",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/bootstrap",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:bootstrap",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/brand-briefs",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.market:own_briefs",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/brand-briefs",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,owner",
+      "writes": true,
+      "endpoint": "routers.market:create_brief",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/brand-briefs/public",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.market:public_briefs",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/brand-briefs/{brief_id}/submissions",
+      "authority": "require_roles",
+      "roles": "admin,owner,reviewer",
+      "writes": false,
+      "endpoint": "routers.market:review_submissions",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/brand-briefs/{brief_id}/submissions",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "routers.market:submit_to_brief",
+      "app_level_auth": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/brand-submissions/{submission_id}",
+      "authority": "require_roles",
+      "roles": "admin,owner,reviewer",
+      "writes": true,
+      "endpoint": "routers.market:update_submission",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/brand-submissions/{submission_id}/award",
+      "authority": "require_roles",
+      "roles": "admin,billing,owner",
+      "writes": true,
+      "endpoint": "routers.market:award_submission",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/candidates/{candidate_id}/media-token",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:candidate_media_token",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/catalog",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.market:catalog",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/deliveries",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,legal,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.market:list_deliveries",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/deliveries/{delivery_id}/export",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,legal,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.market:export_delivery",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/events",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,legal,owner,reviewer,support,viewer",
+      "writes": true,
+      "endpoint": "routers.creation:capture_event",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/jobs",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:list_jobs",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/jobs",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "app:submit_job",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/jobs/{job_id}",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:job_detail",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/ledger",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,owner",
+      "writes": false,
+      "endpoint": "app:ledger",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/licenses",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,legal,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.market:list_licenses",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/offers",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.market:marketplace_offers",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/offers/{offer_id}/purchase",
+      "authority": "require_roles",
+      "roles": "admin,billing,owner",
+      "writes": true,
+      "endpoint": "routers.market:purchase_offer",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/moderation/cases",
+      "authority": "require_roles",
+      "roles": "admin,legal,owner,support",
+      "writes": false,
+      "endpoint": "routers.assets:list_cases",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/moderation/cases",
+      "authority": "require_roles",
+      "roles": "admin,legal,owner,support",
+      "writes": true,
+      "endpoint": "routers.assets:create_case",
+      "app_level_auth": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/moderation/cases/{case_id}",
+      "authority": "require_roles",
+      "roles": "admin,legal,owner",
+      "writes": true,
+      "endpoint": "routers.assets:update_case",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/offers",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.market:own_offers",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/offers",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "routers.market:create_offer",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/orders",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.market:list_orders",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/orders/credits",
+      "authority": "require_roles",
+      "roles": "admin,billing,owner",
+      "writes": true,
+      "endpoint": "routers.market:create_credit_order",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/orders/{order_id}/pay",
+      "authority": "require_roles",
+      "roles": "admin,billing,owner",
+      "writes": true,
+      "endpoint": "routers.market:pay_order",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/orders/{order_id}/refunds",
+      "authority": "require_roles",
+      "roles": "admin,billing,owner",
+      "writes": true,
+      "endpoint": "routers.market:refund_order",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/payment-webhooks/{provider}",
+      "authority": "app-level-only",
+      "roles": "",
+      "writes": true,
+      "endpoint": "routers.market:payment_webhook",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/payouts",
+      "authority": "require_roles",
+      "roles": "admin,billing,owner",
+      "writes": false,
+      "endpoint": "routers.market:list_payouts",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/preferences",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,legal,owner,reviewer,support,viewer",
+      "writes": false,
+      "endpoint": "routers.creation:get_preferences",
+      "app_level_auth": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/preferences",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,legal,owner,reviewer,support,viewer",
+      "writes": true,
+      "endpoint": "routers.creation:update_preferences",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:list_projects",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "app:create_project",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/{project_id}",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:project_detail",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/{project_id}/branches",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.creation:list_branches",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/branches",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "routers.creation:create_branch",
+      "app_level_auth": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/{project_id}/branches/{branch_id}",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "routers.creation:advance_branch",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/chat",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "app:chat",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/{project_id}/comments",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner,reviewer,viewer",
+      "writes": false,
+      "endpoint": "routers.creation:list_comments",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/comments",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner,reviewer",
+      "writes": true,
+      "endpoint": "routers.creation:create_comment",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/comments/{comment_id}/resolve",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner,reviewer",
+      "writes": true,
+      "endpoint": "routers.creation:resolve_comment",
+      "app_level_auth": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/{project_id}/locks",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "app:update_locks",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/master",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "app:select_master",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/patch",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "app:patch_project",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/quality",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner,reviewer",
+      "writes": true,
+      "endpoint": "app:quality",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/{project_id}/quotes",
+      "authority": "require_roles",
+      "roles": "admin,creator,owner",
+      "writes": true,
+      "endpoint": "app:create_quote",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/{project_id}/revisions",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:revisions",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/provider-webhooks/{provider}",
+      "authority": "app-level-only",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:provider_webhook",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/support/tickets",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,legal,owner,reviewer,support,viewer",
+      "writes": false,
+      "endpoint": "routers.market:list_tickets",
+      "app_level_auth": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/support/tickets",
+      "authority": "require_roles",
+      "roles": "admin,billing,creator,legal,owner,reviewer,support,viewer",
+      "writes": true,
+      "endpoint": "routers.market:create_ticket",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/workspace/members",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": false,
+      "endpoint": "app:list_workspace_members",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/workspace/members",
+      "authority": "require_roles",
+      "roles": "admin,owner",
+      "writes": true,
+      "endpoint": "app:add_workspace_member",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/workspace/members/transfer",
+      "authority": "workspace_member",
+      "roles": "",
+      "writes": true,
+      "endpoint": "app:transfer_workspace_ownership",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/workspace/members/{member_id}",
+      "authority": "require_roles",
+      "roles": "admin,owner",
+      "writes": true,
+      "endpoint": "app:remove_workspace_member",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/workspace/members/{member_id}",
+      "authority": "require_roles",
+      "roles": "admin,owner",
+      "writes": true,
+      "endpoint": "app:change_workspace_member_role",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    }
+  ]
+}

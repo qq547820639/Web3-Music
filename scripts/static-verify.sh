@@ -8,6 +8,10 @@ find scripts -name '*.sh' -print0 | xargs -0 -r -n1 sh -n
 # The tracked delivery manifest must describe the tree it ships beside. Regenerating
 # it is a separate command on purpose, so this check can genuinely fail.
 ./scripts/source-manifest.sh check
+# Same discipline for the authority matrix: docs/AUTHORITY_MATRIX.md and
+# shared/contracts/authority-matrix.json are derived from the route decorators, and a gate that
+# regenerated them here could never report a route whose role check disappeared.
+python scripts/authority_matrix.py --check
 python - <<'PY'
 import json,pathlib,yaml
 from jsonschema import Draft202012Validator
