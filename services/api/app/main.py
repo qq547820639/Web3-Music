@@ -21,7 +21,7 @@ from .mfa import hash_recovery as mfa_hash_recovery, new_recovery_codes as mfa_n
 from .common import PAGE_LIMIT_DEFAULT, PAGE_LIMIT_MAX, audit, serialize, setting_enabled
 from .db import close_pool, fetch_all, fetch_one, transaction, wait_for_db
 from .contracts import validate_song_spec
-from .settings import settings
+from .settings import deny_insecure_defaults, settings
 from .storage import client as s3_client, ensure_bucket, presign_get, sign_media_token, verify_media_token
 from .domain.deepseek import close_client as close_deepseek_client, propose_patch
 from .domain.events import emit
@@ -35,6 +35,7 @@ from .metrics import observe_request, render as render_metrics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    deny_insecure_defaults()
     wait_for_db(); ensure_bucket(); current_provider_snapshot(); rq.ping()
     yield
     await close_deepseek_client()
@@ -373,6 +374,101 @@ def mfa_disable(body:MfaCodeBody,request:Request,user:UserIdentity=Depends(get_u
         audit(cur,Actor(user.user_id,user.email,user.display_name,user.is_platform_admin,user.session_id,None,"self"),
               "auth.mfa.disable","user",user.user_id,{"was_armed":bool(was)},request.state.request_id)
     return serialize({"armed":False})
+
+
+# ---- workspace membership (G11) -------------------------------------------------------------
+# The API has always been able to read memberships (list_memberships, at auth.py:276) and has never
+# had a way to write one: music_app holds SELECT only on workspace_members, so an application UPDATE
+# would match zero rows and raise nothing. 017's SECURITY DEFINER functions carry the writes and hold
+# the invariants. require_roles() at the edge answers "are you a manager" with a 403, and the
+# functions re-derive the same fact from the table because they, not the endpoint, are the guarantee --
+# scripts/member_drill.py proves that by calling the functions with a forged actor as music_app.
+
+def _member_write(cur, statement: str, params: tuple):
+    """Call one of 017's functions, translating the database's own refusals."""
+    try:
+        cur.execute(statement, params)
+    except psycopg2.errors.RaiseException as exc:
+        raise HTTPException(409, str(exc).strip().splitlines()[0]) from exc
+    except psycopg2.errors.CheckViolation as exc:
+        # Only reachable if the CHECK on role and workspace_role_error() ever disagree, which is
+        # exactly the drift the single-source-of-truth choice is meant to make loud rather than quiet.
+        raise HTTPException(400, "the workspace role was refused by the database constraint") from exc
+    return cur.fetchone()
+
+
+def _membership_denied(actor: Actor, request: Request, action: str, target: str, reason: str):
+    """A refused membership change is a security event, so it is written in its own transaction --
+    the caller's is already aborted by the exception that produced the refusal."""
+    with transaction() as conn, conn.cursor() as cur:
+        audit(cur, actor, action, "workspace_member", target, {"reason": reason}, request.state.request_id)
+
+
+def _membership_result(row) -> dict:
+    """Unwrap SELECT func() FROM ..., whose single jsonb column is named after the function."""
+    if not row:
+        return {}
+    values = list(row.values())
+    if len(values) == 1 and isinstance(values[0], dict):
+        return values[0]
+    return dict(row)
+
+
+def _membership_change(request: Request, actor: Actor, action: str, statement: str, params: tuple, target: str):
+    with transaction() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        try:
+            result = _membership_result(_member_write(cur, statement, params))
+        except HTTPException as exc:
+            _membership_denied(actor, request, action, target, str(exc.detail))
+            conn.commit()
+            raise
+        audit(cur, actor, action, "workspace_member", target, result, request.state.request_id)
+    return serialize(result)
+
+
+class MemberBody(BaseModel): email: str; role: str
+class MemberRoleBody(BaseModel): role: str
+class MemberTransferBody(BaseModel): user_id: str
+
+
+@app.get("/api/workspace/members")
+def list_workspace_members(actor: Actor = Depends(get_actor)):
+    rows = fetch_all("""SELECT m.user_id,u.email,u.display_name,m.role,m.created_at,u.status AS account_status
+                        FROM workspace_members m JOIN users u ON u.id=m.user_id
+                        WHERE m.workspace_id=%s ORDER BY m.created_at""", (actor.workspace_id,))
+    return serialize({"workspace_id": actor.workspace_id, "members": rows,
+                      "actor_role": actor.role, "can_manage": actor.role in {"owner", "admin"} or actor.is_platform_admin})
+
+
+@app.post("/api/workspace/members")
+def add_workspace_member(body: MemberBody, request: Request, actor: Actor = Depends(require_roles("owner", "admin"))):
+    return _membership_change(request, actor, "workspace.member.add",
+                              "SELECT * FROM add_workspace_member(%s,%s,%s,%s)",
+                              (actor.workspace_id, actor.user_id, body.email, body.role), body.email)
+
+
+@app.patch("/api/workspace/members/{member_id}")
+def change_workspace_member_role(member_id: str, body: MemberRoleBody, request: Request, actor: Actor = Depends(require_roles("owner", "admin"))):
+    return _membership_change(request, actor, "workspace.member.role",
+                              "SELECT * FROM change_workspace_member_role(%s,%s,%s::uuid,%s)",
+                              (actor.workspace_id, actor.user_id, member_id, body.role), member_id)
+
+
+@app.delete("/api/workspace/members/{member_id}")
+def remove_workspace_member(member_id: str, request: Request, actor: Actor = Depends(require_roles("owner", "admin"))):
+    return _membership_change(request, actor, "workspace.member.remove",
+                              "SELECT * FROM remove_workspace_member(%s,%s,%s::uuid)",
+                              (actor.workspace_id, actor.user_id, member_id), member_id)
+
+
+@app.post("/api/workspace/members/transfer")
+def transfer_workspace_ownership(body: MemberTransferBody, request: Request, actor: Actor = Depends(get_actor)):
+    # Deliberately not require_roles("owner"): the refusal that matters -- "only the current owner can
+    # transfer ownership" -- is the one that can see both membership rows at once, so it comes from
+    # the function. A role check here would answer a different question than the one being asked.
+    return _membership_change(request, actor, "workspace.member.transfer",
+                              "SELECT * FROM transfer_workspace_ownership(%s,%s,%s::uuid)",
+                              (actor.workspace_id, actor.user_id, body.user_id), body.user_id)
 
 
 @app.get("/api/auth/me")

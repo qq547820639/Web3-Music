@@ -107,6 +107,15 @@ jobs:
             exit 1
           fi
           tail -5 /tmp/mfa.log
+      - name: Workspace membership and role drill
+        shell: bash
+        run: |
+          if ! python scripts/member_drill.py > /tmp/member.log 2>&1; then
+            echo "::error title=member-drill::$(grep -E '^  - |FAIL|failed' /tmp/member.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            tail -40 /tmp/member.log
+            exit 1
+          fi
+          tail -5 /tmp/member.log
       - name: Third-party provider adapter round trip
         shell: bash
         run: |

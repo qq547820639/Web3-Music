@@ -57,7 +57,11 @@ services:
       PORT: 8010
       MEDIA_ROOT: /data/provider-media
       SQLITE_PATH: /data/provider/provider.db
-      WEBHOOK_SECRET: ${PROVIDER_WEBHOOK_SECRET:-dev-provider-webhook-secret}
+      # No webhook secret here. This emulator declares supports_webhooks:false and never pushes an
+      # event, so the variable that used to sit on this line was read by nothing -- it only made the
+      # provider secret look like it was wired into the provider. The platform's own receiver
+      # (/api/provider-webhooks/emulator) verifies HMACs against PROVIDER_WEBHOOK_SECRET, which the
+      # acceptance suite signs with on the sending side.
     ports: ["8010:8010"]
     volumes:
       - provider_media:/data/provider-media
@@ -92,12 +96,22 @@ services:
       S3_SECRET_KEY: minioadmin
       S3_BUCKET: music-assets
       PROVIDER_BASE_URL: http://provider-emulator:8010
-      JWT_SECRET: ${JWT_SECRET:-local-development-jwt-secret-change-before-production-0123456789abcdef}
-      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:-local-development-media-secret-change-before-production-0123456789}
-      PROVIDER_WEBHOOK_SECRET: ${PROVIDER_WEBHOOK_SECRET:-dev-provider-webhook-secret}
+      # No :-fallback here on purpose. The fallbacks that used to sit in this file are the same
+      # literals as the ones in app/settings.py, and docker-compose.production.yml overrode none of
+      # them -- so a production deploy that forgot a variable inherited a signing key published in a
+      # public repository and never noticed. :? makes compose refuse to start instead, which is the
+      # convention this file already uses for PUBLIC_ORIGIN and MINIO_ROOT_PASSWORD in the production
+      # overlay. The local demo stack still works because .env (copied from .env.example) sets them.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set; see .env.example}
+      MEDIA_SIGNING_SECRET: ${MEDIA_SIGNING_SECRET:?MEDIA_SIGNING_SECRET must be set; see .env.example}
+      PROVIDER_WEBHOOK_SECRET: ${PROVIDER_WEBHOOK_SECRET:?PROVIDER_WEBHOOK_SECRET must be set; see .env.example}
       PAYMENT_PROVIDER: emulator
       PAYMENT_BASE_URL: http://payment-emulator:8020
-      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev-payment-webhook-secret}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET must be set; see .env.example}
+      # Pinned literal, deliberately not ${DEMO_STACK:-true}: an interpolation could be flipped by a
+      # stray .env on the deploy host, and the value is the api's licence to run on repository demo
+      # secrets. The production overlay sets it to "false" for the same reason it sets COOKIE_SECURE.
+      DEMO_STACK: "true"
       PUBLIC_API_BASE_URL: http://api:8000
       CORS_ORIGINS: http://localhost:4173,http://localhost:4174,http://localhost:8080
       COOKIE_SECURE: ${COOKIE_SECURE:-false}

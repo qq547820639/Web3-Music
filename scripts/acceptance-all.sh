@@ -176,6 +176,15 @@ step_mfa_drill() {
   python scripts/mfa_drill.py
 }
 
+step_member_drill() {
+  # 工作区成员与角色的写入路径（G11）：加人、改角色、移人、移交所有权，四条写入全部走 017 的
+  # SECURITY DEFINER 函数；演练同时用 SET ROLE music_app 直接试着写这张表，要求数据库拒绝——
+  # 这才是「应用层改不动权威成员表」的实证，而不是注释里的一句承诺。
+  # 它还闭合了删除权的一条旧死路：014/016 的擦除守卫说「先移交所有权」，而在 017 之前没有任何
+  # API 能做这件事；演练最后一步就是把这条链跑通。
+  python scripts/member_drill.py
+}
+
 step_commercial() {
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial
@@ -229,6 +238,7 @@ run_step "restore-fidelity-compare" step_fidelity_compare
 run_step "acceptance-rerun" step_acceptance_rerun
 run_step "erasure-drill" step_erasure_drill
 run_step "mfa-drill" step_mfa_drill
+run_step "member-drill" step_member_drill
 run_step "commercial-flow" step_commercial
 run_step "reservation-race" step_reservation_race
 run_step "market-reconciliation" step_reconcile_market

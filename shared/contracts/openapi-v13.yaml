@@ -241,6 +241,214 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/workspace/members:
+    get:
+      summary: List Workspace Members
+      operationId: list_workspace_members_api_workspace_members_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      summary: Add Workspace Member
+      operationId: add_workspace_member_api_workspace_members_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/workspace/members/{member_id}:
+    patch:
+      summary: Change Workspace Member Role
+      operationId: change_workspace_member_role_api_workspace_members__member_id__patch
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Member Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberRoleBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Remove Workspace Member
+      operationId: remove_workspace_member_api_workspace_members__member_id__delete
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Member Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/workspace/members/transfer:
+    post:
+      summary: Transfer Workspace Ownership
+      operationId: transfer_workspace_ownership_api_workspace_members_transfer_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberTransferBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/auth/me:
     get:
       summary: Me
@@ -4133,6 +4341,37 @@ components:
       - expected_spec_revision
       - confirmation
       title: MasterRequest
+    MemberBody:
+      properties:
+        email:
+          type: string
+          title: Email
+        role:
+          type: string
+          title: Role
+      type: object
+      required:
+      - email
+      - role
+      title: MemberBody
+    MemberRoleBody:
+      properties:
+        role:
+          type: string
+          title: Role
+      type: object
+      required:
+      - role
+      title: MemberRoleBody
+    MemberTransferBody:
+      properties:
+        user_id:
+          type: string
+          title: User Id
+      type: object
+      required:
+      - user_id
+      title: MemberTransferBody
     MfaChallengeBody:
       properties:
         pending_token:

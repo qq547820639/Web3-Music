@@ -23,7 +23,13 @@ services:
     ports: []
     restart: unless-stopped
     environment:
+      # The base file pins this to "true" as a literal, so the only way a production boot can run on
+      # repository demo secrets is to say so here. app/settings.py:deny_insecure_defaults() refuses
+      # the boot when it is not true; see the comment in docker-compose.yml.
+      DEMO_STACK: "false"
       COOKIE_SECURE: "true"
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
       CORS_ORIGINS: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN}
       API_WORKERS: ${API_WORKERS:-1}
       API_LIMIT_CONCURRENCY: ${API_LIMIT_CONCURRENCY:-512}
@@ -36,6 +42,9 @@ services:
   worker:
     restart: unless-stopped
     environment:
+      DEMO_STACK: "false"
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-8}
       WORKER_DB_POOL_MIN: ${WORKER_DB_POOL_MIN:-2}
       WORKER_DB_POOL_MAX: ${WORKER_DB_POOL_MAX:-16}

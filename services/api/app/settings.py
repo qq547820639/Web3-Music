@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 
@@ -49,9 +51,14 @@ class Settings:
     db_pool_acquire_timeout_seconds: float = max(0.1, float(os.getenv("DB_POOL_ACQUIRE_TIMEOUT_SECONDS", "5")))
     db_statement_timeout_ms: int = max(1000, int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "15000")))
     media_delivery_mode: str = os.getenv("MEDIA_DELIVERY_MODE", "proxy").strip().lower()
-    # No default on purpose: an unset key disables the second-factor endpoints with a clear
-    # error instead of sealing secrets under a value anyone could guess.
+    # No default in the code: an unset key leaves the second-factor endpoints returning a clear 503
+    # instead of sealing seeds under a value anyone could guess. (.env.example does carry a demo
+    # value, for the local stack -- the distinction is that the code has none to fall back on.)
     mfa_encryption_key: str = os.getenv("MFA_ENCRYPTION_KEY", "")
+    # Licence to run on the repository's own demo secrets. Pinned to "true" literally by
+    # docker-compose.yml and to "false" by docker-compose.production.yml, so a deployment cannot
+    # inherit it from a stray .env on the host. Default false: an unknown environment refuses.
+    demo_stack: bool = boolean("DEMO_STACK", False)
     mfa_enrolment_window_seconds: int = max(60, int(os.getenv("MFA_ENROLMENT_WINDOW_SECONDS", "900")))
     mfa_pending_ttl_seconds: int = max(60, int(os.getenv("MFA_PENDING_TTL_SECONDS", "300")))
     mfa_challenge_rate_limit_per_minute: int = int(os.getenv("MFA_CHALLENGE_RATE_LIMIT_PER_MINUTE", "6"))
@@ -59,3 +66,59 @@ class Settings:
 
 
 settings = Settings()
+
+
+# Every value this platform signs something with, and the literals that are published in this
+# repository. A production boot is refused while any of them is in use -- see
+# deny_insecure_defaults(), which services/api/app/main.py calls from its lifespan, and the resident
+# test that keeps the list below in step with .env.example and with the defaults above.
+SIGNING_SECRETS = ("jwt_secret", "media_signing_secret", "provider_webhook_secret", "payment_webhook_secret")
+
+INSECURE_SECRET_VALUES = frozenset({
+    # the in-file defaults above
+    "local-development-jwt-secret-change-before-production-0123456789abcdef",
+    "local-development-media-secret-change-before-production-0123456789",
+    "dev-provider-webhook-secret",
+    "dev-payment-webhook-secret",
+    # the placeholder .env.example shipped until 2026-09-26, which CI copied verbatim and which was
+    # the same string for two different purposes
+    "change-me-before-sharing",
+    # the current demo values, listed so that "copied .env.example and forgot" is also a refusal
+    "local-demo-jwt-secret-not-a-real-secret-5f2a",
+    "local-demo-media-secret-not-a-real-secret-c81d",
+    "local-demo-provider-webhook-secret-4b7e",
+    "local-demo-payment-webhook-secret-9a3c",
+})
+
+
+def secret_findings(current: "Settings" | None = None) -> list[str]:
+    """What is wrong with the signing configuration, empty when nothing is."""
+    current = current or settings
+    findings = []
+    for name in SIGNING_SECRETS:
+        value = getattr(current, name, "") or ""
+        if not value:
+            findings.append(f"{name} is not configured")
+        elif value in INSECURE_SECRET_VALUES:
+            findings.append(f"{name} is still a literal published in this repository")
+    users: dict[str, list[str]] = {}
+    for name in SIGNING_SECRETS:
+        value = getattr(current, name, "") or ""
+        if value:
+            users.setdefault(value, []).append(name)
+    for shared, names in users.items():
+        if len(names) > 1:
+            findings.append("one value signs " + " and ".join(names) + "; every signing purpose needs its own")
+    return findings
+
+
+def deny_insecure_defaults(current: "Settings" | None = None) -> None:
+    """Refuse to start on demo secrets unless this is explicitly the local demo stack."""
+    current = current or settings
+    if current.demo_stack:
+        return
+    findings = secret_findings(current)
+    if findings:
+        raise RuntimeError(
+            "refusing to start: " + " | ".join(findings)
+            + ". Set real values, or DEMO_STACK=true for the local reference stack.")
