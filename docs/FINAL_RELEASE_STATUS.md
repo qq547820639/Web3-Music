@@ -9,31 +9,16 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (volumes removed before
-start, host load 6.3 at launch), **16 steps PASS and 1 recorded as skipped**, commit
-`01e61d1`, 2026-09-25T23:08:19Z → 23:16:28Z, evidence in
-`release-evidence/acceptance-20260925T230819Z/` (per-step logs, `SUMMARY.txt`, full
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (volumes removed
+before start), **17 steps PASS and 1 recorded as skipped**, commit
+`2c3ef7f`, 2026-09-25T23:47:50Z → 2026-09-25T23:58:18Z, evidence in
+`release-evidence/acceptance-20260925T234750Z/` (per-step logs, `SUMMARY.txt`, full
 `compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
-machine-readable record at `release-evidence/browser-a11y-20260925T231538Z/report.json`
-(stamped with the same commit). The same suite was green one commit earlier as well
-(`28deafc`, `release-evidence/acceptance-20260925T181823Z/`), so the pass is reproducible
-rather than a single lucky run. Five earlier runs on this day are kept as discovery
-records, not as the headline: `acceptance-20260925T161532Z` proved 14 steps while the
-refund fix was still uncommitted, `acceptance-20260925T162746Z` is a genuine **FAIL** at
-commit `7b187dc` where lease-contention hit an unfunded tenant,
-`acceptance-20260925T174204Z` is the **FAIL** in `browser-a11y` that led to the proxy
-defect below, `browser-a11y-20260925T170315Z` is the 27-finding audit that surfaced
-the CSP, contrast and overflow defects, `acceptance-20260925T223656Z` is a step-1 red
-that records launcher state rather than code (the manifest was written before its four
-new files were staged, so `tracked=193 listed=189 missing=4`), and
-`acceptance-20260925T223811Z` is the **FAIL** at commit `1f8010e` where
-`provider-regression-100` finished 87/100 while the archived postgres log shows one
-checkpoint taking 221.210 s to write 1569 buffers — the run that exposed defect 14. Docs that cite this section are committed after the
-tested tree; the only later commits touching tooling are followed by a fresh run.
-
-Host: Docker 29.5.2 on a Colima VM with **4 vCPU / 6 GiB**, Compose v5.4.0. The same suite
-also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-acceptance`,
-`commercial-flow`, `browser-a11y`, and `capacity-500`).
+machine-readable record at `release-evidence/browser-a11y-20260925T235724Z/report.json` (stamped with the same commit). This is the
+first run of the 18-step pipeline -- `generic-rest-roundtrip` joined it at step
+16 and pushed the browser audit to step 17.
+The same suite was green on this host 5 times before it as well
+(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1` (older → newer)), so the pass is reproducible rather than a single lucky run.
 
 > **CI status is deliberately not claimed as evidence.** The branch was pushed, which
 > dispatches those jobs, but this environment cannot read their outcome: the repository is
@@ -71,19 +56,18 @@ also runs in CI (`.github/workflows/ci.yml`: `static-and-unit`, `compose-accepta
 - **100-run generation regression** (new): `100/100 completed, error rate 0.0%`, per-job
   ready count, 64-hex media hash, sampled real download, `settled_credits == quoted price`,
   and a ledger that moved by exactly the summed settlement with no dangling hold.
-  Across the green pipeline runs: **p50 6.25s / p95 8.31s**, **p50 8.53s / p95 13.64s**
-  and **p50 5.195s / p95 9.89s** (the authoritative run), each 100/100 with 1000 credits
-  settled; the red run at `1f8010e` read p50 31.88s / p95 81.81s on the same code path
-  with 87/100 finished. The timing reading moves with host I/O, so it must be quoted per
-  run, not as a property of the code.
+  Across the green pipeline runs: **p50 6.25s / p95 8.31s**, **p50 8.53s / p95 13.64s**,
+  **p50 5.195s / p95 9.89s** and **100/100 completed error rate 0.0% p50 7.18s p95 15.66s** (the authoritative run), each 100/100 with 1000 credits settled;
+  the red run at `1f8010e` read p50 31.88s / p95 81.81s on the same code path with 87/100
+  finished. The timing reading moves with host I/O, so it must be quoted per run, not as a
+  property of the code.
 - **Third-party provider adapter round trip** (new): `docker-compose.generic-rest.yml` sets
   `MUSIC_PROVIDER=generic_rest` so `GenericRESTAdapter` -- not the emulator's own adapter --
   drives generation, and `scripts/provider_regression.py` now refuses the batch unless
   `/api/bootstrap` reports that identity (measured both ways: with the overlay off it exits
   `expected provider 'generic_rest', the stack reports 'emulator' ... the overlay did not take
   effect`; with a dead base URL it fails a job and prints the reason the worker stored,
-  `job_error={'type': 'ConnectError', ...}`). Result: `25/25 completed, error rate 0.0%,
-  p50 5.12s / p95 5.24s, settled 250 credits`. This is the adapter and contract plumbing, not
+  `job_error={'type': 'ConnectError', ...}`). Result in the authoritative run (step 16): `25/25 completed, error rate 0.0%, p50 5.21s, p95 6.37s, settled 250 credits`. This is the adapter and contract plumbing, not
   a provider: the endpoint behind it is still our emulator, so the gate for 100 *real*
   provider runs stays open.
 - **Real-browser walkthrough + axe audit** (new): Playwright driving axe-core 4.13.0
