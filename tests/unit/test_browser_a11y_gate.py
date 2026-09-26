@@ -11,7 +11,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from browser_a11y import csp_failures, gate_failures, mobile_fit_failures  # noqa: E402
+from browser_a11y import (contrast_ratio, csp_failures, danger_pair, gate_failures,  # noqa: E402
+                       mobile_fit_failures)
 
 CSP_OK = "default-src 'self'; script-src 'self'; base-uri 'none'"
 ORIGINS = ["http://localhost:4173", "http://localhost:4174"]
@@ -83,3 +84,31 @@ def test_csp_rejects_unsafe_inline_and_missing_directive():
 def test_csp_rejects_an_origin_that_was_never_observed():
     assert csp_failures({ORIGINS[0]: CSP_OK}, ORIGINS)
     assert csp_failures({}, [])
+
+
+def test_filled_danger_buttons_meet_aa_contrast_in_both_apps():
+    # axe only flags the pair once such a button is actually enabled and rendered, which is how
+    # white-on-#ff6b6b survived every run until a panel put an always-enabled one in the roster.
+    for name in ("services/web/styles.css", "services/admin/styles.css"):
+        css = (ROOT / name).read_text(encoding="utf-8")
+        foreground, background = danger_pair(css)
+        measured = contrast_ratio(foreground, background)
+        assert measured >= 4.5, f"{name}: {foreground} on {background} measures {measured:.2f}:1"
+
+
+def test_the_contrast_reader_resolves_tokens_rather_than_reading_var_literals():
+    css = (":root { --danger: #ff6b6b; --fg: #fff; }\n"
+           "button.danger { background: var(--danger); color: var(--fg); }")
+    assert danger_pair(css) == ("#fff", "#ff6b6b"), "the resolver must hand back colours, not var() text"
+    # Control: the pair that shipped has to read as a violation, and the replacement as compliant.
+    assert contrast_ratio("#ffffff", "#ff6b6b") < 4.5
+    assert contrast_ratio("#ffffff", "#b3261e") >= 4.5
+
+
+def test_the_contrast_reader_refuses_a_rule_it_cannot_evaluate():
+    for broken in ("button.danger { color: #fff; }", ":root { --x: red; } button.danger { background: var(--x); color: #fff; }"):
+        try:
+            danger_pair(broken)
+        except AssertionError:
+            continue
+        raise AssertionError(f"a danger rule with no readable pair slipped through: {broken[:48]!r}")

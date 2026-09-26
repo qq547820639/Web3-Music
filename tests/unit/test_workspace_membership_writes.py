@@ -1,6 +1,6 @@
 """Static guards on the workspace-membership write path.
 
-The live proofs are scripts/member_drill.py: 33 checks against the running stack, including that
+The live proofs are scripts/member_drill.py: 39 checks against the running stack, including that
 music_app is refused when it writes `workspace_members` itself and that 017's functions refuse a
 forged actor. What belongs in a no-stack test is the shape a drill cannot see from outside: that no
 code path in the API writes the table, that every membership endpoint resolves an actor, and that
@@ -150,3 +150,84 @@ def test_the_grant_census_fires_on_a_function_shipped_without_grants():
     assert declared == {"sneaky_workspace_member"}
     assert declared - granted == {"sneaky_workspace_member"}
     assert declared - revoked == {"sneaky_workspace_member"}
+
+
+# ------------------------------------------------------------------ the panel ----
+# services/web/app.js renders the roster, so three things about it are checkable without a browser:
+# it drives the routes the API actually declares, it selects only elements the document defines, and
+# the role vocabulary it offers is read from the schema rather than typed out again in JavaScript.
+
+APP_JS = ROOT / "services/web/app.js"
+INDEX_HTML = ROOT / "services/web/index.html"
+ROLE_SOURCE = ROOT / "db/migrations/001_production_candidate.sql"
+
+
+def role_names_in_schema() -> set[str]:
+    text = ROLE_SOURCE.read_text(encoding="utf-8")
+    line = [l for l in text.splitlines() if "CHECK(role IN" in l]
+    assert len(line) == 1, f"the role CHECK must be readable from 001, found {len(line)}"
+    return set(re.findall(r"'([a-z_]+)'", line[0]))
+
+
+def literal_role_names(source: str, function: str) -> set[str]:
+    """Role names spelled out as string constants inside one function body (its docstring excluded)."""
+    tree = ast.parse(source, filename="<synthetic>" if "<" in function else str(MAIN))
+    target = next((node for node in ast.walk(tree)
+                   if isinstance(node, ast.FunctionDef) and node.name == function), None)
+    assert target is not None, f"{function} is not in the source given"
+    body = list(target.body)
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+        body = body[1:]                      # the docstring may name roles in prose
+    found = {node.value for node in ast.walk(ast.Module(body=body, type_ignores=[]))
+             if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+    return found & role_names_in_schema()
+
+
+def routes_declared() -> set[str]:
+    paths = set()
+    for node in statements(MAIN):
+        if isinstance(node, ast.FunctionDef):
+            for decorator in node.decorator_list:
+                if (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute)
+                        and isinstance(decorator.func.value, ast.Name) and decorator.func.value.id == "app"
+                        and decorator.args and isinstance(decorator.args[0], ast.Constant)):
+                    value = decorator.args[0].value
+                    if "/workspace/members" in value:
+                        paths.add(value)
+    return paths
+
+
+def test_the_panel_drives_the_routes_the_api_declares():
+    declared = routes_declared()
+    assert declared == {"/api/workspace/members", "/api/workspace/members/{member_id}",
+                        "/api/workspace/members/transfer"}, sorted(declared)
+    app = APP_JS.read_text(encoding="utf-8")
+    for route in ("/api/workspace/members", "/api/workspace/members/transfer"):
+        assert route in app, f"the roster no longer calls {route}"
+    assert "/api/workspace/members/${member.user_id}" in app, (
+        "the panel must address a member by id, and the id it uses is the user_id the roster lists")
+
+
+def test_the_panel_selects_only_elements_the_document_defines():
+    app = APP_JS.read_text(encoding="utf-8")
+    document = INDEX_HTML.read_text(encoding="utf-8")
+    declared = set(re.findall(r'id="([A-Za-z0-9_-]+)"', document))
+    team_ids = {"teamState", "teamList", "teamManage", "teamEmail", "teamAddRole", "teamAdd", "teamError"}
+    missing = sorted(team_ids - declared)
+    assert not missing, f"index.html lost roster elements: {missing}"
+    dangling = sorted({found for found in re.findall(r"\$\('#(team[A-Za-z0-9]*)'\)", app)} - declared)
+    assert not dangling, f"app.js selects roster elements that no document defines: {dangling}"
+
+
+def test_the_role_vocabulary_is_read_from_the_schema_not_retyped():
+    main = MAIN.read_text(encoding="utf-8")
+    assert literal_role_names(main, "allowed_workspace_roles") == set(), (
+        "the panel's role list must come from pg_constraint; spelling the names out in Python is the "
+        "second source of truth 017 warns about")
+    assert "pg_get_constraintdef" in main, "allowed_workspace_roles no longer reads the constraint"
+    # Control: a hand-copied list is reported, and the schema reader really does know the names.
+    copied = ("def allowed_workspace_roles():\n"
+              "    return ['owner', 'admin', 'creator']\n")
+    assert literal_role_names(copied, "allowed_workspace_roles") == {"owner", "admin", "creator"}
+    assert role_names_in_schema() >= {"owner", "admin", "creator", "reviewer", "viewer",
+                                      "billing", "legal", "support"}

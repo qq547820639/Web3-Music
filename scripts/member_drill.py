@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -91,6 +92,30 @@ def members(workspace: str, token: str) -> list[dict]:
     return response.json()["members"]
 
 
+def constraint_names(definition: str) -> list[str]:
+    """Role names as the CHECK constraint spells them, from a constraint definition string."""
+    return re.findall(r"'([a-z_]+)'::\w+", definition)
+
+
+def validator_names(body: str) -> set[str]:
+    """Role names as workspace_role_error() spells them. Prose literals are filtered by the space."""
+    return {name for name in re.findall(r"'([a-z_ ]+)'", body) if " " not in name}
+
+
+def live_constraint_names() -> list[str]:
+    return constraint_names(sql("SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                                 "WHERE conrelid='workspace_members'::regclass AND contype='c' "
+                                 "AND pg_get_constraintdef(oid) ~ 'role'"))
+
+
+def live_validator_names() -> set[str]:
+    # sql() reads a single line, so the function body is flattened before it is parsed -- a multi-line
+    # definition otherwise reaches the extractor as its first line only, and a reader that cannot see
+    # the IN list silently returns an empty set.
+    return validator_names(sql("SELECT regexp_replace(pg_get_functiondef('workspace_role_error(text)'::regprocedure),"
+                               " '\\s+', ' ', 'g')"))
+
+
 def main() -> int:
     owner_id = make_user(OWNER, "Member Owner")
     joiner_id = make_user(JOINER, "Member Joiner")
@@ -131,6 +156,36 @@ def main() -> int:
                              headers=owner_h, timeout=40)
         check("an email with no account here is refused rather than invited into a void",
               unknown.status_code in (404, 409) and "account" in unknown.text.lower(), f"{unknown.status_code} {unknown.text[:160]}")
+
+        # ---- the role vocabulary the panel is handed ----------------------------------
+        # 017 says the legal role names are not restated in the migration, yet workspace_role_error()
+        # spells all eight of them out, and the API now hands the browser a third copy derived from
+        # pg_constraint. Three representations can only be trusted if something compares them, so this
+        # is the drift detector: the endpoint's list must equal the constraint's array, and the
+        # validator's set must equal it too.
+        view = httpx.get(BASE + "/workspace/members", headers=owner_h, timeout=40).json()
+        api_roles = view.get("roles") or []
+        constraint_roles = live_constraint_names()
+        validator_roles = live_validator_names()
+        check("the membership view hands the panel a role vocabulary", len(api_roles) >= 8, str(api_roles))
+        check("the panel's list is the CHECK constraint's own array, in order",
+              api_roles == constraint_roles, f"api {api_roles} vs constraint {constraint_roles}")
+        check("and 017's validator agrees with that constraint, name for name",
+              set(api_roles) == validator_roles, f"validator {sorted(validator_roles)} vs constraint {constraint_roles}")
+        accepted = []
+        for role in api_roles:
+            probe = httpx.post(BASE + "/workspace/members", json={"email": f"nobody-{role}-{STAMP}@example.local", "role": role},
+                               headers=owner_h, timeout=40)
+            if "no account" not in probe.text.lower():
+                accepted.append(f"{role}:{probe.status_code} {probe.text[:60]}")
+        check("every name in that vocabulary is a role the write path actually takes",
+              not accepted, "; ".join(accepted))
+        check("the constraint reader is not blind to an array it has not seen",
+              constraint_names("CHECK ((role = ANY (ARRAY['zeta'::text, 'eta'::text])))") == ["zeta", "eta"],
+              constraint_names("CHECK ((role = ANY (ARRAY['zeta'::text, 'eta'::text])))"))
+        check("and the validator reader keeps names while dropping the prose",
+              validator_names("WHEN role IN ('alpha','beta') THEN NULL ELSE 'unknown workspace role' END") == {"alpha", "beta"},
+              sorted(validator_names("WHEN role IN ('alpha','beta') THEN NULL ELSE 'unknown workspace role' END")))
 
         # ---- who may act -------------------------------------------------------------
         joiner_h = {"Authorization": f"Bearer {tokens['joiner']}", "X-Workspace-Id": ws, "Content-Type": "application/json"}

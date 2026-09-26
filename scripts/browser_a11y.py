@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
+import atexit
 import json
 import os
 import re
@@ -359,6 +360,49 @@ def keyboard_checks(page, auditor: Auditor, viewport: str) -> list[str]:
     return failures
 
 
+def hex_luminance(color: str) -> float:
+    """WCAG 2.1 relative luminance of a hex string, in #rgb or #rrggbb form."""
+    digits = color.strip().lstrip("#").lower()
+    if len(digits) == 3:
+        digits = "".join(char * 2 for char in digits)
+    if len(digits) != 6:
+        raise AssertionError(f"not a hex colour: {color!r}")
+    channels = [int(digits[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def contrast_ratio(foreground: str, background: str) -> float:
+    lighter, darker = max(hex_luminance(foreground), hex_luminance(background)), \
+        min(hex_luminance(foreground), hex_luminance(background))
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def css_token(css: str, name: str) -> str:
+    found = re.search(r"--" + re.escape(name) + r"\s*:\s*(#[0-9a-fA-F]{3,6})\b", css)
+    if not found:
+        raise AssertionError(f"the stylesheet declares no --{name} hex token")
+    return found.group(1).lower()
+
+
+def danger_pair(css: str) -> tuple[str, str]:
+    """The (foreground, background) the filled danger control actually paints."""
+    block = re.search(r"button\.danger\s*\{([^}]*)\}", css)
+    if not block:
+        raise AssertionError("no button.danger rule to read")
+    body = block.group(1)
+
+    def resolve(value: str) -> str:
+        variable = re.fullmatch(r"var\(\s*(--[a-z-]+)\s*\)", value.strip())
+        return css_token(css, variable.group(1)[2:]) if variable else value.strip().lower()
+
+    colour = re.search(r"(?:^|;)\s*color\s*:\s*([^;]+);", body)
+    background = re.search(r"background\s*:\s*([^;]+);", body)
+    if not colour or not background:
+        raise AssertionError("button.danger does not declare both a color and a background")
+    return resolve(colour.group(1)), resolve(background.group(1))
+
+
 def self_test(auditor: Auditor) -> int:
     """Every arm below must be able to fail: a scanner that cannot flag a planted
     violation, or a gate that cannot be satisfied, would otherwise green quietly."""
@@ -635,6 +679,78 @@ def walk_privacy(page, auditor: Auditor, viewport: str, probe: dict) -> list[str
     return failures
 
 
+def provision_team_probe(email: str) -> str:
+    """An account that exists on the platform but belongs to no workspace, so the panel can add it."""
+    return compose_sql(f"""INSERT INTO users(email,display_name,password_hash,is_platform_admin)
+      SELECT '{email}','A11y Team Probe',password_hash,false FROM users WHERE email='{EMAIL}' RETURNING id""")
+
+
+def retire_team_probe(user_id: str):
+    if not user_id:
+        return
+    for table, column in (("workspace_members", "user_id"), ("auth_sessions", "user_id"),
+                          ("user_preferences", "user_id"), ("users", "id")):
+        try:
+            compose_sql(f"DELETE FROM {table} WHERE {column}='{user_id}'")
+        except SystemExit as exc:
+            # A walk that aborted mid-cycle can leave a row another table still points at; that is
+            # teardown noise, not a finding, so report it and keep going rather than turn the gate red.
+            print(f"  team probe cleanup skipped on {table}: {str(exc)[:120]}")
+
+
+def walk_team(page, auditor: Auditor, viewport: str, probe_email: str) -> list[str]:
+    """Roster -> add -> re-role -> confirm dialog -> remove, plus the one refusal the panel can show."""
+    failures: list[str] = []
+    goto_view(page, "数据与账户", "view-account")
+    page.wait_for_selector("#teamList .member-row", timeout=20000)
+    before = page.locator("#teamList .member-row").count()
+    auditor.scan(page, "workspace-team", viewport)
+
+    page.fill("#teamEmail", "nobody-here-" + probe_email)
+    page.get_by_role("button", name="添加成员").click()
+    page.wait_for_selector("#teamError:not(:empty)", timeout=20000)
+    if "account" not in (page.text_content("#teamError") or "").lower():
+        failures.append("adding an e-mail with no account did not read as an unknown-account refusal")
+    auditor.scan(page, "workspace-team-refusal", viewport, require="#teamError")
+    if page.locator("#teamList .member-row").count() != before:
+        failures.append("the refused add still changed the roster")
+
+    page.fill("#teamEmail", probe_email)
+    page.select_option("#teamAddRole", "viewer")
+    page.get_by_role("button", name="添加成员").click()
+    page.wait_for_selector(f"#teamList .member-row:has-text('{probe_email}')", timeout=20000)
+    auditor.scan(page, "workspace-team-added", viewport)
+    if page.locator("#teamList .member-row").count() != before + 1:
+        failures.append("the roster did not grow by exactly the member the panel added")
+
+    row = page.locator("#teamList .member-row", has_text=probe_email)
+    row.locator("select").select_option("reviewer")
+    row.get_by_role("button", name="保存角色").click()
+    page.wait_for_selector(f"#teamList .member-row:has-text('{probe_email}') .tag:text-is('reviewer')", timeout=20000)
+    auditor.scan(page, "workspace-team-role", viewport)
+
+    row.get_by_role("button", name="移出").click()
+    page.wait_for_selector("#dialog[open]", timeout=20000)
+    auditor.scan(page, "workspace-team-remove-dialog", viewport)
+    page.fill("#dialog .dialog-fields input", "wrong@" + probe_email)
+    page.locator("#dialog .dialog-submit").click()
+    page.wait_for_selector("#dialog[open]", state="detached", timeout=20000)
+    mismatch = (page.text_content("#teamError") or "").strip()
+    if "不一致" not in mismatch:
+        failures.append("a confirmation that does not match the member's e-mail still let removal proceed")
+    if page.locator(f"#teamList .member-row:has-text('{probe_email}')").count() != 1:
+        failures.append("the mismatched confirmation removed the member anyway")
+    row.get_by_role("button", name="移出").click()
+    page.wait_for_selector("#dialog[open]", timeout=20000)
+    page.fill("#dialog .dialog-fields input", probe_email)
+    page.locator("#dialog .dialog-submit").click()
+    page.wait_for_selector(f"#teamList .member-row:has-text('{probe_email}')", state="detached", timeout=20000)
+    auditor.scan(page, "workspace-team-removed", viewport)
+    if page.locator("#teamList .member-row").count() != before:
+        failures.append("the roster never returned to the size it started at")
+    return failures
+
+
 def walk_mfa(page, auditor: Auditor, viewport: str, probe: "SecondFactor", email: str):
     """Login step -> armed panel -> drop it -> enrolment -> recovery list. Ends armed again."""
     page.wait_for_selector("#login:not([hidden])", timeout=20000)
@@ -699,9 +815,13 @@ def main() -> int:
     except (SystemExit, OSError, ValueError) as exc:
         print(f"second-factor probe could not be provisioned ({exc}); the four MFA states will not be audited")
         probe = probe_email = None
+    if probe_email:
+        atexit.register(retire_second_factor, probe_email)
 
     keyboard: list[str] = []
     privacy: list[str] = []
+    team: list[str] = []
+    team_probes: list[str] = []
     privacy_probes: list[dict] = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
@@ -718,6 +838,23 @@ def main() -> int:
                 login(page, WEB_URL, auditor, viewport)
                 walk_studio(page, auditor, viewport)
                 walk_views(page, auditor, viewport)
+                if stage == "axe":
+                    # The roster walk runs against the demo owner's own session and cleans up after
+                    # itself through the UI, so the probe account only has to be removed here.
+                    team_email = f"a11y-team-{viewport}-{time.strftime('%m%dT%H%M%SZ', time.gmtime())}@example.local"
+                    team_user = ""
+                    try:
+                        team_user = provision_team_probe(team_email)
+                    except (SystemExit, OSError, ValueError) as exc:
+                        team.append(f"team probe could not be provisioned: {str(exc)[:160]}")
+                    if team_user:
+                        team_probes.append(team_email)
+                        # Registered at creation, not after the walk: two aborted runs today left probe
+                        # accounts in the demo roster, and atexit is what turns "I created it" into
+                        # "I remove it" even when the walk raises on the way.
+                        atexit.register(retire_team_probe, team_user)
+                        team += walk_team(page, auditor, viewport, team_email)
+                        retire_team_probe(team_user)
                 if stage == "axe":
                     keyboard += keyboard_checks(page, auditor, viewport)
                 page.get_by_role("button", name="退出").click()
@@ -757,8 +894,13 @@ def main() -> int:
         [] if len(privacy_probes) >= expected_walks else
         [f"the privacy walk ran on {len(privacy_probes)} of {expected_walks} viewports, "
          "so self-erasure was not exercised where it was skipped"])
+    team = team + (
+        [] if len(team_probes) >= expected_walks else
+        [f"the team walk ran on {len(team_probes)} of {expected_walks} viewports, "
+         "so membership writes were not exercised where it was skipped"])
     failures = (gate_failures(auditor.scans)
                 + sorted(set(privacy))
+                + sorted(set(team))
                 + mobile_fit_failures(auditor.scans, require=not args.desktop_only)
                 + keyboard + csp_failures(auditor.security_headers, [WEB_URL, ADMIN_URL])
                 + sorted(set(auditor.crashes)) + sorted(set(auditor.csp_blocks)))
@@ -779,6 +921,8 @@ def main() -> int:
                                   if "privacy" in s["label"] or "erased" in s["label"]}),
         "privacy_exports": exports,
         "privacy_probe_accounts": sorted(p["email"] for p in privacy_probes),
+        "team_states": sorted({s["label"] for s in auditor.scans if "team" in s["label"]}),
+        "team_probe_accounts": sorted(team_probes),
         "axe_scans": sum(1 for s in auditor.scans if s["axe"]),
         "violations_by_impact": auditor.summary(),
         "content_security_policy": auditor.security_headers,
@@ -793,6 +937,8 @@ def main() -> int:
     print(f"scanned {len(auditor.scans)} views with axe-core {AXE_VERSION}")
     print(f"privacy walk: {len(exports)} exports downloaded and parsed, "
           f"{len(privacy_probes)} probe accounts erased ({', '.join(p['email'] for p in privacy_probes) or 'none'})")
+    print(f"team walk: {len(team_probes)} roster walks with add/re-role/remove exercised "
+          f"({', '.join(sorted(team_probes)) or 'none'})")
     for impact, count in sorted(auditor.summary().items()):
         print(f"  {impact}: {count} rule(s)")
     if auditor.errors:

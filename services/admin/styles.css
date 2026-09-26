@@ -7,6 +7,8 @@
   --muted: #929aa7;
   --accent: #66e3c4;
   --danger: #ff6d77;
+  /* White on #ff6d77 measures 2.77:1; the filled danger control needs its own darker token. */
+  --danger-solid: #b3261e;
   --warn: #f6c85f;
   --blue: #7ca9ff;
   --radius: 14px;
@@ -415,6 +417,7 @@ dialog form {
   margin-top: 10px;
 }
 button.danger {
-  background: var(--danger);
+  background: var(--danger-solid);
   color: #fff;
+  border-color: var(--danger-solid);
 }

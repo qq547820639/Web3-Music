@@ -9,6 +9,8 @@
   --primary: #d7ff63;
   --primary2: #a8d83b;
   --danger: #ff6b6b;
+  /* White text on #ff6b6b measures 2.78:1, so the filled danger control gets its own darker token. */
+  --danger-solid: #b3261e;
   --warn: #f8c24e;
   --ok: #73dda0;
   --blue: #78a6ff;
@@ -718,11 +720,11 @@ textarea {
   font-size: 28px;
   font-weight: 850;
 }
-.order-list,.ledger-list,.ticket-list {
+.order-list,.ledger-list,.ticket-list,.member-list {
   display: grid;
   gap: 8px;
 }
-.order-row,.ledger-row,.ticket-row {
+.order-row,.ledger-row,.ticket-row,.member-row {
   display: grid;
   grid-template-columns: 1.2fr .8fr .6fr auto;
   gap: 12px;
@@ -856,8 +858,9 @@ dialog form {
   margin-top: 10px;
 }
 button.danger {
-  background: var(--danger);
+  background: var(--danger-solid);
   color: #fff;
+  border-color: var(--danger-solid);
 }
 button.loading {
   position: relative;
@@ -968,7 +971,7 @@ button.loading::after {
   .page-head {
     align-items: flex-start;
   }
-  .order-row,.ledger-row,.ticket-row {
+  .order-row,.ledger-row,.ticket-row,.member-row {
     grid-template-columns: 1fr auto;
   }
   .asset-layout,.metric-grid,.account-grid {

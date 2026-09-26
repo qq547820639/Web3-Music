@@ -1,4 +1,4 @@
-import hashlib, hmac, io, json, os, time, uuid, zipfile
+import hashlib, hmac, io, json, os, re, time, uuid, zipfile
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from datetime import datetime, timedelta, timezone
@@ -431,13 +431,30 @@ class MemberRoleBody(BaseModel): role: str
 class MemberTransferBody(BaseModel): user_id: str
 
 
+def allowed_workspace_roles() -> list[str]:
+    """The legal role names, read out of the CHECK constraint that defines them.
+
+    017 deliberately does not restate the list -- the migration says the copy is the thing that lies --
+    and a select box that hardcoded eight names in JavaScript would reintroduce the second source of
+    truth that decision removed. An empty result means the constraint could not be identified, and the
+    panel reports that instead of offering guesses.
+    """
+    rows = fetch_all("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint "
+                     "WHERE conrelid='workspace_members'::regclass AND contype='c'")
+    defs = [row["definition"] for row in rows if re.search(r"\brole\b", row["definition"])]
+    if len(defs) != 1:
+        return []
+    return re.findall(r"'([a-z_]+)'::\w+", defs[0])
+
+
 @app.get("/api/workspace/members")
 def list_workspace_members(actor: Actor = Depends(get_actor)):
     rows = fetch_all("""SELECT m.user_id,u.email,u.display_name,m.role,m.created_at,u.status AS account_status
                         FROM workspace_members m JOIN users u ON u.id=m.user_id
                         WHERE m.workspace_id=%s ORDER BY m.created_at""", (actor.workspace_id,))
     return serialize({"workspace_id": actor.workspace_id, "members": rows,
-                      "actor_role": actor.role, "can_manage": actor.role in {"owner", "admin"} or actor.is_platform_admin})
+                      "actor_role": actor.role, "can_manage": actor.role in {"owner", "admin"} or actor.is_platform_admin,
+                      "roles": allowed_workspace_roles()})
 
 
 @app.post("/api/workspace/members")

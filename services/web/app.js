@@ -1763,6 +1763,197 @@ async function copyText(value, label) {
 $('#copySecret').onclick = () => copyText(mfaPanel.secret || $('#mfaSecret').textContent, '密钥');
 $('#copyRecovery').onclick = () => copyText([...$('#mfaRecoveryList').querySelectorAll('code')].map(c => c.textContent).join('\n'), '恢复码');
 
+// ---- workspace membership writes (the 团队协作 panel) ------------------------------------------
+// Migration 017 and scripts/member_drill.py made the write path real; this panel is the same surface
+// for someone without a terminal. Two things it deliberately does not do: restate the legal role
+// names (the API hands back the ones the CHECK constraint allows, and 017's own comment says the copy
+// is the thing that lies), and report a refusal as a success -- the functions answer already_member
+// and unchanged rather than raising, so the panel says those back in words.
+const team = { data: null };
+
+function fillRoles(select, roles, current) {
+  select.replaceChildren(...roles.map(role => {
+    const option = document.createElement('option');
+    option.value = role;
+    option.textContent = role;
+    if (role === current) option.selected = true;
+    return option;
+  }));
+}
+
+function teamMessage(result, kind, email) {
+  const r = result || {};
+  if (kind === 'add') {
+    return r.already_member
+      ? `${email} 已经是这个工作区的成员（角色 ${r.role}），没有重复加入。`
+      : `已添加成员 ${email}，角色 ${r.role}。`;
+  }
+  if (kind === 'role') {
+    return r.unchanged
+      ? `角色本来就是 ${r.role}，数据库没有改写任何东西。`
+      : `角色已从 ${r.previous_role} 改为 ${r.role}。`;
+  }
+  if (kind === 'remove') return '已移出成员；这个账户在平台上的其他工作区不受影响。';
+  return `所有权已移交给 ${String(r.new_owner || '').slice(0, 8)}…，你现在的角色是 ${r.previous_owner_role}。`;
+}
+
+function memberAction(member, roles) {
+  const actions = document.createElement('div');
+  actions.className = 'row gap-sm';
+  const select = document.createElement('select');
+  select.setAttribute('aria-label', `为 ${member.display_name || member.email} 选择角色`);
+  fillRoles(select, roles, member.role);
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'secondary';
+  save.textContent = '保存角色';
+  save.onclick = () => memberChange(member, select.value);
+  const drop = document.createElement('button');
+  drop.type = 'button';
+  drop.className = 'danger';
+  drop.textContent = '移出';
+  drop.onclick = () => memberRemove(member);
+  actions.append(select, save, drop);
+  if (team.data && team.data.actor_role === 'owner' && member.role !== 'owner') {
+    const give = document.createElement('button');
+    give.type = 'button';
+    give.className = 'ghost';
+    give.textContent = '移交所有权';
+    give.onclick = () => ownershipTransfer(member);
+    actions.append(give);
+  }
+  return actions;
+}
+
+function renderTeam(data) {
+  team.data = data;
+  const roles = data.roles || [];
+  const members = data.members || [];
+  $('#teamState').textContent = `${members.length} 名成员${data.can_manage ? '（可管理）' : '（只读）'}`;
+  $('#teamManage').hidden = !data.can_manage;
+  $('#teamError').textContent = '';
+  $('#teamAdd').disabled = !roles.length;
+  $('#teamAddRole').disabled = !roles.length;
+  fillRoles($('#teamAddRole'), roles, roles.includes('creator') ? 'creator' : roles[0]);
+  if (!roles.length) $('#teamAddRole').replaceChildren();
+  const list = $('#teamList');
+  list.replaceChildren(...members.map(member => {
+    const row = document.createElement('div');
+    row.className = 'member-row';
+    const who = document.createElement('div');
+    const name = document.createElement('b');
+    name.textContent = member.display_name || '（未命名）';
+    const mail = document.createElement('span');
+    mail.className = 'muted';
+    mail.textContent = member.email;
+    const meta = document.createElement('span');
+    meta.className = 'muted';
+    meta.textContent = `加入于 ${fmtDate(member.created_at)}`
+      + (member.account_status && member.account_status !== 'active' ? ` · 账户状态 ${member.account_status}` : '');
+    who.append(name, mail, meta);
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = member.role;
+    row.append(who, tag);
+    // The owner cannot re-role or remove themselves: 017 lets those calls through only for another
+    // row, and the last owner is protected by the same predicate the eraser uses, so the panel does
+    // not offer a button the database would refuse.
+    if (data.can_manage && member.user_id !== (state.user && state.user.user_id)) {
+      row.append(memberAction(member, roles));
+    }
+    return row;
+  }));
+}
+
+async function loadTeam() {
+  try {
+    renderTeam(await api('/api/workspace/members'));
+  } catch (err) {
+    $('#teamState').textContent = '不可用';
+    $('#teamError').textContent = err.message;
+  }
+}
+
+async function memberChange(member, role) {
+  $('#teamError').textContent = '';
+  try {
+    const result = await api(`/api/workspace/members/${member.user_id}`, { method: 'PATCH', body: JSON.stringify({ role }) });
+    toast(teamMessage(result, 'role'), 'ok');
+  } catch (err) {
+    $('#teamError').textContent = err.message;
+  }
+  await loadTeam();
+}
+
+async function memberRemove(member) {
+  const answer = await askDialog({
+    title: `移出 ${member.display_name || member.email}`,
+    description: '移出后这个人立刻失去该工作区的访问，账户本身不会被删除。输入对方邮箱以确认。',
+    submitText: '确认移出',
+    fields: [{ name: 'email', label: '对方邮箱', placeholder: member.email }]
+  });
+  if (!answer) return;
+  if (answer.email !== member.email) {
+    $('#teamError').textContent = '输入的邮箱与对方账户不一致，已取消。';
+    return;
+  }
+  try {
+    const result = await api(`/api/workspace/members/${member.user_id}`, { method: 'DELETE' });
+    toast(teamMessage(result, 'remove'), 'ok');
+  } catch (err) {
+    $('#teamError').textContent = err.message;
+  }
+  await loadTeam();
+}
+
+async function ownershipTransfer(member) {
+  const answer = await askDialog({
+    title: '移交工作区所有权',
+    description: '移交后你本人变成 admin，且只有新属主才能再移交回去。数据库要求必须由当前属主发起。输入新属主邮箱以确认。',
+    submitText: '确认移交',
+    fields: [{ name: 'email', label: '新属主邮箱', placeholder: member.email }]
+  });
+  if (!answer) return;
+  if (answer.email !== member.email) {
+    $('#teamError').textContent = '输入的邮箱与目标成员不一致，已取消。';
+    return;
+  }
+  try {
+    const result = await api('/api/workspace/members/transfer', { method: 'POST', body: JSON.stringify({ user_id: member.user_id }) });
+    toast(teamMessage(result, 'transfer'), 'ok');
+    await refreshBootstrap();
+  } catch (err) {
+    $('#teamError').textContent = err.message;
+  }
+  await loadTeam();
+}
+
+$('#teamAdd').onclick = async () => {
+  const email = $('#teamEmail').value.trim();
+  const role = $('#teamAddRole').value;
+  $('#teamError').textContent = '';
+  if (!email) {
+    $('#teamError').textContent = '请填写要添加的账户邮箱。';
+    return;
+  }
+  if (!role) {
+    $('#teamError').textContent = '数据库没有交出可用的角色名单，无法添加。';
+    return;
+  }
+  setLoading($('#teamAdd'), true, '添加中…');
+  try {
+    const result = await api('/api/workspace/members', { method: 'POST', body: JSON.stringify({ email, role }) });
+    toast(teamMessage(result, 'add', email), 'ok');
+    $('#teamEmail').value = '';
+    await loadTeam();
+  } catch (err) {
+    // 017 refuses an unknown e-mail rather than provisioning anyone: there is no registration here.
+    $('#teamError').textContent = err.message;
+  } finally {
+    setLoading($('#teamAdd'), false);
+  }
+};
+
 // ---- subject rights: export and erasure (the 数据与账户 panel) ---------------------------------
 // Both endpoints existed and were drilled before this panel did; what it adds is a path a subject
 // can actually walk without a terminal. The button unlocks only on an exact match with the signed-in
@@ -1889,6 +2080,7 @@ async function loadAccount() {
   // is armed and how they take it back off.
   await loadMfa();
   privacyTarget();
+  await loadTeam();
   const [analytics, prefs, ledger] = await Promise.all([api('/api/analytics/overview'), api('/api/preferences'), api('/api/ledger')]);
   const m = analytics.metrics;
   const cards = [['28 天生成', m.generations], ['成功任务', m.successful_jobs], ['Master', m.masters], ['Master 转化', `${(Number(m.master_conversion) * 100).toFixed(1)}%`], ['平均质量', Number(m.avg_quality || 0).toFixed(1)], ['许可', m.licenses]];
