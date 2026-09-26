@@ -123,6 +123,8 @@ GENERIC_PROVIDER_MODEL=...
 - Provider URL、状态、MIME、文件名、成本和回调均不可信。
 - `unknown`、`blocked` 或 `manual_review` 不能在 UI 中被当作商业许可。
 - 媒体只存入私有对象存储，播放使用短期签名 Token。
+- 主体权利是自助通道而不是工单：`GET /api/account/export` 逐列声明读了什么、刻意不给什么及理由，`POST /api/account/erasure` 只在数据库内比对账户邮箱后假名化身份并切断访问，账务与溯源按保留义务留存（`db/migrations/013`/`014`/`016`）。两条都有界面入口，且被浏览器验收当场走完（含一次真实的自我删除）。
+- 第二因子种子只以 AESGCM 密封态入库，`MFA_ENCRYPTION_KEY` 在代码里没有默认值（未配置返回 503 而不是 500）；重放闸按账号存在数据库里，不是按 worker 进程存在内存里。
 
 ## 生产部署前的外部条件
 

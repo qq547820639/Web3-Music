@@ -11,10 +11,10 @@ was actually executed.
 
 Authoritative run: `scripts/acceptance-all.sh` on a fresh database (volumes removed
 before start), **19 steps PASS and 1 recorded as skipped** across 20 rows, commit
-`b79e70b`, 2026-09-26T02:44:13Z → 2026-09-26T02:55:36Z, evidence in
-`release-evidence/acceptance-20260926T024413Z/` (per-step logs, `SUMMARY.txt`, full
+`3da3920`, 2026-09-26T03:59:11Z → 2026-09-26T04:10:38Z, evidence in
+`release-evidence/acceptance-20260926T035911Z/` (per-step logs, `SUMMARY.txt`, full
 `compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
-machine-readable record at `release-evidence/browser-a11y-20260926T025229Z/report.json` (stamped with the same commit).
+machine-readable record at `release-evidence/browser-a11y-20260926T040732Z/report.json` (stamped with the same commit).
 What is version-controlled from that directory is only `SUMMARY.txt` (per-step verdicts and timestamps) and the
 browser run's `report.json`; the per-step logs and the two compose log files stay on the host that ran the pipeline.
 So a clone can re-check the step ledger and the whole browser reading (views, scans, violations per impact, CSP,
@@ -22,9 +22,9 @@ So a clone can re-check the step ledger and the whole browser reading (views, sc
 below come from per-step logs that exist only on that host -- re-running the pipeline is how a reader verifies those.
 The pipeline is 20 rows wide now: `mfa-drill` joined at step 12 and `member-drill` at step 13, which
 is also where the erasure drill's step 11 reading comes from.
-Seven green runs precede it on this host
-(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955` — older → newer, at
-15/15/16/16/17/18/19 rows with `FAIL=0` in every `SUMMARY.txt`), so the pass is reproducible rather
+Eight green runs precede it on this host
+(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b` — older → newer, at
+15/15/16/16/17/18/19/20 rows with `FAIL=0` in every `SUMMARY.txt`), so the pass is reproducible rather
 than a single lucky run. The pipeline widened as steps were added, so what those runs share is "each
 passed every row that existed then", not "the same 20 rows seven times".
 Two discovery records from today are kept because each is the evidence for a defect that is now fixed:
@@ -69,10 +69,10 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
 - **100-run generation regression** (new): `100/100 completed, error rate 0.0%`, per-job
   ready count, 64-hex media hash, sampled real download, `settled_credits == quoted price`,
   and a ledger that moved by exactly the summed settlement with no dangling hold.
-  Across all eight green runs, in run order: **p50 8.18s / p95 20.77s**, **p50 7.615s / p95 11.37s**,
+  Across all nine green runs, in run order: **p50 8.18s / p95 20.77s**, **p50 7.615s / p95 11.37s**,
   **p50 6.25s / p95 8.31s**, **p50 8.525s / p95 13.64s**, **p50 5.195s / p95 9.89s**,
-  **p50 7.18s / p95 15.66s**, **p50 5.09s / p95 5.37s** and **p50 4.09s / p95 5.33s** (the
-  authoritative run, step 17) -- every one of them `100/100 completed, error rate 0.0%` with 1000
+  **p50 7.18s / p95 15.66s**, **p50 5.09s / p95 5.37s**, **p50 4.09s / p95 5.33s** and
+  **p50 5.06s / p95 5.26s** (the authoritative run, step 17) -- every one of them `100/100 completed, error rate 0.0%` with 1000
   credits settled, so the count is constant while the timing spans 4-21s;
   the red run at `1f8010e` read p50 31.88s / p95 81.81s on the same code path with 87/100
   finished. The timing reading moves with host I/O, so it must be quoted per run, not as a
@@ -83,20 +83,29 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
   `/api/bootstrap` reports that identity (measured both ways: with the overlay off it exits
   `expected provider 'generic_rest', the stack reports 'emulator' ... the overlay did not take
   effect`; with a dead base URL it fails a job and prints the reason the worker stored,
-  `job_error={'type': 'ConnectError', ...}`). The step has run three times and read `25/25 completed,
+  `job_error={'type': 'ConnectError', ...}`). The step has run four times and read `25/25 completed,
   error rate 0.0%, settled 250 credits` every time (p50/p95 5.21s/6.37s at step 16 of `2c3ef7f`,
-  4.14s/4.19s at step 17 of `96d5955`, 4.14s/4.18s at step 18 of the authoritative run), so the count
-  is the reading that travels and the timing is not. This is the adapter and contract plumbing, not
+  4.14s/4.19s at step 17 of `96d5955`, 4.14s/4.18s at step 18 of `b79e70b`, 4.11s/4.2s at step 18 of
+  the authoritative run), so the count is the reading that travels and the timing is not. This is the adapter and contract plumbing, not
   a provider: the endpoint behind it is still our emulator, so the gate for 100 *real*
   provider runs stays open.
 - **Real-browser walkthrough + axe audit** (new): Playwright driving axe-core 4.13.0
   (pinned by sha256, fetched at run time, test-only) against the live stack —
-  **70 view records, 44 axe scans across desktop 1440 and phone 390, 0 critical and 0
-  serious**, 64 moderate left as follow-up (`region` 40, `heading-order` 18, `landmark-one-main` 6).
+  **76 view records, 50 axe scans across desktop 1440 and phone 390, 0 critical and 0
+  serious**, 76 moderate left as follow-up (`region` 46, `heading-order` 22, `landmark-one-main` 8).
   It also asserts what axe cannot see: the shipped CSP must block **zero** inline styles
   authored by the app (measured 0 after the fix, 10 per radar render before), no uncaught
   exceptions, `script-src 'self'` present on both origins, skip-link and keyboard access
   to the nav, and no horizontal overflow at 390px.
+- **Subject-rights walk inside that audit** (new): `walk_privacy` logs in as a probe account the gate
+  creates for the step and exercises both rights in the browser -- a real file download (2614 and 2613
+  bytes, parsed and checked that its `account.id` is the requesting session's own, that `coverage` is
+  non-empty and that `password_hash` is declared excluded and absent from the payload), the confirmation
+  gate in both directions, the self-erasure itself, the receipt the app paints on the login screen after
+  the session dies, and the same credentials refused on the same form. Readings: 2 exports parsed, 2 probe
+  accounts erased, `privacy_states` = panel / exported / erased-receipt, once per viewport. Provisioning
+  the probe is not best-effort: a run that cannot create one is reported red, because skipping silently
+  would delete the destructive half of the coverage.
 - **Subject access export + right to erasure drill** (new): `scripts/erasure_drill.py` provisions
   a SQL fixture account (there is no registration endpoint), drives
   `GET /api/account/export` and `POST /api/account/erasure` over the live API, and checks both
@@ -120,7 +129,7 @@ candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'mess
   two that issue a raw `INSERT` and a self-promoting `UPDATE` as the application role and require the
   database to answer `permission denied`, and the loop that closes the erasure dead end: sole owner →
   erasure refused → transfer → erasure succeeds.
-- Static verification and unit tests: 176 unit tests (114 at the previous authoritative run `2c3ef7f`; this file had recorded 23, then 54, 66, 70 and 78 in earlier revisions), of which 36 arrived with the provider contract: 26 on the generic
+- Static verification and unit tests: 183 unit tests (176 at the previous authoritative run `b79e70b`, 114 at the one before that; this file had recorded 23, then 54, 66, 70 and 78 in earlier revisions), of which 36 arrived with the provider contract: 26 on the generic
   REST adapter's own surface and 10 validating the adapter's payload against the written
   schema.
 
@@ -482,3 +491,69 @@ creates and deletes, because arming a demo account would break every other drill
 password alone. The report carries `second_factor_states` so a probe that failed to provision shows up
 as an empty list rather than as a silent skip. The four new states add no new finding type: the armed
 panel and the plain account view report the same two moderate rules with the same node counts.
+
+## 2026-09-26 the privacy endpoints get a surface a subject can actually walk
+
+`GET /api/account/export` and `POST /api/account/erasure` had been shipped, drilled 46/46 and unit-guarded,
+and none of it was reachable from the product: only the second factor had a panel. A right that needs a
+terminal is not delivered to the person it belongs to, so this round is the interface plus the walk that
+proves the interface.
+
+**How the export should be delivered (research, then a decision).** The mature pattern in large platforms is
+an *asynchronous* archive: GitHub's own settings flow is "click Settings, then Account, then Start export",
+the archive is built in the background, and a download link arrives by e-mail and expires in seven days
+(<https://docs.github.com/en/get-started/archiving-your-github-personal-account-and-public-repositories/requesting-an-archive-of-your-personal-accounts-data>,
+read this round). I looked for GitLab's equivalent page and reached `docs.gitlab.com/user/account_settings/download_data/`,
+which redirected into a login/state flow before any text was readable, so I am citing it as located-but-not-read
+and not as a second source.
+
+- Candidate A, asynchronous archive + e-mailed link: matches what the biggest products do, tolerates an
+  arbitrarily large account, and costs a job queue, a store for the rendered bundle, a mail channel, and a
+  link-lifetime policy.
+- Candidate B, synchronous download of the JSON the API already returns: one click, no new moving parts, and
+  the bundle is already per-column declared (`coverage`) with its exclusions named and reasoned.
+  Six-month-old exports of a workspace-scoped account are ~2.6 KB here (measured in the walk).
+
+Decision: **B**, and not on taste -- a grep for any mail transport in this repository (`smtp`, `sendgrid`,
+`mailgun`, `ses`, `boto3`, `nodemailer`) returns no consumer at all, so A would mean standing up an e-mail
+pipeline that this delivery has never had, to move a payload that fits in one response. The reuse that did
+apply was in-repo: the panel is built from the app's existing conventions (the same `api()` helper with its
+CSRF handling, the same blob-download path `downloadAsset` uses, `escapeHtml`/`textContent`-only rendering,
+`button.danger`, `role="alert"` regions). If a real deployment ever grows a mail channel and accounts that
+cannot fit in one response, A becomes the right shape and the endpoint boundary does not move.
+
+**What the panel says, not just what it does.** The export button renders the response's own declarations
+after downloading: how many `table.column` stores were covered, and the *excluded* fields with the reason
+that came from the server (`password_hash` is a credential digest, not data about the subject). The erasure
+block states in the interface what the database keeps -- sessions revoked, memberships and preferences
+removed, identity columns pseudonymised, while accounting and provenance rows survive under a
+non-identifying actor id, because `song_projects` etc. hold NOT NULL foreign keys and `audit_events` /
+`song_spec_revisions` carry append-only triggers. The confirmation is the account's own e-mail, matching
+`013`'s predicate; the client-side unlock is convenience, the database refusal is the guarantee, and the
+409 leaves the session alive so a person can read why and act on it.
+
+**Design note (unresolved, recorded rather than decided).** Nothing in this product requires re-authenticating
+immediately before self-erasure -- an XSRF-drained session cookie plus a typed e-mail is weaker than the
+"step-up" flow most account-deletion products use. Raising it means a new endpoint and a threat-model
+decision about what a stolen cookie can do, so it is left as an explicit open item rather than smuggled in
+beside a UI change.
+
+**Two console-hygiene defects the walk surfaced, and one fixture hazard.** `/api/auth/me` answering 401 on a
+cold load is the normal signed-out state, yet both apps logged it as a fault; gate console entries went
+16 -> 8 and the remaining 8 are the browser's own network log, which app code cannot suppress.
+`admin.js`'s `api()` did not attach the response status to the error it threw, so a status-based guard there
+was not merely missing but unwritable -- the wiring is pinned by a test that fails when the assignment is
+removed. And because cookies are host-scoped rather than port-scoped, the session cookie the erased probe left
+behind was handed to the admin origin in the same browser context, turning the admin cold load's 401 into
+"session has been revoked or expired": real behaviour of the app, but an artifact of running two origins on
+one host in one context, and the session cookie is HttpOnly, so only the walk can clear it. The walk does.
+
+**Guards.** `tests/unit/test_privacy_surface.py` (7) checks the panel's paths against the API's own route
+table rather than a copied list, pairs the client confirmation guard with the migration predicate, keeps
+`innerHTML` out of the privacy renderers, proves every element the handlers select is declared by some
+document, pins which regions are `role="alert"` versus `role="status"`, reads the CSRF exemption literal out
+of `auth.py` to assert the erasure POST is not in it, and asserts that both apps' 401 guards exist *and* cover
+every `console.error` call site. Each criterion was shown to bite on the real tree, not just on fixtures:
+eight mutations (renamed download path, loosened confirmation guard, planted `innerHTML`, renamed element id,
+dropped `role`, erasure added to the CSRF exemption, guard reverted, `status` assignment removed) all fired,
+and the restored tree is green.
