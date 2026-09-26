@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 set -eu
-base="${BASE_URL:-http://localhost:8080}"
+base="${BASE_URL:-http://127.0.0.1:8080}"
 for path in /gateway-health /health /ready /docs; do
   code=$(curl -sS -o /dev/null -w '%{http_code}' "$base$path")
   case "$path:$code" in

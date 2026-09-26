@@ -22,7 +22,7 @@ from pathlib import Path
 import e2e_client
 import httpx
 
-ROOT = "http://localhost:8000"
+ROOT = "http://127.0.0.1:8000"
 BASE = ROOT + "/api"
 STATE = Path(".restore-fidelity.json")
 

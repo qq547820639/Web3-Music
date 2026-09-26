@@ -27,7 +27,7 @@ import uuid
 
 import httpx
 
-BASE = os.getenv("API_BASE_URL", "http://localhost:8000") + "/api"
+BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000") + "/api"
 STAMP = time.strftime("%H%M%S", time.gmtime()) + uuid.uuid4().hex[:6]
 OWNER = f"member-owner-{STAMP}@example.local"
 JOINER = f"member-joiner-{STAMP}@example.local"

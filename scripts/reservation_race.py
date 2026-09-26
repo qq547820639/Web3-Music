@@ -28,7 +28,7 @@ import uuid
 import e2e_client
 import httpx
 
-BASE = "http://localhost:8000/api"
+BASE = "http://127.0.0.1:8000/api"
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 SELLER = ("owner@example.local", "demo-owner")

@@ -24,7 +24,7 @@ import httpx
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
-ROOT = "http://localhost:8000/api"
+ROOT = "http://127.0.0.1:8000/api"
 STATE = Path(".lease-contention-state.json")
 TERMINAL = {"completed", "partial", "failed", "dead_letter", "cancelled"}
 

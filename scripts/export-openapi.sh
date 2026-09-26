@@ -3,7 +3,7 @@ set -eu
 cd "$(dirname "$0")/.."
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
-curl -fsS http://localhost:8000/openapi.json > "$tmp"
+curl -fsS http://127.0.0.1:8000/openapi.json > "$tmp"
 python - "$tmp" <<'PY'
 import json, pathlib, sys, yaml
 source=pathlib.Path(sys.argv[1])

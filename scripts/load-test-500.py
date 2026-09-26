@@ -2,8 +2,8 @@
 """Dependency-light concurrent HTTP verifier for the 500-user capacity gate.
 
 Examples:
-  python scripts/load-test-500.py --base-url http://localhost:8080 --path /health
-  python scripts/load-test-500.py --base-url http://localhost:8080 --path /api/projects \
+  python scripts/load-test-500.py --base-url http://127.0.0.1:8080 --path /health
+  python scripts/load-test-500.py --base-url http://127.0.0.1:8080 --path /api/projects \
       --email owner@example.local --password demo-owner --users 500 --requests-per-user 2
 """
 from __future__ import annotations
@@ -99,7 +99,7 @@ async def run(args) -> int:
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
-    p.add_argument("--base-url", default="http://localhost:8080")
+    p.add_argument("--base-url", default="http://127.0.0.1:8080")
     p.add_argument("--path", default="/health")
     p.add_argument("--method", default="GET", choices=["GET", "HEAD"])
     p.add_argument("--users", type=int, default=500)

@@ -27,8 +27,11 @@ AXE_SHA256 = "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1"
 AXE_TGZ = f"https://registry.npmjs.org/axe-core/-/axe-core-{AXE_VERSION}.tgz"
 CACHE = Path(os.environ.get("AXE_CACHE_DIR", ".cache")) / f"axe-core-{AXE_VERSION}.min.js"
 
-WEB_URL = os.environ.get("WEB_URL", "http://localhost:4173")
-ADMIN_URL = os.environ.get("ADMIN_URL", "http://localhost:4174")
+WEB_URL = os.environ.get("WEB_URL", "http://127.0.0.1:4173")
+ADMIN_URL = os.environ.get("ADMIN_URL", "http://127.0.0.1:4174")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+# (label, base url, the repository file that image serves verbatim)
+ORIGINS = (("studio", WEB_URL, "services/web/index.html"), ("control-plane", ADMIN_URL, "services/admin/index.html"))
 EMAIL = os.environ.get("E2E_EMAIL", "owner@example.local")
 PASSWORD = os.environ.get("E2E_PASSWORD", "demo-owner")
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "mobile": {"width": 390, "height": 844}}
@@ -434,6 +437,46 @@ def danger_pair(css: str) -> tuple[str, str]:
     return resolve(colour.group(1)), resolve(background.group(1))
 
 
+def origin_verdict(expected_sha: str, body: bytes) -> bool:
+    return hashlib.sha256(body).hexdigest() == expected_sha
+
+
+def preflight_origins(page) -> None:
+    """Refuse to audit an origin that is not the app under test.
+
+    On 2026-09-26 another project on this host started `vite preview` on 4173 in the middle of a
+    release run. `localhost` resolves to ::1 first, so the gate drove that other app and went red on
+    a missing #loginForm. The red was honest; a *green* under the same collision would have audited
+    somebody else's site and reported it as this release. Each image COPYs its index.html verbatim,
+    so the first paint is compared byte for byte against the repository file -- which also catches an
+    image built from a different tree than the one being certified.
+
+    The fetch goes through the browser's own request context rather than urllib: the first version of
+    this check used urllib and passed while Chromium was still reaching the intruder, because the two
+    take different address families for `localhost`.
+    """
+    for name, url, relative in ORIGINS:
+        source = REPO_ROOT / relative
+        expected = hashlib.sha256(source.read_bytes()).hexdigest()
+        try:
+            response = page.request.get(url.rstrip("/") + "/", timeout=20000)
+            body = response.body()
+        except Exception as exc:  # noqa: BLE001 - the message has to name the origin it failed on
+            raise SystemExit(f"origin check: {name} at {url} could not be identified: {exc}")
+        if response.status != 200:
+            raise SystemExit(f"origin check: {name} at {url} answered {response.status}, not 200")
+        if not origin_verdict(expected, body):
+            title = re.search(rb"<title>(.*?)</title>", body, re.S)
+            found = title.group(1).decode("utf-8", "replace")[:60] if title else "<no title>"
+            raise SystemExit(
+                f"origin check: {url} is not the {name} under test -- "
+                f"served sha256={hashlib.sha256(body).hexdigest()[:12]} expected {expected[:12]} "
+                f"(title={found!r}). Another process has taken this host port, or the image was "
+                f"built from a different tree than {relative}."
+            )
+        print(f"origin check: {name} at {url} is byte-identical to {relative}, as the browser resolves it")
+
+
 def self_test(auditor: Auditor) -> int:
     """Every arm below must be able to fail: a scanner that cannot flag a planted
     violation, or a gate that cannot be satisfied, would otherwise green quietly."""
@@ -486,6 +529,18 @@ def self_test(auditor: Auditor) -> int:
         return {"id": f"probe-{impact}", "impact": impact, "node_count": 1, "targets": ["img"]}
 
     problems = []
+    # The origin check, both polarities: it must accept the file it is meant to accept, and it must
+    # reject the shape that actually walked into this host's 4173 on 2026-09-26 (a foreign
+    # `vite preview` whose first paint has an empty #root and no login form at all).
+    ours = (REPO_ROOT / "services" / "web" / "index.html").read_bytes()
+    ours_sha = hashlib.sha256(ours).hexdigest()
+    if not origin_verdict(ours_sha, ours):
+        problems.append("origin check rejects the studio index.html it is supposed to accept")
+    intruder = (b"<!doctype html><html lang='zh-CN'><head><title>\xe8\x87\xaa\xe5\x8a\xa8"
+                b"\xe5\x87\xba\xe4\xbb\xb7</title><script type='module' src='/@vite/client'>"
+                b"</script></head><body><div id='root'></div></body></html>")
+    if origin_verdict(ours_sha, intruder):
+        problems.append("origin check accepted a foreign single-page app served on the studio port")
     if not probe["audited"]:
         problems.append("the production scan path reported no output on a page axe can evaluate")
     if not any(v.get("why") for v in probe["violations"]):
@@ -934,6 +989,14 @@ def main() -> int:
     privacy_probes: list[dict] = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
+        # Identity is checked from inside the browser, before any state is walked: which process owns
+        # a dual-stack port is decided by the resolver that is about to drive it, and a green run
+        # against somebody else's app would certify nothing.
+        gate = browser.new_context().new_page()
+        try:
+            preflight_origins(gate)
+        finally:
+            gate.context.close()
         for viewport, size in VIEWPORTS.items():
             if viewport == "mobile" and args.desktop_only:
                 continue

@@ -35,7 +35,7 @@ import uuid
 import e2e_client
 import httpx
 
-BASE = "http://localhost:8000/api"
+BASE = "http://127.0.0.1:8000/api"
 DEFAULT_JOBS = 100
 DEFAULT_CONCURRENCY = 6
 MEDIA_DOWNLOAD_SAMPLE = 10

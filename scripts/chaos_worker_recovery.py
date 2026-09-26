@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 
-ROOT = "http://localhost:8000/api"
+ROOT = "http://127.0.0.1:8000/api"
 STATE = Path(".chaos-state.json")
 
 

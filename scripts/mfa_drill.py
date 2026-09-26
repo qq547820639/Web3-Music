@@ -34,7 +34,7 @@ import httpx
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 import e2e_client  # noqa: E402
 
-BASE = os.getenv("API_BASE_URL", "http://localhost:8000") + "/api"
+BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000") + "/api"
 STAMP = time.strftime("%H%M%S", time.gmtime()) + uuid.uuid4().hex[:6]
 PROBE = f"mfa-probe-{STAMP}@example.local"
 WINDOW_PROBE = f"mfa-window-probe-{STAMP}@example.local"
