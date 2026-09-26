@@ -36,11 +36,15 @@ def archived_runs():
         text = (ROOT / relative).read_text(encoding="utf-8", errors="replace")
         rows = STEP_ROW.findall(text)
         commit = COMMIT.search(text)
+        host = re.search(r'host_load="([^"]*)"', text)
+        cpus = re.search(r"docker_cpus=(\d+)", text)
         runs.append({
             "stamp": pathlib.Path(relative).parent.name.replace("acceptance-", ""),
             "commit": commit.group(1) if commit else "?",
             "rows": len(rows),
             "fails": sum(1 for _, result in rows if result == "FAIL"),
+            "host_load": host.group(1) if host else None,
+            "cpus": cpus.group(1) if cpus else None,
         })
     if not runs:
         raise SystemExit("no tracked acceptance evidence: the guard would be comparing prose to nothing")
@@ -97,6 +101,31 @@ def check_sentence(label, text, greens, reds, certified, *, count_pattern, list_
     return problems
 
 
+def host_clause(label, line, certified_run):
+    """A face that quotes the host readings must quote the run's own.
+
+    The checklist states the load average and the VM size the certified run started under, and the
+    reproducibility argument for a co-tenant-sensitive suite depends on those being that run's
+    numbers. Nothing else in the repo reads them, so until this clause existed the sentence carried a
+    previous round's load average through a full pass of the gate -- the same drift as a stale commit
+    hash, in a slot the sentence only gained because someone asked what the machine was doing.
+    """
+    if 'host_load="' not in line:
+        return []                      # faces that do not quote the readings are not judged on them
+    problems = []
+    stated = re.search(r'host_load="([^"]*)"', line)
+    vcpu = re.search(r"Docker VM (\d+) vCPU", line)
+    for pattern, key, name in ((stated, "host_load", "host load"), (vcpu, "cpus", "Docker vCPU")):
+        if not pattern:
+            problems.append(f"{label}: quotes a host reading but the {name} figure cannot be read")
+        elif certified_run.get(key) is None:
+            problems.append(f"{label}: states {name} but the certified SUMMARY records none")
+        elif pattern.group(1) != str(certified_run[key]):
+            problems.append(f"{label}: says {name} {pattern.group(1)!r}, the certified run recorded "
+                            f"{certified_run[key]!r}")
+    return problems
+
+
 CHECKLIST = ROOT / "docs/RELEASE_CHECKLIST.md"
 REPORT = ROOT / "docs/TEST_REPORT.md"
 CHANGELOG = ROOT / "docs/CHANGELOG_COST500.md"
@@ -136,6 +165,7 @@ def problems_for(path, runs):
                               red_total_pattern=red_total_pattern, day_pattern=day_pattern)
     certified_run = next((r for r in runs if r["stamp"] == certified), None)
     assert certified_run, f"{path.name}: cites {certified}, which is not in the tracked archive"
+    problems += host_clause(path.name, line, certified_run)
     if path == CHANGELOG:
         # the changelog states a growth range instead of one figure per run
         growth = re.search(r"行数 (\d+)→(\d+)", line)
@@ -246,3 +276,29 @@ def test_the_face_finder_refuses_a_document_with_two_sentences():
             assert "found 2" in str(exc), str(exc)
         else:
             raise AssertionError("two sentences in one document must not read as one")
+
+
+# ------------------------------------------------------- the host-reading clause's controls ----
+
+def test_the_host_clause_passes_on_the_readings_the_run_recorded():
+    line = '启动时宿主 `host_load="5.81 4.99 5.67"`、Docker VM 4 vCPU'
+    assert host_clause("control", line, {"host_load": "5.81 4.99 5.67", "cpus": "4"}) == []
+
+
+def test_the_host_clause_judges_nothing_on_a_face_that_quotes_no_readings():
+    assert host_clause("control", "a sentence without any host figures", {"host_load": None,
+                                                                         "cpus": None}) == []
+
+
+def test_the_host_clause_reports_a_previous_round_load_average():
+    """What actually shipped through the gate once: the certified run's own line was rewritten for the
+    new stamp while the load average next to it still described the run before it."""
+    problems = host_clause("control", 'host_load="22.05 22.50 23.10"、Docker VM 4 vCPU',
+                           {"host_load": "5.81 4.99 5.67", "cpus": "4"})
+    assert any("says host load" in p for p in problems), problems
+
+
+def test_the_host_clause_refuses_a_reading_with_nothing_behind_it():
+    problems = host_clause("control", 'host_load="5.81 4.99 5.67"、Docker VM 4 vCPU',
+                           {"host_load": None, "cpus": None})
+    assert len([p for p in problems if "records none" in p]) == 2, problems
