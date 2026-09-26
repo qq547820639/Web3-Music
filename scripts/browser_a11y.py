@@ -47,6 +47,38 @@ PAINT_SIG_JS = """() => Array.from(document.querySelectorAll('body *')).slice(0,
   .map(e => { const c = getComputedStyle(e); return c.color + '/' + c.backgroundColor; }).join(';')"""
 
 
+CLIP_JS = """() => {
+  const reachable = (e) => {
+    for (let p = e; p; p = p.parentElement) {
+      const o = getComputedStyle(p).overflowX;
+      if (o === 'auto' || o === 'scroll') return true;
+    }
+    return false;
+  };
+  const path = (e) => (e.tagName.toLowerCase() + (e.id ? '#' + e.id : '')
+    + Array.from(e.classList).slice(0, 2).map(c => '.' + c).join('')
+    + ' ' + e.scrollWidth + '>' + e.clientWidth);
+  const visible = (e) => {
+    if (getComputedStyle(e).display === 'none' || getComputedStyle(e).visibility === 'hidden') return false;
+    const r = e.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  const out = {clipped: 0, paths: [], scrollers: 0, fields: 0};
+  for (const e of document.querySelectorAll('body *')) {
+    if (e.scrollWidth <= e.clientWidth + 1 || e.clientWidth === 0) continue;
+    if (reachable(e)) { out.scrollers += 1; continue; }
+    if (!visible(e)) continue;
+    // The value of a form control is not content the page withholds: a 383px e-mail inside a 314px
+    // input is the platform working as designed -- the person moves the caret and sees the rest.
+    if (e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement
+        || e instanceof HTMLSelectElement || e.isContentEditable) { out.fields += 1; continue; }
+    out.clipped += 1;
+    if (out.paths.length < 4) out.paths.push(path(e));
+  }
+  return out;
+}"""
+
+
 def wait_painted(page, gap_ms: int = 250, tries: int = 12) -> bool:
     previous = None
     for _ in range(tries):
@@ -107,6 +139,28 @@ def mobile_fit_failures(scans: list[dict], limit: int = 1, require: bool = True)
             )
     if not checked and require:
         failures.append("no mobile viewport was measured")
+    return failures
+
+
+def clip_failures(scans: list[dict], require: bool = True) -> list[str]:
+    """A box that holds more than it shows, with nothing behind it to scroll to the rest.
+
+    The fit check above only says the document does not scroll sideways, and a layout can buy that by
+    refusing to grow: `minmax(0,1fr)` keeps the page at 390px while cutting the tail off a row, which
+    is a quieter lie than an overflow bar. Both viewports are judged, because a fixed track clips at
+    1440 just as well as at 390.
+    """
+    failures, measured = [], 0
+    for scan in scans:
+        if scan.get("clipped") is None:
+            continue
+        measured += 1
+        if scan["clipped"]:
+            failures.append(
+                f"{scan['label']} [{scan['viewport']}]: {scan['clipped']} element(s) hold more than they "
+                f"show with no scroll container in front of them: {'; '.join(scan['clipped_paths'])}")
+    if not measured and require:
+        failures.append("no scan measured whether content is clipped inside its own box")
     return failures
 
 
@@ -232,6 +286,13 @@ class Auditor:
         metrics = page.evaluate(
             "() => ({scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth})"
         )
+        # A page that fits is not the same claim as a page that shows what it holds: the fix for
+        # horizontal overflow can just as well be a track that refuses to grow, which hides the tail
+        # of a row behind `minmax(0,...)`. So measure the inside of the boxes too. Deliberate scroll
+        # containers are counted separately and never judged, because a wide table behind
+        # `overflow-x:auto` is the app choosing to let a person reach the rest; only content that is
+        # neither visible nor reachable counts as clipped.
+        clip_state = page.evaluate(CLIP_JS)
         hidden_state = page.evaluate(
             """() => {
                 const marked = [...document.querySelectorAll('[hidden]')];
@@ -254,6 +315,10 @@ class Auditor:
                 "violations": violations,
                 "scroll_width": metrics["scroll"],
                 "client_width": metrics["client"],
+                "clipped": clip_state["clipped"],
+                "clipped_paths": clip_state["paths"],
+                "scroll_containers": clip_state["scrollers"],
+                "clipped_fields": clip_state["fields"],
                 "hidden_marked": hidden_state["marked"],
                 "hidden_but_rendered": sorted(set(hidden_state["rendered"])),
                 "screenshot": str(shot),
@@ -514,6 +579,24 @@ def self_test(auditor: Auditor) -> int:
         anim.evaluate("() => document.querySelector('#b').classList.add('go')")
         unstable_during_transition = not wait_painted(anim, tries=3)
         settled_after = wait_painted(anim, tries=24)
+
+        # The clip probe, both polarities on real layout rather than on a hand-written dict: content
+        # hidden by a box that refuses to grow must be named, and the same content behind a scroll bar,
+        # inside a form control, or given room to wrap must not be -- otherwise the check would read as
+        # green simply because it excludes everything it can see.
+        clip = browser.new_page(viewport=VIEWPORTS["mobile"])
+        token = "A" * 200
+        clip.set_content(
+            "<!doctype html><html lang='zh-CN'><head><title>clip</title><style>"
+            ".box{width:120px;height:20px;font:12px/20px monospace;white-space:nowrap}"
+            "#cut{overflow:hidden}#reach{overflow-x:auto}"
+            "#wrap{white-space:normal;overflow-wrap:anywhere;height:auto}</style></head><body>"
+            f"<div id='cut' class='box'>{token}</div>"
+            f"<div id='reach' class='box'>{token}</div>"
+            f"<div id='wrap' class='box'>{token}</div>"
+            f"<input id='field' class='box' value='{token}'></body></html>"
+        )
+        clip_probe = clip.evaluate(CLIP_JS)
         browser.close()
 
     probe = auditor.scans[-1]
@@ -521,7 +604,8 @@ def self_test(auditor: Auditor) -> int:
 
     def view(label, **kwargs):
         base = {"label": label, "viewport": "desktop", "axe": True, "audited": True, "settle": "stable",
-                "violations": [], "scroll_width": 1440, "client_width": 1440}
+                "violations": [], "scroll_width": 1440, "client_width": 1440,
+                "clipped": 0, "clipped_paths": [], "scroll_containers": 0, "clipped_fields": 0}
         base.update(kwargs)
         return base
 
@@ -568,6 +652,25 @@ def self_test(auditor: Auditor) -> int:
         problems.append("mobile fit check missed a 1200px page in a 390px viewport")
     if not mobile_fit_failures([view("no-phone-measured", scroll_width=1200, client_width=390)]):
         problems.append("mobile fit check stayed silent when no mobile view was measured")
+    clip_named = " ".join(clip_probe["paths"])
+    if clip_probe["clipped"] != 1 or "#cut" not in clip_named:
+        problems.append(f"clip probe missed the box that hides content (read {clip_probe}, saw {clip_named!r})")
+    if "#reach" in clip_named:
+        problems.append("clip probe judged a scrollable box clipped, so it would fight real tables")
+    if clip_probe["scrollers"] != 1:
+        problems.append(f"clip probe counted {clip_probe['scrollers']} scroll containers, so the exemption "
+                        "it grants is either vacuous or wider than one box")
+    if clip_probe["fields"] != 1 or "#field" in clip_named:
+        problems.append(f"clip probe read a form control's own value as withheld content (read {clip_probe}): "
+                        "an input scrolls to the caret, which is not a clipped row")
+    if clip_failures([view("clip-ok")]):
+        problems.append("clip check fired on a page where every box shows what it holds")
+    if not clip_failures([view("clip-leak", clipped=1, clipped_paths=["div#cut 300>120"])]):
+        problems.append("clip check missed a box holding 300px of content in 120px")
+    if not clip_failures([view("clip-blind", clipped=None)]):
+        problems.append("clip check stayed silent with an empty denominator")
+    if clip_failures([view("clip-blind", clipped=None)], require=False):
+        problems.append("clip check's blind case still fired once it was told not to require a reading")
     if not inline_blocked:
         problems.append("inline script executed despite script-src 'self', so the browser is not enforcing CSP")
     if csp_failures({"https://x": "script-src 'self'"}, ["https://x"]):
@@ -600,7 +703,10 @@ def self_test(auditor: Auditor) -> int:
             print(" -", p)
         return 1
     print(f"self-check passed: axe-core {AXE_VERSION} flags image-alt (impact={impacts['image-alt']}) "
-          f"and the gate rejects it while tolerating moderate-only")
+          f"and the gate rejects it while tolerating moderate-only; the clip probe named "
+          f"{clip_probe['clipped']} of "
+          f"{clip_probe['clipped'] + clip_probe['scrollers'] + clip_probe['fields']} overflowing boxes "
+          f"and exempted {clip_probe['scrollers']} scroll container(s) plus {clip_probe['fields']} form field(s)")
     return 0
 
 
@@ -1386,6 +1492,7 @@ def main() -> int:
                 + sorted(set(team))
                 + sorted(set(roster))
                 + mobile_fit_failures(auditor.scans, require=not args.desktop_only)
+                + clip_failures(auditor.scans)
                 + keyboard + csp_failures(auditor.security_headers, [WEB_URL, ADMIN_URL])
                 + hidden_failures(auditor.scans)
                 + sorted(set(auditor.crashes)) + sorted(set(auditor.csp_blocks)))

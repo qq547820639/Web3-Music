@@ -744,10 +744,10 @@ textarea {
 }
 /* A grid track asked for as `1fr` is really minmax(auto,1fr): its floor is the item's min-content,
    so one address long enough to be unbreakable (an e-mail, a token) widens the track past the page
-   instead of wrapping. Measured at 390px: an offered address pushed the account grid to 400px. */
-.order-row>*,.ledger-row>*,.ticket-row>*,.member-row>* {
-  min-width: 0;
-}
+   instead of wrapping. Measured at 390px: an offered address pushed the account grid to 400px.
+   Only the text is allowed to break here. The first attempt also gave every cell `min-width:0`, and
+   the clip probe then read the row's own button group as `192>128` at 1440px: a control column that
+   can be squeezed below its content does not wrap, it disappears. */
 .order-row b,.ledger-row b,.ticket-row b,.member-row b {
   overflow-wrap: anywhere;
 }
