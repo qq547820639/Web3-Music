@@ -33,3 +33,22 @@ def terminal_error(final, provider_error=None, ready=0, failed=0, requested=0, c
         error["candidates"] = list(candidate_errors[:3])
     error.update(counts)
     return error
+
+
+def error_signature(exc: BaseException) -> dict:
+    """What to store when a candidate cannot be ingested.
+
+    `str(exc)` alone was the dead end: httpx builds its transport errors with an empty message, so
+    the record read `{"type": "ReadError", "message": ""}` and the next question -- reset, closed,
+    or protocol? -- had no answer in the database. The underlying exception and the args are
+    captured when present, and `message` falls back to the type name rather than to "" so a reader
+    never has to distinguish "no reason" from "no reason recorded".
+    """
+    cause = getattr(exc, "__cause__", None)
+    signature = {
+        "type": type(exc).__name__,
+        "message": str(exc) or type(exc).__name__,
+    }
+    if cause is not None:
+        signature["cause"] = f"{type(cause).__name__}: {cause or type(cause).__name__}"
+    return signature

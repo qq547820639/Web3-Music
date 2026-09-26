@@ -8,7 +8,7 @@ from psycopg2.pool import ThreadedConnectionPool
 from botocore.client import Config
 from provider import close_http_client as close_provider_http_client, create_adapter
 from ledger import close_hold
-from outcomes import terminal_error
+from outcomes import error_signature, terminal_error
 from metrics import inc as metric_inc, set_gauge, start_server as start_metrics_server
 
 DATABASE_URL=os.getenv("DATABASE_URL","postgresql://music_worker:music_worker@localhost:54329/music")
@@ -208,6 +208,35 @@ async def fetch_media(url:str):
         Path(tmp_path).unlink(missing_ok=True)
         raise
 
+MEDIA_TRANSPORT_ATTEMPTS = max(1, int(os.getenv("MEDIA_TRANSPORT_ATTEMPTS", "3")))
+
+
+async def fetch_media_with_retry(url: str):
+    """Retry a media download that died at the transport layer, and say so when it keeps dying.
+
+    Measured on the local stack: 2 of 100 regression jobs settled as no_ready_candidates with the
+    candidate error `{'type': 'ReadError', 'message': ''}` -- httpx raises its transport errors with
+    an empty message, so the failure was recorded and still could not be read. A connection closed
+    between requests (the serving side expiring a keep-alive connection) is transient for a
+    download and must not cost a user their candidate permanently. Only httpx.TransportError is
+    retried: a 404, a wrong content type, an oversized or undecodable body is a decision, not a
+    race, and retrying those would only hide them slower.
+    """
+    last = None
+    for attempt in range(MEDIA_TRANSPORT_ATTEMPTS):
+        try:
+            return await fetch_media(url)
+        except httpx.TransportError as exc:
+            last = exc
+            if attempt + 1 < MEDIA_TRANSPORT_ATTEMPTS:
+                await asyncio.sleep(0.5 * (2 ** attempt))
+    cause = getattr(last, "__cause__", None) or (last.args[0] if last and last.args else "")
+    raise RuntimeError(
+        f"media download did not complete after {MEDIA_TRANSPORT_ATTEMPTS} transport attempts: "
+        f"{type(last).__name__}{f' ({cause})' if cause else ' (no underlying error reported)'}"
+    ) from last
+
+
 async def store_media(job,ordinal,tmp_path,sha,mime,size,duration_ms):
     ext=mimetypes.guess_extension(mime) or Path(tmp_path).suffix or ".bin"
     key=f"{job['workspace_id']}/audio/{sha[:2]}/{sha}{ext}"
@@ -292,13 +321,13 @@ async def process(job):
             if candidate.get("audio_url") and str(candidate.get("status","completed")).lower() not in {"failed","error"}:
                 tmp=None
                 try:
-                    tmp,sha,mime,size,duration=await fetch_media(candidate["audio_url"]);media=await store_media(job,ordinal,tmp,sha,mime,size,duration)
+                    tmp,sha,mime,size,duration=await fetch_media_with_retry(candidate["audio_url"]);media=await store_media(job,ordinal,tmp,sha,mime,size,duration)
                     recipe={"song_spec_revision":job["spec_revision"],"provider":provider_name,"adapter_version":PROVIDER_ADAPTER_VERSION,"provider_job_id":job["provider_job_id"],"provider_clip_id":clip_id,"styles":job["spec"].get("styles"),"lyrics_sha256":hashlib.sha256(str(job["spec"].get("lyrics","")).encode()).hexdigest(),"audio_sha256":sha}
                     with connect() as conn,conn.cursor() as cur:
                         cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,media_asset_id,recipe,metadata) VALUES(%s,%s,%s,%s,'ready',%s,%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,clip_id,media["id"],psycopg2.extras.Json(recipe),psycopg2.extras.Json(candidate)));conn.commit();ready+=1
                 except Exception as exc:
                     with connect() as conn,conn.cursor() as cur:
-                        cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,recipe,metadata) VALUES(%s,%s,%s,%s,'failed',%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,clip_id,psycopg2.extras.Json({"provider":provider_name}),psycopg2.extras.Json({**candidate,"ingest_error":{"type":type(exc).__name__,"message":str(exc)}})));conn.commit();failed+=1;candidate_errors.append({"ordinal":ordinal,"type":type(exc).__name__,"message":str(exc)})
+                        cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,recipe,metadata) VALUES(%s,%s,%s,%s,'failed',%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,clip_id,psycopg2.extras.Json({"provider":provider_name}),psycopg2.extras.Json({**candidate,"ingest_error":error_signature(exc)})));conn.commit();failed+=1;candidate_errors.append({"ordinal":ordinal,**error_signature(exc)})
                 finally:
                     if tmp:Path(tmp).unlink(missing_ok=True)
             else:
