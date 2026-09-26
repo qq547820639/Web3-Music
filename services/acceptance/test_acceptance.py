@@ -64,7 +64,7 @@ def test_partial_success_isolated_hold_and_admin_policy():
     creator_forbidden=requests.get(BASE+"/admin/dashboard",headers=headers(CREATOR_TOKEN,CREATOR_WS),timeout=20);assert creator_forbidden.status_code==403
 
 def test_webhook_signature_and_inbox_deduplication():
-    payload={"type":"job.status","provider_job_id":"unknown","status":"processing"};raw=json.dumps(payload,separators=(",",":")).encode();secret=os.getenv("PROVIDER_WEBHOOK_SECRET","dev-provider-webhook-secret");sig=hmac.new(secret.encode(),raw,hashlib.sha256).hexdigest();event="evt-"+uuid.uuid4().hex
+    payload={"type":"job.status","provider_job_id":"unknown","status":"processing"};raw=json.dumps(payload,separators=(",",":")).encode();secret=os.environ["PROVIDER_WEBHOOK_SECRET"];sig=hmac.new(secret.encode(),raw,hashlib.sha256).hexdigest();event="evt-"+uuid.uuid4().hex
     h={"Content-Type":"application/json","X-Signature":sig,"X-Event-Id":event}
     a=requests.post(BASE+"/provider-webhooks/emulator",data=raw,headers=h,timeout=20);b=requests.post(BASE+"/provider-webhooks/emulator",data=raw,headers=h,timeout=20);assert a.status_code==200 and b.status_code==200;assert a.json()["accepted"] is True and b.json()["duplicate"] is True
     bad=requests.post(BASE+"/provider-webhooks/emulator",data=raw,headers={**h,"X-Signature":"bad"},timeout=20);assert bad.status_code==401

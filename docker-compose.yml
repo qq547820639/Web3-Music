@@ -76,7 +76,9 @@ services:
     build: ./services/payment-emulator
     environment:
       SQLITE_PATH: /data/payment/payment.db
-      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev-payment-webhook-secret}
+      # One source for the value the api verifies callbacks with. The emulator keeps an in-file
+      # fallback because it is a local stand-in by definition, but under compose it is always told.
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET must be set; see .env.example}
     ports: ["8020:8020"]
     volumes: ["payment_state:/data/payment"]
     healthcheck:
@@ -233,6 +235,11 @@ services:
       WEB_BASE_URL: http://web
       ADMIN_BASE_URL: http://admin
       WORKER_METRICS_BASE_URL: http://worker:9101
+      # The suite signs a provider webhook, so it needs the same secret the api verifies with.
+      # Until now it carried its own copy of the literal as an os.getenv fallback, which is why the
+      # test passed while the two sides agreed by coincidence: changing the deployed value made the
+      # container sign with a key the api no longer uses. :? keeps both sides reading one source.
+      PROVIDER_WEBHOOK_SECRET: ${PROVIDER_WEBHOOK_SECRET:?PROVIDER_WEBHOOK_SECRET must be set; see .env.example}
     depends_on:
       api: {condition: service_healthy}
       worker: {condition: service_healthy}

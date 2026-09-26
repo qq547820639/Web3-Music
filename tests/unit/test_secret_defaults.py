@@ -160,6 +160,28 @@ def test_the_base_compose_no_longer_supplies_a_fallback_for_any_signing_secret()
         assert ":?" in value, f"{name} must fail closed with :? rather than default: {value!r}"
 
 
+FALLBACK = re.compile(r'([A-Z_]+):\s*"?\$\{([^}\n]*)\}')
+
+
+def fallback_literals(text: str, name: str) -> list[str]:
+    """Every `${NAME:-...}` interpolation for `name` -- every place a value can be defaulted."""
+    return [body for field, body in FALLBACK.findall(text) if field == name and ":-" in body]
+
+
+def test_no_compose_file_falls_back_to_an_in_repo_secret_literal():
+    """Checked across every overlay, not only the api service where the defect happened to live."""
+    offenders = []
+    for path in sorted(ROOT.glob("docker-compose*.yml")):
+        text = path.read_text(encoding="utf-8")
+        for name in ("JWT_SECRET", "MEDIA_SIGNING_SECRET", "PROVIDER_WEBHOOK_SECRET", "PAYMENT_WEBHOOK_SECRET"):
+            offenders += [f"{path.name}: {name}: {value}" for value in fallback_literals(text, name)]
+    assert not offenders, f"a deployment could still inherit a published default: {offenders}"
+    assert fallback_literals("JWT_SECRET: ${JWT_SECRET:-published-default}", "JWT_SECRET"), \
+        "the sweep cannot see the shape it forbids"
+    assert not fallback_literals("JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}", "JWT_SECRET"), \
+        "the required form is the one being asked for, not a violation"
+
+
 def test_the_production_overlay_revokes_the_demo_licence():
     assert compose_service_environment(load_yaml(COMPOSE), "api")["DEMO_STACK"] == "true"
     production = load_yaml(PRODUCTION)
