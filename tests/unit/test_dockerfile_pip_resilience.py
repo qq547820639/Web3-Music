@@ -172,3 +172,65 @@ def test_the_build_shape_detector_fires_on_the_concurrent_form():
     assert "--build" in compose_up_body(old)  # the prose-strip is what makes the reading above honest
     current = shell_commands(compose_up_body((ROOT / "scripts/acceptance-all.sh").read_text(encoding="utf-8")))
     assert "--build" not in current
+
+
+# ---------------------------------------------------------------- apt on the same footing ----
+# The image that installs a system package reaches for a 9.6 MB index over the same path that killed
+# pip, and apt's own default is three attempts -- which is what `Ign:` in the release log meant.
+
+APT_VERBS = {"update", "install", "upgrade", "purge"}
+APT_RETRIES = re.compile(r"Acquire::Retries=(\d+)")
+
+
+def apt_invocations(block: str) -> list[str]:
+    """Every `apt-get <verb>` in a RUN, with its option tokens skipped.
+
+    Token-walking rather than one regex: `apt-get -o Acquire::Retries=8 update` puts a *value* between
+    the flag and the verb, and the first version of this matcher read that invocation as absent -- which
+    made the clause below vacuous, since a Dockerfile with no retry settings at all then had zero apt
+    calls to complain about. The control test is what caught that.
+    """
+    tokens = block.replace("&&", " && ").replace(";", " ; ").split()
+    found = []
+    for index, token in enumerate(tokens):
+        if token != "apt-get":
+            continue
+        for following in tokens[index + 1:]:
+            if following.startswith("-") or "=" in following:
+                continue
+            if following in APT_VERBS:
+                found.append(following)
+            break
+    return found
+
+
+def apt_runs(text: str) -> list[str]:
+    return [block for block in run_steps(text) if apt_invocations(block)]
+
+
+def test_every_apt_step_retries_its_fetch():
+    offenders = []
+    for path in sorted((ROOT / "services").glob("*/Dockerfile")):
+        for block in apt_runs(path.read_text(encoding="utf-8")):
+            settings = [int(n) for n in APT_RETRIES.findall(block)]
+            calls = apt_invocations(block)
+            if len(settings) < len(calls):
+                offenders.append(f"{path.parent.name}: {len(settings)} retry settings for "
+                                 f"{len(calls)} apt calls ({', '.join(calls)})")
+            elif settings and min(settings) < 5:
+                offenders.append(f"{path.parent.name}: Acquire::Retries={min(settings)}")
+    assert not offenders, "apt steps that give up early: " + " | ".join(offenders)
+
+
+def test_the_apt_detector_fires_on_the_shape_that_shipped_until_now():
+    before = ("FROM python:3.12-slim\n"
+              "RUN apt-get -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends ffmpeg\n")
+    block = apt_runs(before)
+    assert block, "the reader must see this RUN at all"
+    calls = apt_invocations(block[0])
+    found = [int(n) for n in APT_RETRIES.findall(block[0])]
+    assert calls == ["update", "install"], (calls, block[0])
+    assert found == [3] and len(found) < len(calls), (found, calls)
+    live = apt_runs((ROOT / "services/worker/Dockerfile").read_text(encoding="utf-8"))
+    assert live and len(apt_invocations(live[0])) == len(APT_RETRIES.findall(live[0])), live
+    assert min(int(n) for n in APT_RETRIES.findall(live[0])) >= 5
