@@ -13,7 +13,7 @@ jobs:
         with: {python-version: '3.12', cache: 'pip'}
       - uses: actions/setup-node@v4
         with: {node-version: '22'}
-      - run: pip install -r services/api/requirements.txt -r services/worker/requirements.txt -r services/payment-emulator/requirements.txt -r services/acceptance/requirements.txt pytest pyyaml jsonschema
+      - run: pip install -r services/api/requirements.txt -r services/worker/requirements.txt -r services/payment-emulator/requirements.txt -r services/acceptance/requirements.txt -r scripts/requirements-drill.txt pytest pyyaml jsonschema
       - run: ./scripts/static-verify.sh
       - name: Validate compose config (with diagnostics)
         shell: bash
@@ -44,7 +44,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install httpx
+      # The drills run on the runner, not in a container: httpx for the transport, and the
+      # test-side decoder that proves the enrolment QR is the URI the API claims (see
+      # scripts/requirements-drill.txt).
+      - run: pip install httpx -r scripts/requirements-drill.txt
       - run: cp .env.example .env
       - name: Start stack (with diagnostics)
         shell: bash
@@ -235,7 +238,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
-      - run: pip install -r services/api/requirements.txt -r services/worker/requirements.txt -r services/payment-emulator/requirements.txt -r services/acceptance/requirements.txt pytest pyyaml jsonschema httpx
+      - run: pip install -r services/api/requirements.txt -r services/worker/requirements.txt -r services/payment-emulator/requirements.txt -r services/acceptance/requirements.txt -r scripts/requirements-drill.txt pytest pyyaml jsonschema httpx
       - run: cp .env.example .env
       - name: Run the 500-user capacity gate (with diagnostics)
         shell: bash

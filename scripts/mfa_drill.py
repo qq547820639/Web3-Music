@@ -27,6 +27,7 @@ import subprocess
 import sys
 import time
 import uuid
+from urllib.parse import quote
 
 import httpx
 
@@ -143,6 +144,16 @@ def main() -> int:
               f"{enrolled.status_code} {enrolled.text[:200]}")
         check("the URI states the period and digits the server will verify with",
               "period=30" in uri and "digits=6" in uri, uri)
+        # What a phone scans has to be what this response states, so the image is read back from the
+        # bytes the API shipped -- with an independent decoder (zxing-cpp), not segno's own account of
+        # what it drew. See scripts/requirements-drill.txt for the test-side dependency.
+        qr_uri = enrolled.json().get("qr_png_data_uri", "")
+        decoded = (e2e_client.decode_qr_data_uri(qr_uri)
+                   if qr_uri.startswith("data:image/png;base64,") else "")
+        check("the enrolment QR decodes to exactly the provisioning URI", decoded == uri,
+              f"qr field {'present' if qr_uri else 'MISSING'}, decoded {str(decoded)[:90]!r}")
+        check("and the symbol carries this account's own seed and address",
+              bool(seed) and seed in str(decoded) and quote(PROBE, safe="") in str(decoded), str(decoded)[:140])
         state = status(s1)
         check("the seed is pending rather than armed", state.get("armed") is False and state.get("pending_since"), str(state))
 

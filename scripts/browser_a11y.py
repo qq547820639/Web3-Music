@@ -869,6 +869,18 @@ def walk_mfa(page, auditor: Auditor, viewport: str, probe: "SecondFactor", email
     page.get_by_role("button", name="开启两步验证").click()
     page.wait_for_selector("#mfaEnrol:not([hidden])", timeout=20000)
     probe.seed = (page.text_content("#mfaSecret") or "").strip()
+    # The QR is the enrolment path most people use, so the browser itself has to rasterize it: a
+    # naturalWidth of 0 means the data: URI the CSP allows was not an image the engine could decode,
+    # and an empty alt would make axe report it as a critical finding on this very page.
+    page.wait_for_selector("#mfaQr:not([hidden])", timeout=20000)
+    qr_state = page.evaluate("""() => { const i = document.querySelector('#mfaQr');
+        return {w: i.naturalWidth, h: i.naturalHeight, alt: (i.alt || '').trim(), src: i.src.slice(0, 22)}; }""")
+    if not (qr_state["w"] > 0 and qr_state["h"] == qr_state["w"]):
+        raise SystemExit(f"the enrolment QR did not rasterize in the browser: {qr_state}")
+    if not qr_state["alt"]:
+        raise SystemExit("the enrolment QR has no alternative text, so a screen reader gets nothing")
+    if qr_state["src"] != "data:image/png;base64,":
+        raise SystemExit(f"the enrolment QR is not the PNG data URI the CSP allows: {qr_state['src']!r}")
     auditor.scan(page, "account-mfa-enrolment", viewport)
 
     page.fill("#mfaEnrolCode", probe.code(page))

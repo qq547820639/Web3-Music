@@ -16,7 +16,8 @@ from .auth import ACCESS_COOKIE, CSRF_COOKIE, REFRESH_COOKIE, Actor, UserIdentit
                    get_actor, get_user, issue_token, list_memberships, require_platform_admin, require_roles, token_hash, \
                    validate_browser_csrf, validate_refresh_session, verify_password
 from .mfa import hash_recovery as mfa_hash_recovery, new_recovery_codes as mfa_new_recovery_codes, \
-    new_secret as mfa_new_secret, provisioning_uri as mfa_provisioning_uri, seal as mfa_seal, unseal as mfa_unseal, \
+    new_secret as mfa_new_secret, provisioning_uri as mfa_provisioning_uri, qr_data_uri as mfa_qr_data_uri, \
+    seal as mfa_seal, unseal as mfa_unseal, \
     verify_code as mfa_verify_code
 from .common import PAGE_LIMIT_DEFAULT, PAGE_LIMIT_MAX, audit, serialize, setting_enabled
 from .db import close_pool, fetch_all, fetch_one, transaction, wait_for_db
@@ -423,8 +424,12 @@ def mfa_enroll(request:Request,user:UserIdentity=Depends(get_user)):
         audit(cur,Actor(user.user_id,user.email,user.display_name,user.is_platform_admin,user.session_id,None,"self"),
               "auth.mfa.enrol_begin","user",user.user_id,{"secret_issued":True},request.state.request_id)
     # The seed is returned so the authenticator app can be shown a QR or typed in; the database
-    # only ever holds the sealed form.
-    return serialize({"secret":secret,"provisioning_uri":mfa_provisioning_uri(secret,row["email"]),
+    # only ever holds the sealed form. The image is rendered from the exact string the URI helper
+    # produced, so what a phone scans and what this response states are the same bytes -- see
+    # qr_data_uri() in services/api/app/mfa.py for why that is the server's job and not the page's.
+    uri = mfa_provisioning_uri(secret, row["email"])
+    return serialize({"secret":secret,"provisioning_uri":uri,
+                      "qr_png_data_uri":mfa_qr_data_uri(uri),
                       "confirm_within_seconds":settings.mfa_enrolment_window_seconds})
 
 

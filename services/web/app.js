@@ -1683,6 +1683,9 @@ function renderMfa(status) {
       + (status.session_amr && status.session_amr.includes('totp') ? ' 本次登录已用第二步验证。' : '');
   }
   if (!armed) mfaPanel.secret = '';
+  // The image is dropped whenever its panel goes away, so a re-enrolment can never show a stale
+  // symbol for a seed the server has already replaced.
+  if ($('#mfaEnrol').hidden) $('#mfaQr').hidden = true;
 }
 
 async function loadMfa() {
@@ -1704,6 +1707,16 @@ $('#mfaStart').onclick = async () => {
     mfaPanel.secret = data.secret;
     mfaPanel.enrolUntil = Date.now() + (data.confirm_within_seconds || 900) * 1000;
     $('#mfaSecret').textContent = data.secret;
+    // A data: URI is what the shipped CSP allows for images (img-src 'self' data:), and assigning
+    // src keeps the server's bytes out of innerHTML -- which this app's own gate forbids for wire data.
+    const qr = $('#mfaQr');
+    if (data.qr_png_data_uri) {
+      qr.src = data.qr_png_data_uri;
+      qr.hidden = false;
+    } else {
+      qr.removeAttribute('src');
+      qr.hidden = true;
+    }
     await loadMfa();
     $('#mfaEnrolCode').focus();
   } catch (err) {

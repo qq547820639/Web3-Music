@@ -1315,6 +1315,21 @@ button.loading::after {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
+/* The enrolment QR is a 1-bit PNG at 4 px per module. Letting the browser smooth it down is what
+   makes phones fail to scan, so keep the module edges hard and give the code a white ground: the
+   dark theme behind it is not something a camera can decode a symbol from. */
+.mfa-qr-wrap {
+  margin: 0 0 12px;
+}
+.mfa-qr {
+  background: #fff;
+  border-radius: 8px;
+  height: auto;
+  image-rendering: pixelated;
+  max-width: 100%;
+  padding: 10px;
+  width: 232px;
+}
 .secret-box {
   display: flex;
   align-items: center;

@@ -21,6 +21,7 @@ import secrets
 import time
 
 import pyotp
+import segno
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .settings import settings
@@ -54,6 +55,26 @@ def unseal(sealed: str) -> str:
         raise ValueError(f"unsupported seal version {version!r}")
     plain = AESGCM(_key()).decrypt(base64.urlsafe_b64decode(nonce_b64), base64.urlsafe_b64decode(blob_b64), None)
     return plain.decode()
+
+
+def qr_data_uri(data: str, scale: int = 4) -> str:
+    """Render a string as a scannable PNG, returned as a `data:` URI.
+
+    Used for the otpauth:// provisioning URI so enrolment is a scan rather than a transcription of
+    32 base32 characters. Candidates were read before this was written, not guessed at: segno 1.6.6
+    (BSD-3, "Pure Python QR Code generator with no dependencies", PNG/SVG/PDF writers built in) and
+    python-qrcode 8.2 (BSD-3, Pillow optional) were both viable, and segno won on supply chain --
+    the payload here is a credential, so the one option that was rejected outright rather than
+    scored is any web service that renders the QR for us, which would hand the seed to a third
+    party. A self-hosted JavaScript encoder was the third candidate; it works under this app's
+    `script-src 'self'` only if the file is vendored and pinned, and it would move the encoder onto
+    every client instead of next to the constants the URI is built from.
+
+    The error-correction level is M, the convention authenticator apps expect, and the output is a
+    data: URI because the shipped CSP allows `img-src 'self' data:` -- which lets the page set an
+    <img> src and keeps wire data out of innerHTML, where this repository's own gate forbids it.
+    """
+    return segno.make(data, error="m").png_data_uri(scale=scale)
 
 
 def provisioning_uri(secret_b32: str, account: str) -> str:

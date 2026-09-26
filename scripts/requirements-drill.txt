@@ -1,0 +1,6 @@
+# Test-side dependencies for the resident drills (scripts/*_drill.py) and the unit tests that
+# read back what the API rendered. Not installed into any image: services/api/requirements.txt
+# carries the runtime half (segno, which produces the enrolment QR), while this file carries the
+# independent half that proves it -- zxing-cpp decodes the QR from the PNG bytes the server shipped,
+# and it shares no code with segno, so agreement between the two is evidence rather than tautology.
+zxing-cpp==3.1.1
