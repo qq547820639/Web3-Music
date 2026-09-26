@@ -3783,6 +3783,122 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/workspaces:
+    get:
+      tags:
+      - Operations Control Plane
+      summary: Workspace Directory
+      description: 'Every workspace on the platform, with who owns it and how many
+        people are in it.
+
+
+        Read through platform_workspaces() rather than a SELECT here: the identity
+        tables carry no row
+
+        level security (see 018''s header for the measured relrowsecurity=f), so a
+        Python-side role check
+
+        would be the only thing standing between a caller and another tenant''s membership.
+        The function
+
+        answers the same question in the statement that reads the rows, and this endpoint
+        records that a
+
+        platform admin looked -- cross-tenant identity reads are the thing a reviewer
+        asks for afterwards.'
+      operationId: workspace_directory_api_admin_v12_workspaces_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/admin/v12/workspaces/{workspace_id}/members:
+    get:
+      tags:
+      - Operations Control Plane
+      summary: Workspace Roster
+      description: 'One workspace''s roster, read and recorded in the same transaction.
+
+
+        The read of a stranger''s membership and the audit row that says it happened
+        must not be separable:
+
+        two transactions would leave a window where a cross-tenant identity read reached
+        nobody''s log. A
+
+        refusal (guard raised, unknown workspace, unparseable id) rolls the transaction
+        back and writes
+
+        nothing -- the refusals are visible in the HTTP status, and this endpoint
+        has no partial effect to
+
+        record.'
+      operationId: workspace_roster_api_admin_v12_workspaces__workspace_id__members_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Workspace Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/admin/v12/release-evidence:
     get:
       tags:

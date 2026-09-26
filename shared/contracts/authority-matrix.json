@@ -175,6 +175,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/admin/v12/workspaces",
+      "authority": "platform_admin",
+      "roles": "",
+      "writes": false,
+      "step_up": false,
+      "endpoint": "routers.admin_v12:workspace_directory",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/v12/workspaces/{workspace_id}/members",
+      "authority": "platform_admin",
+      "roles": "",
+      "writes": false,
+      "step_up": false,
+      "endpoint": "routers.admin_v12:workspace_roster",
+      "app_level_auth": []
+    },
+    {
+      "method": "GET",
       "path": "/api/analytics/overview",
       "authority": "require_roles",
       "roles": "admin,billing,creator,owner,reviewer",

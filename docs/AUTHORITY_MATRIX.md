@@ -1,6 +1,6 @@
 # 权限矩阵（由代码派生，不要手改）
 
-`./scripts/authority_matrix.py --check` 会重算这张表并比对；派生自 `services/api/app/main.py` 与 `services/api/app/routers/*.py` 的路由装饰器与依赖签名，共 89 条 /api 路由，其中写操作 48 条。
+`./scripts/authority_matrix.py --check` 会重算这张表并比对；派生自 `services/api/app/main.py` 与 `services/api/app/routers/*.py` 的路由装饰器与依赖签名，共 91 条 /api 路由，其中写操作 48 条。
 
 读法：`require_roles` 一栏是端点自己声明的角色名单，名单之外的人在 `Depends` 阶段就拿 403；`工作区成员即可` 只检查调用者属于 `X-Workspace-Id` 那个工作区，`有效会话即可` 是主体自助通道（删除账户、注册第二因子）；`只有应用层鉴权` 的写路由一共 5 条，它们的保护不在这张表里而在端点内部——口令校验、刷新会话校验、按账号的限流、以及回调的 HMAC 签名——常驻用例逐条核对该端点源码里确实还写着那个载体，少一个就红（`tests/unit/test_authority_matrix.py`）。真正的授权担保还包括数据库层：RLS 与 `011`/`012`/`013`/`016`/`017` 的 `SECURITY DEFINER` 函数，端点检查只是门口那道 convenience。
 
@@ -71,7 +71,7 @@
 | `GET /api/projects/{project_id}/comments` | admin,creator,owner,reviewer,viewer | — | `routers.creation:list_comments` |
 | `GET /api/support/tickets` | admin,billing,creator,legal,owner,reviewer,support,viewer | — | `routers.market:list_tickets` |
 
-## 平台管理员（6 条，写操作 3 条）
+## 平台管理员（8 条，写操作 3 条）
 
 | 方法与路径 | 角色 | 再认证 | 端点 |
 | --- | --- | --- | --- |
@@ -81,6 +81,8 @@
 | `GET /api/admin/v12/payouts` | — | — | `routers.admin_v12:payout_queue` |
 | `GET /api/admin/v12/release-evidence` | — | — | `routers.admin_v12:release_evidence` |
 | `GET /api/admin/v12/release-gate/{gate}` | — | — | `routers.admin_v12:release_gate` |
+| `GET /api/admin/v12/workspaces` | — | — | `routers.admin_v12:workspace_directory` |
+| `GET /api/admin/v12/workspaces/{workspace_id}/members` | — | — | `routers.admin_v12:workspace_roster` |
 
 ## 工作区成员即可（get_actor）（11 条，写操作 2 条）
 

@@ -278,7 +278,7 @@ def login_error(page) -> str:
     )
 
 
-def login(page, base: str, auditor: Auditor, viewport: str, tries: int = 5):
+def login(page, base: str, auditor: Auditor, viewport: str, tries: int = 5, email: str = EMAIL, password: str = PASSWORD):
     from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
     response = page.goto(base, wait_until="networkidle")
@@ -286,8 +286,8 @@ def login(page, base: str, auditor: Auditor, viewport: str, tries: int = 5):
     auditor.scan(page, "login", viewport, require="#loginForm")
     detail = ""
     for attempt in range(tries):
-        page.fill("#email", EMAIL)
-        page.fill("#password", PASSWORD)
+        page.fill("#email", email)
+        page.fill("#password", password)
         page.press("#password", "Enter")
         try:
             page.wait_for_selector("#app:not([hidden])", timeout=10000)
@@ -892,6 +892,141 @@ def walk_team(page, auditor: Auditor, viewport: str, probe_email: str) -> list[s
     return failures
 
 
+NON_ADMIN_EMAIL = os.environ.get("E2E_NON_ADMIN_EMAIL", "third@example.local")
+NON_ADMIN_PASSWORD = os.environ.get("E2E_NON_ADMIN_PASSWORD", "demo-viewer")
+
+
+def walk_roster(page, auditor: Auditor, viewport: str) -> list[str]:
+    """The control plane's workspace directory, as the platform administrator sees and expands it.
+
+    The reconciliation that matters here is on the screen: the card declares a member count and the
+    roster panel lists the members, and a directory that counts from one query while the panel reads
+    another would still look perfectly populated. Both halves are rendered from 018's functions, so
+    this is the only place the two statements are compared against each other.
+    """
+    failures: list[str] = []
+    goto_view(page, "工作区与成员", "view-workspaces")
+    cards = page.locator("#workspaceDirectory .gate-card")
+    page.wait_for_selector("#workspaceDirectory .gate-card", timeout=20000)
+    count = cards.count()
+    auditor.scan(page, "admin-workspaces", viewport, require="#workspaceDirectory .gate-card")
+    if count < 2:
+        failures.append(f"the directory listed {count} workspace card(s); the seeded platform has at least two")
+    if page.locator("#workspaceDirectory .workspace-roster-btn").count() != count:
+        failures.append("a workspace card has no roster button, so part of the directory is unreachable")
+
+    declared, target = 0, None
+    for index in range(count):
+        text = cards.nth(index).text_content() or ""
+        found = re.search(r"成员 (\d+) 人", text)
+        if found and int(found.group(1)) > 0:
+            declared, target = int(found.group(1)), index
+            break
+    if target is None:
+        return failures + ["no workspace card declared a member above zero, so the roster panel was never exercised"]
+    button = cards.nth(target).locator(".workspace-roster-btn")
+    if not (button.get_attribute("aria-label") or "").startswith("载入 "):
+        failures.append(f"the roster button is announced as {button.get_attribute('aria-label')!r}, which does not name whose roster it loads")
+    button.click()
+    page.wait_for_selector("#workspaceRoster", state="visible", timeout=20000)
+    page.wait_for_selector("#workspaceRoster .table-row", timeout=20000)
+    rows = page.locator("#workspaceRoster .table-row").count()
+    auditor.scan(page, "admin-workspaces-roster", viewport, require="#workspaceRoster .table-row")
+    if rows != declared:
+        failures.append(f"the card said 成员 {declared} 人 while the roster panel listed {rows} row(s)")
+    # Read-only by design: membership writes belong to the tenant's own panel, where the actor types a
+    # credential. A button in here would mean the platform can re-role a tenant's member anonymously.
+    if page.locator("#workspaceRoster button, #workspaceRoster input, #workspaceRoster select").count():
+        failures.append("the platform roster panel carries a write control, which it is not meant to have")
+    return failures
+
+
+def walk_stale_panels(browser, size, auditor: Auditor, viewport: str) -> list[str]:
+    """One panel's load answer 500: the app must stay up and that panel must say its numbers are stale.
+
+    This is the case refreshAll() guards. Measured against the live stack, a non-administrator is not it
+    -- /api/admin/v12/{dashboard,payments,moderation}, /api/admin/dashboard and /api/jobs all answer 200
+    for any logged-in member, and only /payouts and the new /workspaces are platform-administrator
+    routes -- so the guard is exercised by injecting the failure instead of by looking for a session
+    that happens to produce one.
+
+    Its own browser context, because these sessions share an origin: a page opened in the context the
+    refusal walk just used boots already signed in, and login() then waits on a hidden #loginForm.
+    """
+    failures: list[str] = []
+    served = []
+    context = browser.new_context(viewport=size)
+    page = context.new_page()
+
+    def injected(route):
+        served.append(route.request.url)
+        route.fulfill(status=500, content_type="application/json",
+                      body='{"detail":"injected by the accessibility gate"}')
+
+    auditor.arm(page)
+    # Registered after arm() and verified by the `served` premise below: with two matching routes, the
+    # one registered last is the one Playwright consults first. Measured the other way round, the
+    # auditor's catch-all swallowed this request and the injected failure never happened -- which is
+    # exactly the sort of green-that-means-nothing the check underneath refuses to report.
+    page.route("**/api/admin/v12/moderation", injected)
+    auditor.attach_console(page, f"{viewport}-stale-admin")
+    try:
+        login(page, ADMIN_URL, auditor, viewport)
+        page.wait_for_selector("#app:not([hidden])", timeout=20000)
+        if not served:
+            # The order in which Playwright consults two matching routes is the whole premise here: if
+            # the auditor's catch-all ran first, the response was a real 200 and every assertion below
+            # would be reading a healthy panel.
+            return ["the injected 500 never reached the request, so the stale-panel path was not exercised"]
+        goto_view(page, "信任与支持", "view-trust")
+        page.wait_for_selector("#cases .muted", timeout=20000)
+        auditor.scan(page, "admin-trust-stale", viewport, require="#cases .muted")
+        note = page.locator("#cases").text_content() or ""
+        if "未能载入" not in note:
+            failures.append(f"the refused panel did not label itself stale: {note[:160]!r}")
+        if page.locator("#tickets .muted").count() != 1:
+            failures.append("the second container of the same loader kept its previous render")
+        # The panels that did load must keep their numbers: a guard that blanks the whole console turns a
+        # partial failure into a fake emergency.
+        if page.locator("#stats .stat").count() == 0:
+            failures.append("a single failed load blanked the overview too, so the operator cannot tell "
+                            "which figures are current")
+    finally:
+        context.close()
+    return failures
+
+
+def walk_roster_refusal(browser, size, auditor: Auditor, viewport: str) -> list[str]:
+    """The same view for an account that is logged in but is not the platform's administrator.
+
+    The workspace view is one of exactly two platform-administrator surfaces in this console, so this is
+    the only place its refusal copy is reachable -- and reaching it depends on refreshAll() no longer
+    letting one bad load hide #app. Its own context, for the same session-sharing reason as above.
+    """
+    failures: list[str] = []
+    context = browser.new_context(viewport=size)
+    page = context.new_page()
+    auditor.arm(page)
+    auditor.attach_console(page, f"{viewport}-refusal-admin")
+    try:
+        login(page, ADMIN_URL, auditor, viewport, email=NON_ADMIN_EMAIL, password=NON_ADMIN_PASSWORD)
+        goto_view(page, "工作区与成员", "view-workspaces")
+        page.wait_for_selector("#workspaceDirectory :not(script)", timeout=20000)
+        panel = page.locator("#workspaceDirectory").text_content() or ""
+        auditor.scan(page, "admin-workspaces-refusal", viewport, require="#workspaceDirectory")
+        if "仅平台管理员可访问" not in panel:
+            failures.append(f"the workspace view for a non-administrator read: {panel[:120]!r}")
+        if page.locator("#workspaceDirectory .gate-card").count():
+            failures.append("a non-administrator was shown real workspace cards")
+        # The rest of the console is deliberately NOT refused for this account, and saying so here keeps
+        # the refusal honest: an operator should see which one grid they may not read, not a blank app.
+        if page.locator("#stats .stat").count() == 0:
+            failures.append("the non-administrator's own workspace figures disappeared with the platform view")
+    finally:
+        context.close()
+    return failures
+
+
 def walk_mfa(page, auditor: Auditor, viewport: str, probe: "SecondFactor", email: str):
     """Login step -> armed panel -> drop it -> enrolment -> recovery list. Ends armed again."""
     page.wait_for_selector("#login:not([hidden])", timeout=20000)
@@ -985,6 +1120,8 @@ def main() -> int:
     keyboard: list[str] = []
     privacy: list[str] = []
     team: list[str] = []
+    roster: list[str] = []
+    roster_walks = 0
     team_probes: list[str] = []
     privacy_probes: list[dict] = []
     with sync_playwright() as pw:
@@ -1052,8 +1189,15 @@ def main() -> int:
                 if stage == "axe":
                     auditor.scan(admin, "admin-overview", viewport, require="#stats *")
                     walk_views(admin, auditor, viewport, nav="adminNav")
+                    roster += walk_roster(admin, auditor, viewport)
+                    roster_walks += 1
                 admin.get_by_role("button", name="退出").click()
                 admin.wait_for_selector("#login:not([hidden])", timeout=20000)
+                if stage == "axe":
+                    # Two more sessions on purpose, each in its own context: one where the account really
+                    # is not the administrator, one where a panel's load really fails.
+                    roster += walk_roster_refusal(browser, size, auditor, viewport)
+                    roster += walk_stale_panels(browser, size, auditor, viewport)
                 context.close()
         browser.close()
     if probe_email:
@@ -1070,9 +1214,14 @@ def main() -> int:
         [] if len(team_probes) >= expected_walks else
         [f"the team walk ran on {len(team_probes)} of {expected_walks} viewports, "
          "so membership writes were not exercised where it was skipped"])
+    roster = roster + (
+        [] if roster_walks >= expected_walks else
+        [f"the roster walk ran on {roster_walks} of {expected_walks} viewports, "
+         "so the platform directory was not exercised where it was skipped"])
     failures = (gate_failures(auditor.scans)
                 + sorted(set(privacy))
                 + sorted(set(team))
+                + sorted(set(roster))
                 + mobile_fit_failures(auditor.scans, require=not args.desktop_only)
                 + keyboard + csp_failures(auditor.security_headers, [WEB_URL, ADMIN_URL])
                 + hidden_failures(auditor.scans)
@@ -1096,6 +1245,9 @@ def main() -> int:
         "privacy_probe_accounts": sorted(p["email"] for p in privacy_probes),
         "team_states": sorted({s["label"] for s in auditor.scans if "team" in s["label"]}),
         "team_probe_accounts": sorted(team_probes),
+        "roster_states": sorted({s["label"] for s in auditor.scans
+                                 if s["label"].startswith("admin-workspaces") or s["label"] == "admin-trust-stale"}),
+        "roster_walks": roster_walks,
         "axe_scans": sum(1 for s in auditor.scans if s["axe"]),
         "violations_by_impact": auditor.summary(),
         "content_security_policy": auditor.security_headers,
@@ -1112,6 +1264,9 @@ def main() -> int:
           f"{len(privacy_probes)} probe accounts erased ({', '.join(p['email'] for p in privacy_probes) or 'none'})")
     print(f"team walk: {len(team_probes)} roster walks with add/re-role/remove exercised "
           f"({', '.join(sorted(team_probes)) or 'none'})")
+    print(f"roster walk: {roster_walks} platform-admin directory walks, each followed by a non-administrator "
+          f"refusal and an injected panel failure "
+          f"({', '.join(report['roster_states']) or 'none'})")
     for impact, count in sorted(auditor.summary().items()):
         print(f"  {impact}: {count} rule(s)")
     if auditor.errors:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import psycopg2.errors
 import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -99,6 +100,52 @@ def update_ticket(ticket_id: str, body: TicketUpdate, request: Request, actor: A
             raise HTTPException(404, "ticket not found")
         audit(cur, actor, "support.ticket.update", "support_ticket", ticket_id, {"status": body.status}, request.state.request_id)
     return serialize(row)
+
+
+@router.get("/workspaces")
+def workspace_directory(request: Request, actor: Actor = Depends(require_platform_admin)):
+    """Every workspace on the platform, with who owns it and how many people are in it.
+
+    Read through platform_workspaces() rather than a SELECT here: the identity tables carry no row
+    level security (see 018's header for the measured relrowsecurity=f), so a Python-side role check
+    would be the only thing standing between a caller and another tenant's membership. The function
+    answers the same question in the statement that reads the rows, and this endpoint records that a
+    platform admin looked -- cross-tenant identity reads are the thing a reviewer asks for afterwards.
+    """
+    with transaction() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM platform_workspaces(%s)", (actor.user_id,))
+        rows = cur.fetchall()
+        audit(cur, actor, "admin.workspace.directory.read", "platform", "platform",
+              {"workspaces": len(rows)}, request.state.request_id)
+        conn.commit()
+    return serialize({"workspaces": rows})
+
+
+@router.get("/workspaces/{workspace_id}/members")
+def workspace_roster(workspace_id: str, request: Request, actor: Actor = Depends(require_platform_admin)):
+    """One workspace's roster, read and recorded in the same transaction.
+
+    The read of a stranger's membership and the audit row that says it happened must not be separable:
+    two transactions would leave a window where a cross-tenant identity read reached nobody's log. A
+    refusal (guard raised, unknown workspace, unparseable id) rolls the transaction back and writes
+    nothing -- the refusals are visible in the HTTP status, and this endpoint has no partial effect to
+    record.
+    """
+    with transaction() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        try:
+            cur.execute("SELECT * FROM platform_workspace_members(%s,%s::uuid)", (actor.user_id, workspace_id))
+            rows = cur.fetchall()
+        except psycopg2.errors.InvalidTextRepresentation as exc:
+            # A uuid-shaped path segment is the caller's problem to fix, not a server fault: without this
+            # arm `/workspaces/not-a-uuid/members` answers 500 from inside the cast.
+            raise HTTPException(422, "workspace id must be a uuid") from exc
+        except psycopg2.errors.RaiseException as exc:
+            message = str(exc).strip().splitlines()[0]
+            raise HTTPException(404 if "not found" in message else 403, message) from exc
+        audit(cur, actor, "admin.workspace.roster.read", "workspace", workspace_id,
+              {"members": len(rows)}, request.state.request_id)
+        conn.commit()
+    return serialize({"workspace_id": workspace_id, "members": rows})
 
 
 @router.get("/release-evidence")

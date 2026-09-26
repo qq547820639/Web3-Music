@@ -48,6 +48,10 @@ HOST_RUNTIME_KNOBS = {
     "ADMIN_URL": "same, for the admin console",
     "E2E_EMAIL": "which account the accessibility gate signs in as; a host-side choice, not app config",
     "E2E_PASSWORD": "the same account's password, overridable so the gate can run against a copied stack",
+    "E2E_NON_ADMIN_EMAIL": "the second account the gate signs in as, to read the control plane's refusal "
+                           "of the workspace directory; a host-side choice like E2E_EMAIL, and it has to "
+                           "be overridable for the same reason",
+    "E2E_NON_ADMIN_PASSWORD": "that account's password",
     "AXE_CACHE_DIR": "where the gate caches axe-core on the host",
     "WORKER_ID": "per-process lease identity; the code derives a unique one when it is unset",
     "CONTRACTS_DIR": "path inside the api image, where the mounted contracts already land",

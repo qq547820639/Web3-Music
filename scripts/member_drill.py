@@ -319,6 +319,94 @@ def main() -> int:
                                   headers={"Authorization": f"Bearer {tokens['joiner']}", "X-Workspace-Id": other_ws}, timeout=40)
         check("a non-member cannot read another workspace's roster",
               outsider_read.status_code in (403, 400), f"{outsider_read.status_code}")
+
+        # ---- the platform-admin roster view (018 + GET /api/admin/v12/workspaces) ------
+        # This is the one read on the release that crosses a tenant boundary on purpose, so the checks
+        # are arranged around the carrier rather than the endpoint: the identity trio has no row level
+        # security at all (018's header records the measured relrowsecurity=f), which means "is this
+        # caller a platform administrator" has to be answered inside the statement that selects the
+        # rows. A HTTP-only test would keep passing if someone deleted the guard and moved the answer
+        # back into Python, so the same call is also issued as music_app with a forged actor id.
+        #
+        # get_actor still demands X-Workspace-Id for these routes -- the header resolves who is asking,
+        # the path says who is being looked at. So the header below names the administrator's own
+        # workspace while the path names a different tenant's, and one of the checks is that the path
+        # wins; a version that answered from the header would list its own roster and still be green.
+        admin_id = sql("SELECT id FROM users WHERE email='owner@example.local'")
+        admin_ws = sql("SELECT m.workspace_id FROM workspace_members m JOIN users u ON u.id=m.user_id "
+                       "WHERE u.email='owner@example.local' ORDER BY m.created_at LIMIT 1")
+        check("the seed account this section reads with is the platform's administrator",
+              sql(f"SELECT is_platform_admin FROM users WHERE id='{admin_id}'") == "t", admin_id)
+        check("and it holds no membership in the tenant it is about to read",
+              role_of(ws, admin_id) == "-" and admin_ws and admin_ws != ws, f"{admin_ws} vs {ws}")
+
+        admin_h = {"Authorization": f"Bearer {sign_in('owner@example.local')}", "X-Workspace-Id": admin_ws}
+        directory = httpx.get(BASE + "/admin/v12/workspaces", headers=admin_h, timeout=40)
+        check("a platform admin gets the workspace directory",
+              directory.status_code == 200, f"{directory.status_code} {directory.text[:160]}")
+        listed_ws = {w["workspace_id"]: w for w in directory.json().get("workspaces", [])}
+        check("which includes workspaces it is not a member of",
+              {ws, other_ws} <= set(listed_ws), f"directory has {len(listed_ws)} rows, {ws} present={ws in listed_ws}")
+        check("and says who owns each one and how large it is",
+              bool(listed_ws) and all({"owner_email", "member_count"} <= set(w) for w in listed_ws.values()),
+              json.dumps(listed_ws.get(ws, {}), default=str)[:200])
+        counted = sql(f"SELECT count(*) FROM workspace_members WHERE workspace_id='{ws}'")
+        check("the member count it prints is the table's own count",
+              str(listed_ws.get(ws, {}).get("member_count")) == counted,
+              f"directory={listed_ws.get(ws, {}).get('member_count')} table={counted}")
+
+        roster = httpx.get(BASE + f"/admin/v12/workspaces/{ws}/members", headers=admin_h, timeout=40)
+        check("a platform admin reads another tenant's roster without joining it",
+              roster.status_code == 200, f"{roster.status_code} {roster.text[:160]}")
+        admin_rows = roster.json().get("members", [])
+        admin_view = {m["user_id"] for m in admin_rows}
+        tenant_view = {m["user_id"] for m in members(ws, tokens["owner"])}
+        table_view = set(sql(f"SELECT string_agg(user_id::text, ',') FROM workspace_members "
+                             f"WHERE workspace_id='{ws}'").split(","))
+        check("the platform roster, the tenant's own list, and the table agree",
+              admin_view == tenant_view == table_view,
+              f"platform={len(admin_view)} tenant={len(tenant_view)} table={len(table_view)}")
+        own_roster = httpx.get(BASE + f"/admin/v12/workspaces/{admin_ws}/members", headers=admin_h, timeout=40)
+        check("the roster is the workspace named in the path, not the one carried in the header",
+              own_roster.status_code == 200 and admin_rows
+              and {m["user_id"] for m in own_roster.json().get("members", [])} != admin_view,
+              f"header ws={admin_ws} rows={json.dumps(own_roster.json().get('members', []), default=str)[:120]}")
+        # 018 returns the membership role as `member_role` because `user_id` and `email` come from the
+        # users join; the tenant endpoint calls the same fact `role`. Both names are pinned here so a
+        # rename on either side reddens this drill instead of silently emptying the console column.
+        check("and the roles match name for name, not just the crowd",
+              admin_rows and {m["member_role"] for m in admin_rows}
+              == {m["role"] for m in members(ws, tokens["owner"])},
+              json.dumps(admin_rows[:2], default=str)[:200])
+        check("each platform row carries the account state alongside the membership",
+              bool(admin_rows) and all({"account_status", "is_platform_admin", "display_name"} <= set(m) for m in admin_rows),
+              json.dumps(admin_rows[:1], default=str)[:200])
+
+        refused_dir = httpx.get(BASE + "/admin/v12/workspaces", headers=owner_h, timeout=40)
+        refused_roster = httpx.get(BASE + f"/admin/v12/workspaces/{other_ws}/members", headers=owner_h, timeout=40)
+        check("a workspace owner who is not a platform admin gets neither view",
+              refused_dir.status_code == 403 and refused_roster.status_code == 403,
+              f"directory {refused_dir.status_code}, roster {refused_roster.status_code}")
+        guard = refused_as_app(f"SELECT * FROM platform_workspace_members('{joiner_id}','{ws}')")
+        check("the function refuses the same call when the endpoint is bypassed",
+              "platform administrator required" in guard, f"accepted, or refused for another reason: {guard}")
+        as_app_ok = refused_as_app(f"SELECT count(*) FROM platform_workspaces('{admin_id}')")
+        check("music_app may execute it for a real admin, so the refusal above is the guard "
+              "and not a missing GRANT", as_app_ok == "", f"as music_app: {as_app_ok}")
+
+        missing = httpx.get(BASE + f"/admin/v12/workspaces/{uuid.uuid4()}/members", headers=admin_h, timeout=40)
+        check("an unknown workspace id answers 404 rather than an empty roster",
+              missing.status_code == 404, f"{missing.status_code} {missing.text[:160]}")
+        malformed = httpx.get(BASE + "/admin/v12/workspaces/not-a-uuid/members", headers=admin_h, timeout=40)
+        check("a malformed workspace id is the caller's problem to fix, not a 500",
+              malformed.status_code == 422, f"{malformed.status_code} {malformed.text[:160]}")
+
+        check("the directory read is recorded as an audit event",
+              sql(f"SELECT count(*) FROM audit_events WHERE action='admin.workspace.directory.read' "
+                  f"AND actor_id='{admin_id}'") != "0")
+        check("and so is which roster was read",
+              sql(f"SELECT count(*) FROM audit_events WHERE action='admin.workspace.roster.read' "
+                  f"AND actor_id='{admin_id}' AND subject_id='{ws}'") != "0")
     finally:
         for user_id in (owner_id, joiner_id, outsider_id, transferee_id):
             sql(f"DELETE FROM auth_sessions WHERE user_id='{user_id}'")

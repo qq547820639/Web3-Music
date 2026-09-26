@@ -277,11 +277,37 @@ function bindNav() {
     });
     $$('.view').forEach(v => v.classList.toggle('active', v.id === `view-${b.dataset.view}`));
     if (b.dataset.view === 'release') await loadRelease();
+    if (b.dataset.view === 'workspaces') await loadWorkspaces();
   });
 }
+// Every container a loader owns, so a refusal empties all of them. Leaving the previous render standing
+// under a heading that says 紧急总闸 would let an operator read a stale figure -- or click a switch whose
+// state was never re-read -- as though it were current, which is the failure this console exists to avoid.
+const PANELS = [
+  [loadOverview, ['#stats', '#switches', '#provider', '#quality', '#audit']],
+  [loadJobs, ['#jobs']],
+  [loadBilling, ['#balances', '#payments', '#payouts']],
+  [loadTrust, ['#cases', '#tickets']],
+];
 async function refreshAll() {
-  await Promise.all([loadOverview(), loadJobs(), loadBilling(), loadTrust()]);
+  // allSettled, not all. Measured against the live stack, the four panels below answer 200 for any
+  // logged-in member of a workspace -- only /payouts and /workspaces are platform-administrator routes
+  // -- so the shape this actually defends against is a 5xx or a dropped connection: under Promise.all
+  // one such load rejected the group, the boot handler caught it, and it answered by hiding #app and
+  // putting the operator back at the login form while the session was still valid. Now the app stays
+  // up and each panel that failed says so in its own container, because a stale figure under a heading
+  // that reads 最近审计事件 is the one thing this console must not show as current.
+  const settled = await Promise.allSettled(PANELS.map(([load]) => load()));
+  const refused = [];
+  settled.forEach((result, index) => {
+    if (result.status === 'fulfilled') return;
+    refused.push(result.reason.message);
+    const note = `<p class="muted">${escapeHtml(result.reason.message)} · 这一格本轮未能载入，屏幕上的旧数字不代表当前状态。</p>`;
+    PANELS[index][1].forEach((selector) => { $(selector).innerHTML = note; });
+  });
+  if (refused.length) toast(`部分面板未能载入：${refused[0]}`);
   if ($('#view-release').classList.contains('active')) await loadRelease();
+  if ($('#view-workspaces').classList.contains('active')) await loadWorkspaces();
 }
 $('#refresh').onclick = refreshAll;
 async function loadOverview() {
@@ -382,6 +408,30 @@ async function loadTrust() {
       toast('工单已解决');
     } catch (e) {
       toast(e.message);
+    }
+  });
+}
+async function loadWorkspaces() {
+  const roster = $('#workspaceRoster');
+  let workspaces = [];
+  try {
+    workspaces = (await api('/api/admin/v12/workspaces')).workspaces;
+  } catch (e) {
+    // The refusal has to be readable rather than an empty grid: this view exists so an operator can
+    // tell "no workspaces" apart from "you are not allowed to see them".
+    $('#workspaceDirectory').innerHTML = `<div class="panel">${escapeHtml(e.message)}<br><small>工作区名册仅平台管理员可访问。</small></div>`;
+    roster.hidden = true;
+    return;
+  }
+  $('#workspaceDirectory').innerHTML = workspaces.length ? workspaces.map(w => `<article class="gate-card"><h2>${escapeHtml(w.workspace_name)}</h2><div class="evidence-row"><div><b>${escapeHtml(w.workspace_id)}</b><br><small class="muted">状态 ${escapeHtml(w.workspace_status)} · 计划 ${escapeHtml(w.plan)} · 成员 ${Number(w.member_count)} 人 · 属主 ${escapeHtml(w.owner_display_name || '（无）')}${w.owner_email ? ' &lt;' + escapeHtml(w.owner_email) + '&gt;' : ''} · 建立于 ${fmtDate(w.workspace_created_at)}</small></div><button class="secondary workspace-roster-btn" data-id="${escapeHtml(w.workspace_id)}" data-name="${escapeHtml(w.workspace_name)}" aria-label="载入 ${escapeHtml(w.workspace_name)} 的成员名册">查看名册</button></div></article>`).join('') : '<p>暂无工作区</p>';
+  $$('.workspace-roster-btn').forEach(b => b.onclick = async () => {
+    roster.hidden = false;
+    roster.innerHTML = '<p class="muted">载入中…</p>';
+    try {
+      const detail = await api(`/api/admin/v12/workspaces/${b.dataset.id}/members`);
+      roster.innerHTML = `<h2>${escapeHtml(b.dataset.name)} 的成员</h2><p class="muted">只读。改角色、移人与移交所有权都在 Studio 的「团队协作」面板里，由该工作区的属主或管理员当场交出凭据后发起。</p>` + (detail.members.length ? detail.members.map(m => `<div class="table-row"><span><b>${escapeHtml(m.display_name)}</b><br><small class="muted">${escapeHtml(m.email)}</small></span><span>${escapeHtml(m.member_role)}</span><span class="status ${escapeHtml(m.account_status)}">${escapeHtml(m.account_status)}</span><span class="muted">${m.is_platform_admin ? '平台管理员' : '—'}</span><span class="muted">${fmtDate(m.joined_at)}</span></div>`).join('') : '<p>该工作区目前没有成员行。</p>');
+    } catch (e) {
+      roster.innerHTML = `<p>${escapeHtml(e.message)}</p>`;
     }
   });
 }
