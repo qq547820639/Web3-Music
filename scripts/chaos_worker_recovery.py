@@ -64,7 +64,12 @@ def verify():
             break
         time.sleep(1)
     if not recovered:
-        raise SystemExit("expired lease was not reclaimed by the restarted worker")
+        seen = request("GET", f"/jobs/{job_id}", token, workspace)["job"]
+        raise SystemExit(
+            f"job {job_id} never got a second attempt: last read status={seen['status']} "
+            f"attempt={seen.get('attempt_count')}, leased at attempt={state['attempt']}. "
+            "A second claimant that took the expired lease reads exactly like a restarted worker "
+            "that never reclaimed it, so check `docker compose ps` for more than one worker.")
     request("POST", f"/admin/jobs/{job_id}/cancel", token, workspace)
     end = time.time() + 45
     while time.time() < end:

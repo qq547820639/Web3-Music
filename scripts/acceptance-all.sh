@@ -68,6 +68,7 @@ host_load_reading() {
   echo "host=$(hostname 2>/dev/null || echo unknown)"
   echo "$(host_load_reading)"
   echo "git_commit=$(git rev-parse HEAD 2>/dev/null || echo unavailable)"
+  echo "fresh_database=${FRESH:-0}"
   echo ""
   echo "STEP | RESULT | STARTED_AT | FINISHED_AT"
 } > "$RESULTS_FILE"
@@ -147,6 +148,14 @@ step_static_verify() {
 }
 
 step_stack_up() {
+  # FRESH=1 先把卷连同容器一起清掉。这不是省事：记录里那句「权威运行跑在全新数据库上」此前只是
+  # 文档对操作者的口头要求，脚本既不执行也不留读数，所以一次忘了清栈的运行和一次清过栈的运行在
+  # SUMMARY 里长得一模一样。本轮就撞上了这个区别：03:53 那次第 5 步红在 `expired lease was not
+  # reclaimed`，而库里那条租约正被 18 分钟前手工起起来的 worker-b 心跳着。默认仍是 0（不清卷），
+  # 因为这套栈同时是开发用的栈；认证 run 显式带上 FRESH=1，读数写进 SUMMARY 头部。
+  if [ "${FRESH:-0}" = "1" ]; then
+    docker compose --profile '*' down -v --remove-orphans
+  fi
   # 逐个构建，而不是 `up --build`。后者会在 Colima 那台 4 vCPU / 5.8 GiB 的虚机里同时拉起全部镜像，
   # 实测权威运行 acceptance-20260926T161826Z 第 2 步：worker 的 `apt-get install ffmpeg` 与另外两个
   # 镜像的 pip 下载挤在同一时刻，apt 那一步被 SIGKILL（退码 137），而同一条链上 payment/provider 两个
