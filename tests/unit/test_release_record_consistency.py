@@ -522,10 +522,21 @@ def test_the_rows_clause_fires_on_the_fourth_face():
 
 
 def test_the_step_width_clause_fires_on_the_fourth_face():
+    """The anchor is read from the face, not typed here.
+
+    This control used to hardcode "**20 steps PASS". That made the guard a second face of the very
+    figure it judges: the round that widened the pipeline had to remember to edit the test as well, and
+    a missed edit reads as a broken control rather than as a stale document.
+    """
     runs = archived_runs()
-    stale = mutated_status_line("**20 steps PASS", "**19 steps PASS")
+    line = sentence_face(STATUS)
+    head = re.search(r"\*\*(\d+) steps PASS and \d+ recorded as skipped\*\*", line)
+    assert head, "the status face no longer states the step width this clause guards"
+    stated, one_less = int(head.group(1)), int(head.group(1)) - 1
+    stale = mutated_status_line(head.group(0), head.group(0).replace(f"**{stated} steps PASS",
+                                                                    f"**{one_less} steps PASS", 1))
     problems = problems_for(STATUS, runs, stale)
-    assert any("says 19 steps pass" in p for p in problems), problems
+    assert any(f"says {one_less} steps pass" in p for p in problems), problems
 
 
 def test_the_host_clause_fires_on_the_fourth_face():
@@ -544,12 +555,24 @@ def test_the_repeat_figure_clause_fires_on_a_stale_count():
 
     It read 12 while seven archived runs were 20 rows wide -- the same kind of drift as a stale commit
     list, in the one clause of the sentence that was never recomputed when the archive grew.
+
+    Both arms take their numbers from the archive the guard is reading, so widening the pipeline moves
+    the control with the documents instead of breaking it: the red arm is the stated width with a count
+    the archive cannot support, the quiet arm is a different width with the count the archive does give.
     """
     runs = archived_runs()
     assert problems_for(CHECKLIST, runs) == []
-    stale = mutated_line(CHECKLIST, "同样 20 行绿了 7 次", "同样 20 行绿了 12 次")
+    line = sentence_face(CHECKLIST)
+    stated = re.search(r"同样 (\d+) 行绿了 (\d+) 次", line)
+    assert stated, "the checklist no longer carries the reproducibility figure this clause guards"
+    greens, _reds = split(runs, certified_stamp_of(line))
+    width = int(stated.group(1))
+    actual = sum(1 for r in greens if r["rows"] == width)
+    stale = mutated_line(CHECKLIST, stated.group(0), f"同样 {width} 行绿了 {actual + 5} 次")
     problems = problems_for(CHECKLIST, runs, stale)
-    assert any("went green 12 times, the archive has 7" in p for p in problems), problems
+    assert any(f"went green {actual + 5} times, the archive has {actual}" in p for p in problems), problems
     # ...and the clause must stay quiet when the two numbers describe the same archive differently.
-    other = mutated_line(CHECKLIST, "同样 20 行绿了 7 次", "同样 19 行绿了 1 次")
+    other_width = sorted({r["rows"] for r in greens})[0]
+    other_count = sum(1 for r in greens if r["rows"] == other_width)
+    other = mutated_line(CHECKLIST, stated.group(0), f"同样 {other_width} 行绿了 {other_count} 次")
     assert problems_for(CHECKLIST, runs, other) == [], problems_for(CHECKLIST, runs, other)
