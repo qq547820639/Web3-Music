@@ -14,9 +14,12 @@
 | 本脚本步骤 | 等价 CI job |
 |---|---|
 | static-verify（含 `pytest tests/unit`） | `static-and-unit` |
-| compose 起栈 → acceptance(test.sh) → contract → chaos → backup → restore → 复跑 acceptance | `compose-acceptance` |
-| commercial-flow（commercial-test 覆层） | `commercial-flow` |
+| compose-up → acceptance → contract-test → chaos → lease-contention → restore-fidelity-snapshot → backup-restore → restore-fidelity-compare → acceptance-rerun → erasure/mfa/member/media-scan 四条演练 → generic-rest-roundtrip | `compose-acceptance` |
+| commercial-flow（commercial-test 覆层）+ market-reconciliation + reservation-race | `commercial-flow` |
+| browser-a11y（`BROWSER=1` 才在本地跑） | `browser-a11y`（CI 每次都跑） |
 | capacity-gate-500（可选） | `capacity-500` |
+
+> 「链上跑的脚本 CI 也跑」这句话现在有机检：`tests/unit/test_ci_covers_chain_payloads.py` 取 `acceptance-all.sh` 里所有 `scripts/*.py|*.sh` 载荷与 `ci.yml` 的载荷做差集，多一个就红——本轮 `media_scan_drill.py` 与 `restore_fidelity.py` 正是这条差集查出来的（前者有第 14 步却没有 CI 作业，后者只在本地量过）。唯一的豁免是 `test.sh`：CI 直接执行它的载荷 `docker compose --profile test run --rm acceptance`，豁免理由由同一条测试复核。
 
 > 💡 若本机没有 Docker，直接 `git push` 到仓库即可让 GitHub Actions 替你执行同一套 E2E，结果在仓库 **Actions** 页查看，日志以 artifacts 留存（`compose-logs` / `commercial-compose-logs` / `release-evidence`）。
 

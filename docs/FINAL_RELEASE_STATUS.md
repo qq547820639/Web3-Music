@@ -851,8 +851,7 @@ clear the volumes and records `fresh_database=` in the header, so "run on a fres
 being a promise about the operator. `docs/E2E_ACCEPTANCE_RUNBOOK.md` §4 documented a 10-step chain
 including a `unit-test-docker` step that exists nowhere in the script; it now carries all 21.
 
-**Proving the guards have teeth, and where the guard itself was the defect.** The ratchet meant to
-protect step 2 pinned the literal string `$(docker compose config --services)` -- it had frozen the
+**Where the guard itself was the defect.** The ratchet meant to protect step 2 pinned the literal string `$(docker compose config --services)` -- it had frozen the
 buggy spelling as the requirement, which is why it stayed green through the whole defect. It now
 judges the shape (enumeration derived from `compose config`, profile-wide, fail-fast) and carries a
 control that feeds it the profile-blind loop and asserts that only the new clause reddens. Verified
@@ -865,3 +864,21 @@ The single-claimant count is `2` with `worker-b` up and `1` after `rm -fs`, on b
 `docker compose ps` and the `--profile '*'` form -- which is worth writing down, because `ps`
 reports a *running* profile-gated container without the flag, so this predicate is not the same trap
 as `config --services` was.
+
+**The same question asked of CI.** The chain dispatches seventeen scripts; the workflow dispatched
+fourteen of them. `scripts/media_scan_drill.py` -- the drill that proves a media asset cannot call
+itself clean without a scanner behind it, i.e. the whole point of migration 020 -- had a chain step and
+no CI job, and `scripts/restore_fidelity.py` (the byte-and-ledger fingerprint around backup/restore) was
+measured only on this host. Both were invisible to every existing guard because nothing compared the
+two dispatch lists. `tests/unit/test_ci_covers_chain_payloads.py` now does, with its own red side:
+deleting the media-scan step from the real `.github/workflows/ci.yml` (sha `a559d952103e` ->
+`0b72189cd969`) fails `test_every_chain_payload_is_dispatched_by_ci_or_exempt`, and restoring it makes
+the file's six tests pass again. The one exemption, `test.sh`, states the reading that earns it (CI runs
+`docker compose --profile test run --rm acceptance` inline) and a test re-checks that that line is still
+there, so the exemption cannot outlive the fact.
+
+**Unverified, and why:** the CI jobs themselves were not observed running. This repository is private,
+`gh` has no session here and the GitHub connector exposes no workflow-run read, so adding a step is a
+coverage claim, not a pass claim; the equivalent steps are green on this host (media-scan drill 14/14 at
+chain step 14, restore-fidelity snapshot and compare at steps 7 and 9 of
+`release-evidence/acceptance-20260927T040234Z/`), and that is the strongest reading available locally.

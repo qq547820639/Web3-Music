@@ -83,6 +83,8 @@ jobs:
             exit 1
           fi
           cat /tmp/contention.log
+      - name: Absolute fingerprint of what is about to be backed up
+        run: python scripts/restore_fidelity.py snapshot
       - run: ./scripts/backup.sh ci
       - name: Restore from backup (with diagnostics)
         shell: bash
@@ -91,6 +93,8 @@ jobs:
             echo "::error title=restore::$(tail -25 /tmp/restore.log | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
+      - name: Restore did not change a byte of the media or the ledger
+        run: python scripts/restore_fidelity.py compare
       - run: docker compose --profile test run --rm acceptance
       - name: Subject access export and erasure drill
         shell: bash
@@ -119,6 +123,15 @@ jobs:
             exit 1
           fi
           tail -5 /tmp/member.log
+      - name: Media scan boundary drill
+        shell: bash
+        run: |
+          if ! python scripts/media_scan_drill.py > /tmp/scan.log 2>&1; then
+            echo "::error title=media-scan-drill::$(grep -E '^  - |FAIL|failed' /tmp/scan.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            tail -40 /tmp/scan.log
+            exit 1
+          fi
+          tail -5 /tmp/scan.log
       - name: Third-party provider adapter round trip
         shell: bash
         run: |
