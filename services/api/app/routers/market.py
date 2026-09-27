@@ -17,7 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..auth import Actor, require_roles
-from ..common import PAGE_LIMIT_DEFAULT, PAGE_LIMIT_MAX, audit, serialize, setting_enabled
+from ..common import PAGE_LIMIT_DEFAULT, PAGE_LIMIT_MAX, _db_refusal, audit, serialize, setting_enabled
 from ..db import fetch_all, fetch_one, transaction
 from ..domain.commerce import assert_offer_rights, canonical_hash, issue_credits, order_number, revoke_credits
 from ..domain.events import emit
@@ -637,7 +637,13 @@ def submit_to_brief(brief_id: str, body: SubmissionCreate, request: Request, act
 def award_submission(submission_id: str, body: BrandAwardCreate, request: Request, actor: Actor = Depends(require_roles("owner", "admin", "billing"))):
     if not setting_enabled("brand_market_enabled") or not setting_enabled("payments_enabled"):
         raise HTTPException(503, "brand awards or payments are disabled")
-    prepared = fetch_one("SELECT * FROM prepare_brand_award(%s)", (submission_id,), actor.workspace_id)
+    try:
+        prepared = fetch_one("SELECT * FROM prepare_brand_award(%s)", (submission_id,), actor.workspace_id)
+    except psycopg2.Error as exc:
+        # The function refuses a held or unlicensable asset by RAISE -- the right predicate, in the
+        # wrong envelope: an uncaught database error reached the browser as a 500, which reads as a
+        # fault of ours rather than a decision about the asset, and hides the reason it did give.
+        raise _db_refusal(exc)
     if not prepared:
         raise HTTPException(404, "awardable submission not found")
     existing = fetch_one(

@@ -132,6 +132,15 @@ jobs:
             exit 1
           fi
           tail -5 /tmp/scan.log
+      - name: Public rights intake drill
+        shell: bash
+        run: |
+          if ! python scripts/report_drill.py > /tmp/report.log 2>&1; then
+            echo "::error title=report-drill::$(grep -E '^  - |FAIL|failed' /tmp/report.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            tail -40 /tmp/report.log
+            exit 1
+          fi
+          tail -5 /tmp/report.log
       - name: Third-party provider adapter round trip
         shell: bash
         run: |

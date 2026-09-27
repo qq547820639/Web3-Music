@@ -14,7 +14,7 @@
 | 本脚本步骤 | 等价 CI job |
 |---|---|
 | static-verify（含 `pytest tests/unit`） | `static-and-unit` |
-| compose-up → acceptance → contract-test → chaos → lease-contention → restore-fidelity-snapshot → backup-restore → restore-fidelity-compare → acceptance-rerun → erasure/mfa/member/media-scan 四条演练 → generic-rest-roundtrip | `compose-acceptance` |
+| compose-up → acceptance → contract-test → chaos → lease-contention → restore-fidelity-snapshot → backup-restore → restore-fidelity-compare → acceptance-rerun → erasure/mfa/member/media-scan/report 五支演练 → generic-rest-roundtrip | `compose-acceptance` |
 | commercial-flow（commercial-test 覆层）+ market-reconciliation + reservation-race | `commercial-flow` |
 | browser-a11y（`BROWSER=1` 才在本地跑） | `browser-a11y`（CI 每次都跑） |
 | capacity-gate-500（可选） | `capacity-500` |
@@ -38,7 +38,7 @@
 | Python（**跑在宿主上**，不是容器里） | 3.10+（PEP 604 语法）+ `pytest` | `python -V`（注意是 `python` 而不是 `python3`） |
 | Node.js | 任意能 `--check` ES2020 的版本 | `node --version` |
 
-> **第 1 步与四支演练在宿主的 Python 里跑，不在容器里**：`scripts/static-verify.sh` 直接执行
+> **第 1 步与五支演练在宿主的 Python 里跑，不在容器里**：`scripts/static-verify.sh` 直接执行
 > `python -m compileall`、`node --check`、`sh -n`、`scripts/authority_matrix.py --check` 与
 > `pytest -q tests/unit`，`python scripts/*_drill.py` 同理。本机没装全局 `python`，这条链用的是
 > `/Users/panhao/.venvs/w3m-e2e`（3.12.13），依赖 = `services/api/requirements.txt`
@@ -141,13 +141,14 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 12 | mfa-drill | `python scripts/mfa_drill.py` | 退出码 0，`mfa drill: N/N checks passed` |
 | 13 | member-drill | `python scripts/member_drill.py` | 退出码 0，`member drill: N/N checks passed` |
 | 14 | media-scan-drill | `python scripts/media_scan_drill.py` | 退出码 0，`media scan drill: N/N checks passed`（伪造判决被 DB 拒、诚实 `unscanned` 资产仍可听、且无残留行） |
-| 15 | commercial-flow | `docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d` → 同覆层 `--profile commercial-test run --rm acceptance-commercial` | 退出码 0 |
-| 16 | reservation-race | `python scripts/reservation_race.py`（需要步骤 15 的商业覆层仍在跑） | 打印 `reservation race passed: ... exactly one active licence` |
-| 17 | market-reconciliation | `python scripts/reconcile_market.py` | 打印 `market reconciliation: N/N checks passed`（licence/交付/退款/分账四表对账与 85/15 分账策略一致） |
-| 18 | provider-regression-100 | `python scripts/provider_regression.py "${REGRESSION_JOBS:-100}" "${REGRESSION_CONCURRENCY:-8}"` | 打印 `provider regression: N/N completed, error rate ...` 且无 `FAIL:` 行；台账闭合、无悬挂 hold |
-| 19 | generic-rest-roundtrip | `docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up --build -d` → `python scripts/provider_regression.py "${GENERIC_REST_JOBS:-25}" 4 generic_rest` | 退出码 0；`/api/bootstrap` 报出的 provider 身份必须是 `generic_rest`，否则 `expected provider ...` 直接判红 |
-| 20 | browser-a11y | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (BROWSER=1 才执行)`；`BROWSER=1` 时 `python scripts/browser_a11y.py --self-test` → `python scripts/browser_a11y.py` | 退出码 0，`browser a11y + walkthrough passed`；前置为 playwright + Chromium（`scripts/requirements-browser.txt`） |
-| 21 | capacity-gate-500 | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (CAPACITY=1 才执行)`；`CAPACITY=1` 时先 `docker compose down --remove-orphans`（商业覆层同做一次）释放端口，再 `./scripts/capacity-gate-500.sh` | 错误率 ≤ `CAPACITY_MAX_ERROR_RATE`（默认 1%）、p95 ≤ `CAPACITY_MAX_P95_MS`（默认 800ms），随后容量栈里的 acceptance 复跑通过 |
+| 15 | report-drill | `python scripts/report_drill.py` | 退出码 0，`report drill: N/N checks passed`（三种 subject 的响应逐字段相同、举报邮箱不进租户可见的那张单子、建成后的通知改不动也删不掉、投递窗口按地址与全站各一只且拒绝一次不花费） |
+| 16 | commercial-flow | `docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d` → 同覆层 `--profile commercial-test run --rm acceptance-commercial` | 退出码 0 |
+| 17 | reservation-race | `python scripts/reservation_race.py`（需要步骤 16 的商业覆层仍在跑） | 打印 `reservation race passed: ... exactly one active licence` |
+| 18 | market-reconciliation | `python scripts/reconcile_market.py` | 打印 `market reconciliation: N/N checks passed`（licence/交付/退款/分账四表对账与 85/15 分账策略一致） |
+| 19 | provider-regression-100 | `python scripts/provider_regression.py "${REGRESSION_JOBS:-100}" "${REGRESSION_CONCURRENCY:-8}"` | 打印 `provider regression: N/N completed, error rate ...` 且无 `FAIL:` 行；台账闭合、无悬挂 hold |
+| 20 | generic-rest-roundtrip | `docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up --build -d` → `python scripts/provider_regression.py "${GENERIC_REST_JOBS:-25}" 4 generic_rest` | 退出码 0；`/api/bootstrap` 报出的 provider 身份必须是 `generic_rest`，否则 `expected provider ...` 直接判红 |
+| 21 | browser-a11y | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (BROWSER=1 才执行)`；`BROWSER=1` 时 `python scripts/browser_a11y.py --self-test` → `python scripts/browser_a11y.py` | 退出码 0，`browser a11y + walkthrough passed`；前置为 playwright + Chromium（`scripts/requirements-browser.txt`） |
+| 22 | capacity-gate-500 | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (CAPACITY=1 才执行)`；`CAPACITY=1` 时先 `docker compose down --remove-orphans`（商业覆层同做一次）释放端口，再 `./scripts/capacity-gate-500.sh` | 错误率 ≤ `CAPACITY_MAX_ERROR_RATE`（默认 1%）、p95 ≤ `CAPACITY_MAX_P95_MS`（默认 800ms），随后容量栈里的 acceptance 复跑通过 |
 
 **判读要点**：每步结束后控制台会打印 `STEP N RESULT: PASS/FAIL`。任一步 `FAIL` 会立即停止，并提示 `该步骤失败，日志在 …`。
 
@@ -158,7 +159,7 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 门禁 | 判定标准 | Go | No-Go |
 |---|---|---|---|
 | 静态校验 | `static-verify.sh` 退出码 0 | ✅ | ❌ |
-| 单元测试 | `pytest -q tests/unit` 全过（基线 46，不得少于 46） | ✅ | ❌ |
+| 单元测试 | `pytest -q tests/unit` 全过。用例数由 `pytest -q tests/unit --collect-only -q` 现读（本轮实测 382 个收集实例，含参数化展开），门禁判的是退出码 0、且数量不得比上一轮少 | ✅ | ❌ |
 | 默认 E2E | `acceptance`（步骤 4）全过 | ✅ | ❌ |
 | 契约测试 | `contract-test.sh` 全过 | ✅ | ❌ |
 | 故障恢复 | `chaos-worker-recovery.sh` verify 通过 | ✅ | ❌ |
@@ -194,8 +195,8 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 步骤 3/10 账本差异或断言失败 | 前序步骤残留脏数据、`restore` 后未等待健康 | 确认 §4 顺序执行；`docker compose ps` 看 healthcheck；必要时 `scripts/reset.sh` 清栈后重跑 |
 | 步骤 10（复跑 acceptance）额度泄漏/余额不符 | 恢复点与测试数据不一致 | 确认步骤 8 使用 `backups/acceptance`；检查 `SUMMARY.txt` 时间线是否连续 |
 | 步骤 5 chaos 超时 | worker 租约等待不够 | 调大 `LEASE_WAIT_SECONDS`（默认 35）后单独重跑 `scripts/chaos-worker-recovery.sh` |
-| 步骤 15 商业闭环失败 | Provider 未处于 `approved_commercial` | 确认 commercial-test 覆层已应用（脚本已自动加 `-f`）；检查 `commercial-compose-logs.txt` |
-| 步骤 21 容量 Gate 失败 | 资源不足 / Provider 限流 | 提高 CPU/RAM，调大 `CAPACITY_MAX_P95_MS`，或 `KEEP_CAPACITY_STACK=1` 保留现场排查 |
+| 步骤 16 商业闭环失败 | Provider 未处于 `approved_commercial` | 确认 commercial-test 覆层已应用（脚本已自动加 `-f`）；检查 `commercial-compose-logs.txt` |
+| 步骤 22 容量 Gate 失败 | 资源不足 / Provider 限流 | 提高 CPU/RAM，调大 `CAPACITY_MAX_P95_MS`，或 `KEEP_CAPACITY_STACK=1` 保留现场排查 |
 
 ---
 

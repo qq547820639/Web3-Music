@@ -66,3 +66,11 @@ License 必须冻结：卖方、买方、Asset、Rights Manifest、Template、Te
 ## 投诉和 Legal Hold
 
 投诉受理后可立即：暂停 Offer、禁止导出、撤回公开分享、冻结 License、保留所有证据。Legal Hold 下不得删除 Asset、媒体、Rights、Audit、Payment 或 Ledger 记录。
+
+上面两句是政策意图；下面两句是本轮实测到的实现面，二者不同，分开写才不会让政策冒充代码。
+
+**受理入口已经有了**（此前这节写的「受理」在仓库里没有任何对外通道）。`db/migrations/021_public_rights_report.sql` 加 `rights_reports` 与五条 `SECURITY DEFINER` 函数，`POST /api/reports` 与 `POST /api/reports/status` 无需账号、无需会话即可使用，回执令牌是唯一的取回凭据；平台侧队列与人工挂案走 `GET /api/moderation/reports` 与 `POST /api/moderation/reports/{id}/link`，两者都要求平台管理员角色。三条设计约束各自有常驻判据（流水线第 15 步 `scripts/report_drill.py`，50/50）：真实 id、未知 id、畸形 id 三种投递返回同一个形状（收件口不能当目录探针）；举报人邮箱只存在于 `rights_reports`，不进租户能 `SELECT *` 读到的 `moderation_cases.evidence`；通知一经写入，含超级用户角色在内改不动也删不掉，处置只能另加一条记录。
+
+**这五种处置动作里，平台目前真正拦得住的是三种。** `legal_hold` 生效的位置：市场上架（`db/migrations/002_creation_asset_market_os.sql:568,574`）、Offer 创建（同文件 `:675,680`）、品牌中标（`004_brand_award_commercial_flow.sql:25,30` 与更正其歧义列的 `009_prepare_brand_award_ambiguous_column.sql:26,31`），以及 Python 侧的 `assert_offer_rights`（`services/api/app/domain/commerce.py:48`，实调点 `services/api/app/routers/market.py:492,510,626`）——判据都是「最新 manifest 写了 legal_hold，或该资产上有 `legal_hold`／`open|triage|restricted|appealed` 的案件」。拦不住的两种，写清楚而不是假装拦得住：**禁止导出/下载**——`services/api/app/main.py:1183` 走的是 `domain/rights.py:43` 的 `allowed()`，它只看 `capabilities.download.status`，从不读 `legal_hold`；**冻结已发出的 License 与停止交付**、以及**付款/分账**与**主体自助删除**同样不看这条布尔。
+
+**「保留所有证据」这一半也不是 Legal Hold 给的，而是全局 append-only 给的，而且它的名单比这句话窄。** 无差别拒绝 UPDATE 与 DELETE 的表：`audit_events`、`ledger_entries`、`ledger_transactions`、`asset_snapshots`、`rights_manifests`、`song_spec_revisions`、`contribution_events`、`provider_capability_snapshots`、`audio_candidates`、`master_selections`（`001:461-468`、`001:185-186`）与 `ai_runs`、`product_events`、`revenue_splits`（`002:460-464`）。名单之外是三处具体缺口：`rights_evidence` 与 `licenses` 只挂 `BEFORE DELETE`（`002:462-463`），**证据内容仍可改写、许可仍可改状态**；`media_assets` 没有任何这类触发器，也就是**保留之下的媒体本身仍然删得掉**；`payouts` 的 UPDATE 走的是状态机守卫（`003:39`）而非冻结布尔。所以本节的字面承诺要按这两段读：政策写的是意图，上面列的是今天的机制，二者之间的差额登记在 `docs/RELEASE_CHECKLIST.md`「待属主定值」第 6 条——那条同时给出这条布尔挡什么、不挡什么的完整分母，以及「谁的保留算数」（保留由员工 `opened_by` 开立，与被删主体往往不是同一人）这个必须由法务/产品定的先后关系。

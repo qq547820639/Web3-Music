@@ -380,8 +380,7 @@ def login(page, base: str, auditor: Auditor, viewport: str, tries: int = 5, emai
             # The counter is keyed per account (login:sha256(email)) and counts ONLY failed
             # credentials, in a fixed 60-second window: a refusal reads it without extending it,
             # so 61s is guaranteed to clear it. Successful logins no longer spend the budget,
-            # which is why the eight authentications this suite performs are no longer what
-            # fills the window.
+            # which is why the logins this suite performs are no longer what fills the window.
             page.wait_for_timeout(61000 if RATE_LIMITED.search(detail) else 3000)
     raise SystemExit(f"login never succeeded after {tries} attempts: {detail or 'no error text'}")
 

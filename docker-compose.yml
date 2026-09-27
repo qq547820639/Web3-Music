@@ -180,7 +180,7 @@ services:
   # MemTotal=6198632448），而 ClamAV 官方文档（https://docs.clamav.net/ ，2026-09-27 打开）写的最低
   # 推荐内存就是 3 GiB+、磁盘 5 GiB 空闲；`docker pull clamav/clamav:1.4` 在这台 arm64 宿主上回答
   # `no matching manifest for linux/arm64/v8`，也就是只能靠平台模拟跑，冷启动还要 freshclam 联网取库。
-  # 把一个 3 GiB 起的常驻体塞进还要跑整条 20 步认证链的 VM，代价由部署方按容量决定，不由这里默认。
+  # 把一个 3 GiB 起的常驻体塞进还要跑整条 22 步认证链的 VM，代价由部署方按容量决定，不由这里默认。
   clamav:
     image: clamav/clamav:1.4
     platform: linux/amd64

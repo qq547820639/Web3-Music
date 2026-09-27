@@ -36,6 +36,10 @@ CARRIERS = {
     "POST /api/auth/mfa/challenge": ("_mfa_throttle",),
     "POST /api/provider-webhooks/{provider}": ("hmac.compare_digest",),
     "POST /api/payment-webhooks/{provider}": ("hmac.compare_digest",),
+    # The public intake (021). Two writes anyone can attempt without a session, each named by what
+    # actually decides: the arrival windows, and the receipt whose hash the database compares.
+    "POST /api/reports": ("_report_gate",),
+    "POST /api/reports/status": ("token_hash",),
 }
 EXPECTED_KINDS = {"require_roles", "platform_admin", "workspace_member", "session", "app-level-only"}
 

@@ -266,6 +266,16 @@ step_media_scan_drill() {
   python scripts/media_scan_drill.py
 }
 
+step_report_drill() {
+  # 对外公示的侵权通知收件口（021）：这是全平台唯一一条无需账号、无需会话、无需工作区就能写入的路径，
+  # 所以这一步量的是三件事——它不能回答「这个 id 存不存在」（三种 subject 的响应逐字段相同）、
+  # 举报人的邮箱不会顺着租户能看见的那张单子漏出去（assets.py 的 SELECT * 看得见案件 evidence）、
+  # 以及通知是证据而不是工单：建成后任何人（含超级用户角色）改不动、删不掉，只能另加一条处置记录。
+  # 还有一条是这一轮才补上的：表上的 CHECK 与请求模型的字面规则不完全同形（btrim 与 min_length），
+  # 数据库拒的就是 422，不得以 500 的样子出现。
+  python scripts/report_drill.py
+}
+
 step_commercial() {
   build_images_in_order -f docker-compose.yml -f docker-compose.commercial-test.yml
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up -d
@@ -323,6 +333,7 @@ run_step "erasure-drill" step_erasure_drill
 run_step "mfa-drill" step_mfa_drill
 run_step "member-drill" step_member_drill
 run_step "media-scan-drill" step_media_scan_drill
+run_step "report-drill" step_report_drill
 run_step "commercial-flow" step_commercial
 run_step "reservation-race" step_reservation_race
 run_step "market-reconciliation" step_reconcile_market

@@ -685,6 +685,32 @@
     },
     {
       "method": "GET",
+      "path": "/api/moderation/reports",
+      "authority": "platform_admin",
+      "roles": "",
+      "writes": false,
+      "step_up": false,
+      "endpoint": "app:moderation_report_queue",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/moderation/reports/{report_id}/link",
+      "authority": "platform_admin",
+      "roles": "",
+      "writes": true,
+      "step_up": false,
+      "endpoint": "app:moderation_report_link",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/api/offers",
       "authority": "require_roles",
       "roles": "admin,billing,creator,owner,reviewer,viewer",
@@ -981,6 +1007,32 @@
       "writes": true,
       "step_up": false,
       "endpoint": "app:provider_webhook",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/reports",
+      "authority": "app-level-only",
+      "roles": "",
+      "writes": true,
+      "step_up": false,
+      "endpoint": "app:file_rights_report",
+      "app_level_auth": [
+        "bearer_scheme",
+        "session_cookie_scheme"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/reports/status",
+      "authority": "app-level-only",
+      "roles": "",
+      "writes": true,
+      "step_up": false,
+      "endpoint": "app:rights_report_status",
       "app_level_auth": [
         "bearer_scheme",
         "session_cookie_scheme"

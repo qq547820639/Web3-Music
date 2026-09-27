@@ -62,6 +62,10 @@ class Settings:
     mfa_enrolment_window_seconds: int = max(60, int(os.getenv("MFA_ENROLMENT_WINDOW_SECONDS", "900")))
     mfa_pending_ttl_seconds: int = max(60, int(os.getenv("MFA_PENDING_TTL_SECONDS", "300")))
     mfa_challenge_rate_limit_per_minute: int = int(os.getenv("MFA_CHALLENGE_RATE_LIMIT_PER_MINUTE", "6"))
+    # The public rights intake (021): a per-address window and a global one, both fixed, both counting
+    # arrivals rather than failures -- see _report_gate in app/main.py for why that polarity is right here.
+    report_rate_limit_per_minute: int = int(os.getenv("REPORT_RATE_LIMIT_PER_MINUTE", "6"))
+    report_global_rate_limit_per_minute: int = int(os.getenv("REPORT_GLOBAL_RATE_LIMIT_PER_MINUTE", "30"))
     s3_public_endpoint_url: str = os.getenv("S3_PUBLIC_ENDPOINT_URL", "").rstrip("/")
 
 

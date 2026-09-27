@@ -1,8 +1,8 @@
 # 权限矩阵（由代码派生，不要手改）
 
-`./scripts/authority_matrix.py --check` 会重算这张表并比对；派生自 `services/api/app/main.py` 与 `services/api/app/routers/*.py` 的路由装饰器与依赖签名，共 96 条 /api 路由，其中写操作 51 条。
+`./scripts/authority_matrix.py --check` 会重算这张表并比对；派生自 `services/api/app/main.py` 与 `services/api/app/routers/*.py` 的路由装饰器与依赖签名，共 100 条 /api 路由，其中写操作 54 条。
 
-读法：`require_roles` 一栏是端点自己声明的角色名单，名单之外的人在 `Depends` 阶段就拿 403；`工作区成员即可` 只检查调用者属于 `X-Workspace-Id` 那个工作区，`有效会话即可` 是主体自助通道（删除账户、注册第二因子、接受或拒绝一份发给自己的邀请）；`只有应用层鉴权` 的写路由一共 5 条，它们的保护不在这张表里而在端点内部——口令校验、刷新会话校验、按账号的限流、以及回调的 HMAC 签名——常驻用例逐条核对该端点源码里确实还写着那个载体，少一个就红（`tests/unit/test_authority_matrix.py`）。真正的授权担保还包括数据库层：RLS 与 `011`/`012`/`013`/`016`/`017`/`018`/`019` 的 `SECURITY DEFINER` 函数，端点检查只是门口那道 convenience。
+读法：`require_roles` 一栏是端点自己声明的角色名单，名单之外的人在 `Depends` 阶段就拿 403；`工作区成员即可` 只检查调用者属于 `X-Workspace-Id` 那个工作区，`有效会话即可` 是主体自助通道（删除账户、注册第二因子、接受或拒绝一份发给自己的邀请）；`只有应用层鉴权` 的写路由一共 7 条，它们的保护不在这张表里而在端点内部——口令校验、刷新会话校验、按账号的限流、以及回调的 HMAC 签名——常驻用例逐条核对该端点源码里确实还写着那个载体，少一个就红（`tests/unit/test_authority_matrix.py`）。真正的授权担保还包括数据库层：RLS 与 `011`/`012`/`013`/`016`/`017`/`018`/`019` 的 `SECURITY DEFINER` 函数，端点检查只是门口那道 convenience。
 
 `再认证` 一列是会话之外的第二道：5 条写路由在动数据库之前要求调用方当场再交出一次口令（已注册第二因子的账号还要一个当前验证码），判据是 `step_up_factors` 真的出现在端点函数体里，而不是请求体里有某个字段——它挡的是「Cookie 被拿走之后还能做什么」，所以设成没有确认窗口：一次凭证只够一次动作。
 
@@ -73,18 +73,20 @@
 | `GET /api/support/tickets` | admin,billing,creator,legal,owner,reviewer,support,viewer | — | `routers.market:list_tickets` |
 | `GET /api/workspace/invitations` | admin,owner | — | `app:list_workspace_invitations` |
 
-## 平台管理员（8 条，写操作 3 条）
+## 平台管理员（10 条，写操作 4 条）
 
 | 方法与路径 | 角色 | 再认证 | 端点 |
 | --- | --- | --- | --- |
 | `PUT /api/admin/switches/{key}` | — | — | `app:update_switch` |
 | `PUT /api/admin/v12/payouts/{payout_id}` | — | — | `routers.admin_v12:update_payout` |
 | `PUT /api/admin/v12/release-evidence/{gate}/{evidence_key}` | — | — | `routers.admin_v12:update_release_evidence` |
+| `POST /api/moderation/reports/{report_id}/link` | — | — | `app:moderation_report_link` |
 | `GET /api/admin/v12/payouts` | — | — | `routers.admin_v12:payout_queue` |
 | `GET /api/admin/v12/release-evidence` | — | — | `routers.admin_v12:release_evidence` |
 | `GET /api/admin/v12/release-gate/{gate}` | — | — | `routers.admin_v12:release_gate` |
 | `GET /api/admin/v12/workspaces` | — | — | `routers.admin_v12:workspace_directory` |
 | `GET /api/admin/v12/workspaces/{workspace_id}/members` | — | — | `routers.admin_v12:workspace_roster` |
+| `GET /api/moderation/reports` | — | — | `app:moderation_report_queue` |
 
 ## 工作区成员即可（get_actor）（11 条，写操作 2 条）
 
@@ -118,7 +120,7 @@
 | `GET /api/auth/me` | — | — | `app:me` |
 | `GET /api/auth/mfa/status` | — | — | `app:mfa_status` |
 
-## 只有应用层鉴权，端点内不再判定（5 条，写操作 5 条）
+## 只有应用层鉴权，端点内不再判定（7 条，写操作 7 条）
 
 | 方法与路径 | 角色 | 再认证 | 端点 |
 | --- | --- | --- | --- |
@@ -127,3 +129,5 @@
 | `POST /api/auth/refresh` | — | — | `app:refresh` |
 | `POST /api/payment-webhooks/{provider}` | — | — | `routers.market:payment_webhook` |
 | `POST /api/provider-webhooks/{provider}` | — | — | `app:provider_webhook` |
+| `POST /api/reports` | — | — | `app:file_rights_report` |
+| `POST /api/reports/status` | — | — | `app:rights_report_status` |

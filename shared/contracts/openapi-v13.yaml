@@ -1406,6 +1406,172 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/reports:
+    post:
+      summary: File Rights Report
+      description: 'Accept a rights notice from anyone, and answer the same object
+        whatever the subject resolves to.
+
+
+        The response is built from a fixed list of keys, and `file_rights_report`
+        opens a case only when the
+
+        subject resolves to a workspace-owned object -- so the caller cannot tell,
+        from this response, whether
+
+        the id it named is real. That is the same reason 019 stopped resolving addresses:
+        an intake that
+
+        distinguishes "known" from "unknown" is a scanner for the whole catalogue.'
+      operationId: file_rights_report_api_reports_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RightsReportBody'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+  /api/reports/status:
+    post:
+      summary: Rights Report Status
+      description: Ask about a notice you filed. The receipt is the only credential,
+        and it is not a session.
+      operationId: rights_report_status_api_reports_status_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RightsReportReceipt'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+  /api/moderation/reports:
+    get:
+      summary: Moderation Report Queue
+      description: 'The staff queue, including the notices whose subject named nothing
+        we own.
+
+
+        This is the only path on which a reporter''s name and address leave the database,
+        and it is
+
+        platform-administrator-only by predicate inside the function as well as by
+        role here -- the table
+
+        has no RLS to lean on, because its owner is a superuser-owned DEFINER function''s
+        role.'
+      operationId: moderation_report_queue_api_moderation_reports_get
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/moderation/reports/{report_id}/link:
+    post:
+      summary: Moderation Report Link
+      description: Attach a queued notice to a case that staff opened by hand (the
+        person-subject path).
+      operationId: moderation_report_link_api_moderation_reports__report_id__link_post
+      security:
+      - JWTBearer: []
+      - SessionCookie: []
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Report Id
+      - name: X-Workspace-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Workspace-Id
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Body
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/projects/{project_id}/master:
     post:
       summary: Select Master
@@ -4980,6 +5146,73 @@ components:
       required:
       - reason
       title: RefundCreate
+    RightsReportBody:
+      properties:
+        subject_type:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: Subject Type
+        subject_id:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Subject Id
+        work_identification:
+          type: string
+          maxLength: 2000
+          minLength: 3
+          title: Work Identification
+        location:
+          type: string
+          maxLength: 2000
+          minLength: 3
+          title: Location
+        grounds:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: Grounds
+        reporter_name:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Reporter Name
+        reporter_email:
+          type: string
+          maxLength: 320
+          minLength: 6
+          pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+          title: Reporter Email
+        attest_good_faith:
+          type: boolean
+          title: Attest Good Faith
+          default: false
+        attest_accuracy:
+          type: boolean
+          title: Attest Accuracy
+          default: false
+      type: object
+      required:
+      - subject_type
+      - subject_id
+      - work_identification
+      - location
+      - grounds
+      - reporter_name
+      - reporter_email
+      title: RightsReportBody
+    RightsReportReceipt:
+      properties:
+        receipt:
+          type: string
+          maxLength: 64
+          minLength: 16
+          title: Receipt
+      type: object
+      required:
+      - receipt
+      title: RightsReportReceipt
     RightsReview:
       properties:
         status:

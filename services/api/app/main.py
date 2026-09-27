@@ -19,7 +19,7 @@ from .mfa import hash_recovery as mfa_hash_recovery, new_recovery_codes as mfa_n
     new_secret as mfa_new_secret, provisioning_uri as mfa_provisioning_uri, qr_data_uri as mfa_qr_data_uri, \
     seal as mfa_seal, unseal as mfa_unseal, \
     verify_code as mfa_verify_code
-from .common import PAGE_LIMIT_DEFAULT, PAGE_LIMIT_MAX, audit, serialize, setting_enabled
+from .common import PAGE_LIMIT_DEFAULT, PAGE_LIMIT_MAX, _db_refusal, audit, serialize, setting_enabled
 from .db import close_pool, fetch_all, fetch_one, transaction, wait_for_db
 from .contracts import validate_song_spec
 from .settings import deny_insecure_defaults, settings
@@ -436,7 +436,7 @@ def mfa_enroll(request:Request,user:UserIdentity=Depends(get_user)):
     with transaction() as conn,conn.cursor() as cur:
         try:
             cur.execute("SELECT begin_mfa_enrolment(%s,%s)",(user.user_id,sealed))
-        except psycopg2.errors.RaiseException as exc:
+        except psycopg2.Error as exc:
             conn.rollback()
             raise HTTPException(409,str(exc).strip().splitlines()[0]) from exc
         audit(cur,Actor(user.user_id,user.email,user.display_name,user.is_platform_admin,user.session_id,None,"self"),
@@ -466,7 +466,7 @@ def mfa_enroll_verify(body:MfaCodeBody,request:Request,user:UserIdentity=Depends
             cur.execute("SELECT * FROM confirm_mfa_enrolment(%s,%s::jsonb,%s)",
                         (user.user_id,psycopg2.extras.Json(stored),settings.mfa_enrolment_window_seconds))
             confirmed=cur.fetchone()
-        except psycopg2.errors.RaiseException as exc:
+        except psycopg2.Error as exc:
             conn.rollback()
             raise HTTPException(409,str(exc).strip().splitlines()[0]) from exc
         if user.session_id:
@@ -515,7 +515,7 @@ def _member_write(cur, statement: str, params: tuple):
     """Call one of 017's functions, translating the database's own refusals."""
     try:
         cur.execute(statement, params)
-    except psycopg2.errors.RaiseException as exc:
+    except psycopg2.Error as exc:
         raise HTTPException(409, str(exc).strip().splitlines()[0]) from exc
     except psycopg2.errors.CheckViolation as exc:
         # Only reachable if the CHECK on role and workspace_role_error() ever disagree, which is
@@ -802,7 +802,7 @@ def account_erasure(body:ErasureBody,request:Request,user:UserIdentity=Depends(g
         try:
             cur.execute("SELECT erase_user_identity(%s,%s) AS result",(user.user_id,body.confirmation))
             result=cur.fetchone()["result"]
-        except psycopg2.errors.RaiseException as exc:
+        except psycopg2.Error as exc:
             raise HTTPException(409,str(exc).strip().splitlines()[0]) from exc
         audit(cur,actor,"privacy.account.erase","user",user.user_id,
               {"result":result,"step_up":factors},request.state.request_id)
@@ -988,6 +988,163 @@ def stream_media(media_id:str,token:str=Query(...)):
     if not row: raise HTTPException(404,"media not found")
     obj=s3_client().get_object(Bucket=row["bucket"],Key=row["object_key"])
     return StreamingResponse(obj["Body"].iter_chunks(chunk_size=65536),media_type=row["mime_type"],headers={"Content-Length":str(row["bytes"]),"Cache-Control":"private, max-age=60"})
+
+# --------------------------------------------------------------------------------------
+# Rights complaints from people who do not have an account here.
+#
+# The promise being closed is docs/RIGHTS_POLICY.md:66-68 and the @pending scenario at
+# docs/rights-policy.feature:9-15: a notice has to be filable by the rights holder, who is by
+# definition not a member of the workspace that hosts the thing they object to. Everything about
+# this block is shaped by two measured facts, recorded in db/migrations/021_public_rights_report.sql:
+# moderation_cases is FORCE-RLS on a GUC an anonymous caller cannot have (pg_policy, db.py:106), and
+# the tenant lists cases with `SELECT *` (routers/assets.py:232) -- so the write goes through a
+# SECURITY DEFINER function, and the reporter's identity lives in a table the app role cannot read.
+REPORT_SUBJECT_TYPES = ("project", "candidate", "asset", "brand_brief", "offer", "user", "other")
+REPORT_GROUNDS = ("copyright", "voice_likeness", "trademark", "harassment", "minor_safety", "malware", "other")
+REPORT_ATTESTATIONS = ("good_faith", "accuracy")
+REPORT_WINDOW_SECONDS = 60
+
+
+class RightsReportBody(BaseModel):
+    subject_type: str = Field(min_length=1, max_length=32)
+    subject_id: str = Field(min_length=1, max_length=200)
+    work_identification: str = Field(min_length=3, max_length=2000)
+    location: str = Field(min_length=3, max_length=2000)
+    grounds: str = Field(min_length=1, max_length=32)
+    reporter_name: str = Field(min_length=1, max_length=200)
+    reporter_email: str = Field(min_length=6, max_length=320, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    attest_good_faith: bool = False
+    attest_accuracy: bool = False
+
+
+class RightsReportReceipt(BaseModel):
+    receipt: str = Field(min_length=16, max_length=64)
+
+
+def _report_keys(email: str) -> tuple[str, str]:
+    return (f"report:{token_hash(email.lower())}", "report:global")
+
+
+def _report_gate(email: str) -> None:
+    """Two fixed windows: one per signing address, one for the whole intake.
+
+    Attempts, not failures, and that is a decision rather than a habit: a notice that is refused costs
+    the sender nothing to retry, so the thing worth bounding here is the arrival rate itself -- unlike
+    the login door, where a refusal is a person who mistyped and must not be punished for it. The
+    per-address key is what a scripted flood cannot rotate cheaply; the global key is what stops one
+    address being used to fill the queue. Neither is an address-dimension gate: the API still has no
+    client address it may trust (see the residual in RELEASE_CHECKLIST row 24).
+    """
+    for key, limit in zip(_report_keys(email),
+                          (settings.report_rate_limit_per_minute, settings.report_global_rate_limit_per_minute)):
+        if int(rq.get(key) or 0) >= limit:
+            ttl = rq.ttl(key)
+            raise HTTPException(429, "too many reports submitted; try again shortly",
+                                headers={"Retry-After": str(ttl) if ttl and ttl > 0 else str(REPORT_WINDOW_SECONDS)})
+
+
+@app.post("/api/reports", status_code=201)
+def file_rights_report(body: RightsReportBody, request: Request):
+    """Accept a rights notice from anyone, and answer the same object whatever the subject resolves to.
+
+    The response is built from a fixed list of keys, and `file_rights_report` opens a case only when the
+    subject resolves to a workspace-owned object -- so the caller cannot tell, from this response, whether
+    the id it named is real. That is the same reason 019 stopped resolving addresses: an intake that
+    distinguishes "known" from "unknown" is a scanner for the whole catalogue.
+    """
+    if body.subject_type not in REPORT_SUBJECT_TYPES:
+        raise HTTPException(422, {"code": "unsupported_subject_type", "allowed": list(REPORT_SUBJECT_TYPES)})
+    if body.grounds not in REPORT_GROUNDS:
+        raise HTTPException(422, {"code": "unsupported_grounds", "allowed": list(REPORT_GROUNDS)})
+    if not (body.attest_good_faith and body.attest_accuracy):
+        raise HTTPException(422, {"code": "attestations_required",
+                                  "message": "a notice must state that the sender believes the use is "
+                                             "unauthorised and that the statement is accurate"})
+    _report_gate(body.reporter_email)
+    receipt = secrets.token_urlsafe(24)
+    # A mutating function call has to run inside transaction(): fetch_one() opens a connection and
+    # closes it without committing, so the INSERT the function did is rolled back on the way out and
+    # the caller still gets a 201 with a reference that names nothing. The drill that caught this is
+    # scripts/report_drill.py -- the same "a write that answers as if it landed" shape 011 and 012
+    # were written for, reached this time from the read side instead of from RLS.
+    #
+    # The handler is here because the field rules are written twice on purpose (the model for the
+    # message, the CHECK constraints as the authority) and the two are not identical: a work
+    # identification of three spaces is long enough for the model and blank for
+    # `report_work_identification_present`. Without this it arrives as a 500 for a caller who sent a
+    # body the intake can simply refuse.
+    try:
+        with transaction() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT (v->>'reference') AS reference, (v->>'status') AS status, "
+                        "(v->>'received_at') AS received_at, (v->>'next_step') AS next_step "
+                        "FROM file_rights_report(%s,%s,%s,%s,%s,%s,%s,%s,%s) AS v",
+                        (body.subject_type, body.subject_id, body.work_identification, body.location,
+                         body.grounds, body.reporter_name, body.reporter_email,
+                         list(REPORT_ATTESTATIONS), token_hash(receipt)))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(500, "the intake wrote nothing")
+            audit(cur, None, "rights.report.file", "rights_report", row["reference"],
+                  {"subject_type": body.subject_type, "subject_id": body.subject_id, "grounds": body.grounds},
+                  getattr(request.state, "request_id", None))
+    except psycopg2.Error as exc:
+        raise _db_refusal(exc)
+    for key in _report_keys(body.reporter_email):
+        _mfa_incr(keys=[key], args=[REPORT_WINDOW_SECONDS])
+    out = serialize(row)
+    out["receipt"] = receipt
+    return out
+
+
+@app.post("/api/reports/status")
+def rights_report_status(body: RightsReportReceipt):
+    """Ask about a notice you filed. The receipt is the only credential, and it is not a session."""
+    # `rights_report_status` returns a scalar jsonb, so a non-matching receipt yields one row whose v is
+    # NULL -- and `(NULL->>'x')` is NULL rather than no row. Without the filter an unknown receipt would
+    # answer 200 with a skeleton of nulls, which reads to a client as "filed, nothing to say".
+    row = fetch_one(
+        "SELECT (v->>'reference') AS reference, (v->>'status') AS status, (v->>'grounds') AS grounds, "
+        "(v->>'subject_type') AS subject_type, (v->>'received_at') AS received_at, "
+        "(v->>'updated_at') AS updated_at, (v->'restrictions') AS restrictions "
+        "FROM rights_report_status(%s) AS v WHERE v IS NOT NULL", (token_hash(body.receipt),))
+    if not row:
+        raise HTTPException(404, "no report answers to that receipt")
+    return serialize(row)
+
+
+@app.get("/api/moderation/reports")
+def moderation_report_queue(actor: Actor = Depends(require_platform_admin)):
+    """The staff queue, including the notices whose subject named nothing we own.
+
+    This is the only path on which a reporter's name and address leave the database, and it is
+    platform-administrator-only by predicate inside the function as well as by role here -- the table
+    has no RLS to lean on, because its owner is a superuser-owned DEFINER function's role.
+    """
+    rows = fetch_all("SELECT coalesce(rights_report_queue(%s)::text,'[]') AS q", (actor.user_id,))
+    return serialize({"reports": json.loads(rows[0]["q"]) if rows else [],
+                      "actor_role": "platform_admin",
+                      "note": "a report with no case_id named an object this platform does not hold"})
+
+
+@app.post("/api/moderation/reports/{report_id}/link")
+def moderation_report_link(report_id: str, body: dict, request: Request,
+                           actor: Actor = Depends(require_platform_admin)):
+    """Attach a queued notice to a case that staff opened by hand (the person-subject path)."""
+    case_id = (body or {}).get("case_id")
+    if not case_id:
+        raise HTTPException(422, "case_id is required")
+    try:
+        with transaction() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT (v->>'linked')::boolean AS linked, (v->>'reference') AS reference, "
+                        "(v->>'case_id') AS case_id FROM link_rights_report(%s,%s::uuid,%s::uuid) AS v",
+                        (actor.user_id, report_id, case_id))
+            row = cur.fetchone()
+            audit(cur, actor, "rights.report.link", "rights_report", report_id, {"case_id": case_id},
+                  getattr(request.state, "request_id", None))
+    except psycopg2.Error as exc:
+        raise _db_refusal(exc)
+    return serialize(row)
+
 
 @app.post("/api/projects/{project_id}/master",status_code=201)
 def select_master(project_id:str,body:MasterRequest,request:Request,actor:Actor=Depends(require_roles("owner","admin","creator"))):
