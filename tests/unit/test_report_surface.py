@@ -25,10 +25,10 @@ Why the live drill is not enough. ``scripts/report_drill.py`` is the real proof 
 refusals, but it needs the stack up (httpx against ``API_BASE_URL``, and ``docker compose exec ... psql``)
 so it is not the gate that runs on a pull request, and its notice fixture sends one subject type --
 ``'asset'``, plus the deliberate ``'spaceship'`` refusal -- and one ground, ``'copyright'``
-(``scripts/report_drill.py:143-148,235``). A value that lives on only one of the two sides is never
+(``scripts/report_drill.py:143-148,235``). A value that lives on only one of the three copies is never
 touched by it, in either direction. What a no-stack test can decide is the wiring the drill leans on: that
-the two lists are the same set, that each door carries the dependency it is documented to carry, and that
-an omitted attestation cannot be read as consent.
+all three copies are the same set, that each door carries the dependency it is documented to carry, and
+that an omitted attestation cannot be read as consent.
 
 Every detector below ships with a mutation that must make it fire, and the same test asserts the untouched
 real text is quiet -- a guard nobody has seen report anything is indistinguishable from a guard that
@@ -593,7 +593,7 @@ def test_the_attestation_parity_guard_fires_on_either_side():
                         f'{ATTEST_CONSTANT} = ("accuracy",)')
     fired = parity_findings(module_string_set(py_dropped, ATTEST_CONSTANT), sql_attestations(MIG_SRC),
                             py_label, ATTEST_LABEL)
-    assert fired == [f"{py_label} is missing {['good_faith']} that {ATTEST_LABEL} allows"], fired
+    assert fired == [f"{py_label} is missing ['good_faith'] that {ATTEST_LABEL} allows"], fired
 
     assert shipped == []
 
