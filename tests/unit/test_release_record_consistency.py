@@ -129,6 +129,7 @@ def host_clause(label, line, certified_run):
 CHECKLIST = ROOT / "docs/RELEASE_CHECKLIST.md"
 REPORT = ROOT / "docs/TEST_REPORT.md"
 CHANGELOG = ROOT / "docs/CHANGELOG_COST500.md"
+STATUS = ROOT / "docs/FINAL_RELEASE_STATUS.md"
 
 SENTENCES = (
     (CHECKLIST, r"已有 (\d+) 次 `FAIL=0`", r"次 `FAIL=0`（(.*?)，旧→新", r"当时分别是 ([\d/]+) 行",
@@ -137,7 +138,14 @@ SENTENCES = (
      r"留档判红共 (\d+) 份", r"(\d{2}) 年 (\d{2}) 月 (\d{2}) 日 (\d+) 份"),
     (CHANGELOG, r"前序 (\d+) 次 `FAIL=0`", r"次 `FAIL=0` 为 (`[0-9a-f]{7}`(?:→`[0-9a-f]{7}`)*)", None,
      r"(\d+) 份判红 SUMMARY 留档", r"(\d{2}) 年 (\d{2}) 月 (\d{2}) 日 (\d+) 份"),
+    # The status file was the fourth face carrying these figures, in English, with nothing comparing
+    # them: its header described `414752d` as the authority for two full rounds after two newer green
+    # runs had been archived. A face that is not judged is a face that drifts.
+    (STATUS, r"(\d+) prior green runs", r"prior green runs[^(]*\((`[0-9a-f]{7}`(?:, `[0-9a-f]{7}`)*) — older",
+     r"at (\d+(?:/\d+)+) rows", r"and (\d+) judged-red SUMMARY", r"(\d{2})-(\d{2})-(\d{2}) = (\d+)"),
 )
+
+FACES = (CHECKLIST, REPORT, CHANGELOG, STATUS)
 
 
 def sentence_face(path):
@@ -154,8 +162,8 @@ def certified_stamp_of(line):
     return found.group(1).replace("acceptance-", "")
 
 
-def problems_for(path, runs):
-    line = sentence_face(path)
+def problems_for(path, runs, line=None):
+    line = line or sentence_face(path)
     certified = certified_stamp_of(line)
     greens, reds = split(runs, certified)
     count_pattern, list_pattern, rows_pattern, red_total_pattern, day_pattern = next(
@@ -175,7 +183,8 @@ def problems_for(path, runs):
         elif int(growth.group(2)) != widest:
             problems.append(f"{path.name}: rows →{growth.group(2)} but the widest prior green run is {widest}")
         return problems
-    head = re.search(r"上的 \*\*(\d+) 步全 PASS", line) or re.search(r"\*\*(\d+) 步 PASS", line)
+    head = (re.search(r"上的 \*\*(\d+) 步全 PASS", line) or re.search(r"\*\*(\d+) 步 PASS", line)
+            or re.search(r"\*\*(\d+) steps PASS", line))
     if head and int(head.group(1)) != certified_run["rows"] - 1:
         problems.append(f"{path.name}: says {head.group(1)} steps pass out of {certified_run['rows']} rows "
                         f"for {certified}")
@@ -187,6 +196,17 @@ def problems_for(path, runs):
         problems.append(f"{path.name}: no per-run row count could be read")
     elif [int(x) for x in stated.group(1).split("/")] != target:
         problems.append(f"{path.name}: row counts {stated.group(1)} != {'/'.join(map(str, target))}")
+    repeat = re.search(r"同样 (\d+) 行绿了 (\d+) 次", line)
+    if repeat:
+        # Two of the three Chinese faces end the reproducibility sentence with a rhetorical figure --
+        # "it is not as if the same N rows went green M times". That number drifted the same way the
+        # others did (it read 12 while seven archived runs were 20 rows wide), and it is the one
+        # figure here that a reader takes as the size of the reproducible set.
+        width, times = int(repeat.group(1)), int(repeat.group(2))
+        actual = sum(1 for g in greens if g["rows"] == width)
+        if times != actual:
+            problems.append(f"{path.name}: says {width} rows went green {times} times, "
+                            f"the archive has {actual}")
     return problems
 
 
@@ -194,7 +214,7 @@ def problems_for(path, runs):
 
 def test_the_docs_agree_with_the_archived_runs():
     runs = archived_runs()
-    offenders = {path.name: problems for path in (CHECKLIST, REPORT, CHANGELOG)
+    offenders = {path.name: problems for path in FACES
                  if (problems := problems_for(path, runs))}
     assert not offenders, "the release record disagrees with its own evidence: " + \
         " | ".join(f"{name}: {p}" for name, problems in offenders.items() for p in problems)
@@ -202,7 +222,7 @@ def test_the_docs_agree_with_the_archived_runs():
 
 def test_the_certified_commit_is_the_one_its_run_recorded():
     runs = archived_runs()
-    for path in (CHECKLIST, REPORT, CHANGELOG):
+    for path in FACES:
         line = sentence_face(path)
         stamp = certified_stamp_of(line)
         cited = re.search(r"commit `(\w{7})`", line) or re.search(r"`(\w{7})`", line)
@@ -306,7 +326,6 @@ def test_the_host_clause_refuses_a_reading_with_nothing_behind_it():
 
 # ------------------------------------------- the status file's own per-round readings ----
 
-STATUS = ROOT / "docs/FINAL_RELEASE_STATUS.md"
 STAMP_ON_LINE = re.compile(r"acceptance-(\d{8}T\d{6}Z)")
 LOAD_ON_LINE = re.compile(r'host load "([^"]*)" on a (\d+)-cpu')
 
@@ -438,3 +457,95 @@ def test_the_citation_check_fires_on_an_untracked_run():
 
 def citation_problems_on(text, tracked):
     return [f"cites {stamp}, not tracked" for stamp in set(EVIDENCE_REF.findall(text)) - tracked]
+
+
+# ------------------------------------------------ the fourth face's own controls ----
+
+STATUS_PATTERNS = next(p for p in SENTENCES if p[0] is STATUS)[1:]
+STATUS_GOOD = ("Authoritative run: evidence in `release-evidence/acceptance-20260926T090000Z/`, commit `eeeeeee`, "
+               'started under `host_load="5.81 4.99 5.67"` on a Docker VM 4 vCPU, with 3 prior green runs on this host '
+               "(`aaaaaaa`, `bbbbbbb`, `ddddddd` — older → newer, at 15/16/18 rows with `FAIL=0` in every "
+               "`SUMMARY.txt`), and 1 judged-red SUMMARY kept as a finding (26-09-25 = 1).")
+
+
+def check_status(good=STATUS_GOOD, runs=PRIOR + [run(CERTIFIED, "eeeeeee", 19)]):
+    """The status file's sentence, judged through the same reader the Chinese faces use.
+
+    The four figures are the ones that drifted here in reality: this header described `414752d` as the
+    authority across two later green runs, so a control that only proves the Chinese faces fire would
+    leave the newly-judged face judged by nothing.
+    """
+    greens, reds = split(runs, CERTIFIED)
+    count_p, list_p, _rows_p, red_p, day_p = STATUS_PATTERNS
+    return check_sentence("status face", good, greens, reds, CERTIFIED, count_pattern=count_p,
+                          list_pattern=list_p, red_total_pattern=red_p, day_pattern=day_p)
+
+
+def test_the_status_face_control_sentence_reads_clean():
+    assert check_status() == [], check_status()
+
+
+def test_the_status_face_reports_a_green_count_that_drifted():
+    problems = check_status(good=STATUS_GOOD.replace("with 3 prior green runs", "with 12 prior green runs"))
+    assert any("says 12 prior" in p for p in problems), problems
+
+
+def test_the_status_face_reports_a_wrong_red_total_and_day_split():
+    assert any("judged reds" in p for p in
+               check_status(good=STATUS_GOOD.replace("and 1 judged-red", "and 9 judged-red")))
+    assert any("per-day red split" in p for p in
+               check_status(good=STATUS_GOOD.replace("(26-09-25 = 1)", "(26-09-25 = 2)")))
+
+
+def test_the_status_face_reports_a_duplicated_commit():
+    problems = check_status(good=STATUS_GOOD.replace("`ddddddd` — older", "`aaaaaaa`, `ddddddd` — older"))
+    assert any("duplicate in the list" in p for p in problems), problems
+
+
+def mutated_line(path, old, new):
+    line = sentence_face(path)
+    assert line.count(old) == 1, f"{path.name}: {old!r} is not a unique anchor in its sentence"
+    return line.replace(old, new)
+
+
+def mutated_status_line(old, new):
+    return mutated_line(STATUS, old, new)
+
+
+def test_the_rows_clause_fires_on_the_fourth_face():
+    """The per-run row list is its own clause in `problems_for`, so it gets its own red side."""
+    runs = archived_runs()
+    assert problems_for(STATUS, runs) == []
+    stale = mutated_status_line(re.search(r"at [\d/]+ rows", sentence_face(STATUS)).group(0), "at 15/16 rows")
+    problems = problems_for(STATUS, runs, stale)
+    assert any("row counts" in p for p in problems), problems
+
+
+def test_the_step_width_clause_fires_on_the_fourth_face():
+    runs = archived_runs()
+    stale = mutated_status_line("**20 steps PASS", "**19 steps PASS")
+    problems = problems_for(STATUS, runs, stale)
+    assert any("says 19 steps pass" in p for p in problems), problems
+
+
+def test_the_host_clause_fires_on_the_fourth_face():
+    runs = archived_runs()
+    stale = mutated_status_line('host_load="6.02 15.30 13.43"', 'host_load="22.05 22.50 23.10"')
+    problems = problems_for(STATUS, runs, stale)
+    assert any("says host load" in p for p in problems), problems
+
+
+def test_the_repeat_figure_clause_fires_on_a_stale_count():
+    """「同样 W 行绿了 M 次」 is the figure a reader takes as the size of the reproducible set.
+
+    It read 12 while seven archived runs were 20 rows wide -- the same kind of drift as a stale commit
+    list, in the one clause of the sentence that was never recomputed when the archive grew.
+    """
+    runs = archived_runs()
+    assert problems_for(CHECKLIST, runs) == []
+    stale = mutated_line(CHECKLIST, "同样 20 行绿了 7 次", "同样 20 行绿了 12 次")
+    problems = problems_for(CHECKLIST, runs, stale)
+    assert any("went green 12 times, the archive has 7" in p for p in problems), problems
+    # ...and the clause must stay quiet when the two numbers describe the same archive differently.
+    other = mutated_line(CHECKLIST, "同样 20 行绿了 7 次", "同样 19 行绿了 1 次")
+    assert problems_for(CHECKLIST, runs, other) == [], problems_for(CHECKLIST, runs, other)

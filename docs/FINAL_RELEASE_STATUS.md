@@ -9,31 +9,37 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (volumes removed
-before start), **19 steps PASS and 1 recorded as skipped** across 20 rows, commit
-`414752d`, 2026-09-26T12:29:43Z → 2026-09-26T12:46:47Z, host load "22.05 22.50 23.10" on a 4-cpu Docker VM, evidence in
-`release-evidence/acceptance-20260926T122943Z/` (per-step logs, `SUMMARY.txt`, full
-`compose-logs.txt` and `commercial-compose-logs.txt`), with the browser audit's own
-machine-readable record at `release-evidence/browser-a11y-20260926T124244Z/report.json` (stamped with the same commit —
-this round the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the
-tree that was actually tested rather than HEAD-plus-staged-changes).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **20 steps PASS and 1 recorded as skipped** across 21 rows, commit `cb8b901`, 2026-09-27T04:02:34Z → 2026-09-27T04:18:18Z, evidence in `release-evidence/acceptance-20260927T040234Z/`, started under `host_load="6.02 15.30 13.43"` on a Docker VM 4 vCPU, with 14 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `fc70d13` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20 rows with `FAIL=0` in every `SUMMARY.txt`), and 17 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 2).
+`414752d` was this file's authority until the round before last, and the reason the sentence is now machine-checked rather than maintained: the paragraph below it carried a count, a commit list, a row list and a red total that nothing compared against the archive, so the header could describe a run that was no longer the newest one for two full rounds before anyone noticed.
+The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260927T041301Z/report.json`, stamped with the same commit: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes.
+
 What is version-controlled from that directory is only `SUMMARY.txt` (per-step verdicts and timestamps) and the
 browser run's `report.json`; the per-step logs and the two compose log files stay on the host that ran the pipeline.
 So a clone can re-check the step ledger and the whole browser reading (views, scans, violations per impact, CSP,
 `uncaught_errors`, the second-factor states) against committed artifacts, while the drill tallies and timings quoted
 below come from per-step logs that exist only on that host -- re-running the pipeline is how a reader verifies those.
-The pipeline is 20 rows wide now: `mfa-drill` joined at step 12 and `member-drill` at step 13, which
-is also where the erasure drill's step 11 reading comes from.
-Eleven green runs precede it on this host
-(`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847` —
-older → newer, at 15/15/16/16/17/18/19/20/20/20/20 rows with `FAIL=0` in every `SUMMARY.txt`), so the pass is reproducible rather
-than a single lucky run. The pipeline widened as steps were added, so what those runs share is "each
-passed every row that existed then", not "the same 20 rows seven times".
-Two discovery records from today are kept because each is the evidence for a defect that is now fixed:
-`acceptance-20260926T021711Z` stops at step 3 because the acceptance suite signed a provider webhook with
-its own copy of the secret literal while the container had never been given the variable, so a changed
-deployed value turned it into a 401; `acceptance-20260926T022643Z` stops at step 17 with 98/100 and two
-candidates whose recorded reason was the unreadable `{'type': 'ReadError', 'message': ''}`.
+The pipeline is 21 rows wide now: `media-scan-drill` joined at step 14, which is also where the
+erasure drill's step 11 and the member drill's step 13 readings come from. The pipeline widened as
+steps were added, so what the green runs share is "each passed every row that existed then", not
+"the same 21 rows twenty times". The count, the commit sequence, the per-run row counts, the red
+total and the per-day split are stated once, in the sentence above, and
+`tests/unit/test_release_record_consistency.py` recomputes all five of them from the tracked
+`SUMMARY.txt` files -- this file was the fourth face carrying those figures with nothing comparing
+them, which is how it kept describing `414752d` as the authority for two rounds after two newer
+green runs had been archived.
+Four discovery records from this host are kept because each is the evidence for a defect that is now
+fixed: `acceptance-20260926T021711Z` stops at step 3 because the acceptance suite signed a provider
+webhook with its own copy of the secret literal while the container had never been given the
+variable, so a changed deployed value turned it into a 401; `acceptance-20260926T022643Z` stops at
+step 17 with 98/100 and two candidates whose recorded reason was the unreadable
+`{'type': 'ReadError', 'message': ''}`; `acceptance-20260927T030055Z` stops at step 6 because the
+chain rebuilt only what `docker compose config --services` reports, and that listing omits
+profile-gated services, so `worker-b` was still running an image hours old -- the step failed with a
+message about leases for what was really a stale build; `acceptance-20260927T035001Z` stops at step 5
+with "expired lease was not reclaimed by the restarted worker" while that lease had in fact been
+reclaimed, by a `worker-b` started by hand 18 minutes earlier and still heartbeating
+(`generation_jobs.lease_owner` = `worker-0a906393`, that container's startup identity, against the
+killed worker's `worker-e02a9f18`).
 
 > **CI status is deliberately not claimed as evidence.** The branch was pushed, which
 > dispatches those jobs, but this environment cannot read their outcome: the repository is
@@ -812,4 +818,50 @@ Authoritative run `acceptance-20260926T232902Z` (commit `fc70d13`, fresh databas
 
 **Proving the tests have teeth.** Two arms, both against the live server rather than a mock: the drill runs green at 98/98 twice, then `create_workspace_invitation` is redefined with the address probe put back and `accept_workspace_invitation` with the e-mail comparison deleted, and the same drill answers 9 FAIL, naming the token-is-not-authority check (`... cannot spend the token in its hands -- 200`) and the enumeration check (`... whether an address has an account -- absent={}`). The pristine bodies are then re-applied from the migration file and the drill is green again, so the red is attributable to the withdrawn guarantee and not to the fixture.
 
+## 2026-09-27 two rounds' worth of claims turn out to be about the machine, not the code
 
+Authoritative run `acceptance-20260927T040234Z` (commit `cb8b901`, fresh database requested as `FRESH=1` and recorded as `fresh_database=1` in the same header, 2026-09-27T04:02:34Z → 2026-09-27T04:18:18Z, 21 rows: ['static-verify | PASS', 'compose-up | PASS', 'acceptance | PASS', 'contract-test | PASS', 'chaos-worker-recovery | PASS', 'lease-contention | PASS', 'restore-fidelity-snapshot | PASS', 'backup-restore | PASS', 'restore-fidelity-compare | PASS', 'acceptance-rerun | PASS', 'erasure-drill | PASS', 'mfa-drill | PASS', 'member-drill | PASS', 'media-scan-drill | PASS', 'commercial-flow | PASS', 'reservation-race | PASS', 'market-reconciliation | PASS', 'provider-regression-100 | PASS', 'generic-rest-roundtrip | PASS', 'browser-a11y | PASS', 'capacity-gate-500 | SKIPPED'] with 20 PASS and `capacity-gate-500` skipped by switch, host load "6.02 15.30 13.43" on a 4-cpu Docker VM), browser record `release-evidence/browser-a11y-20260927T041301Z/report.json`. Step 1: unit ladder 313, authority matrix 96 routes / 51 writes. `scripts/media_scan_drill.py` 14/14, `scripts/member_drill.py` 98/98, `scripts/mfa_drill.py` 56/56, `scripts/erasure_drill.py` 53/53, `scripts/reconcile_market.py` 15/15, provider regression 100/100 at error rate 0.0% and generic-REST 25/25, lease contention 8 jobs across 2 workers with 160.0 credits settled once, restore fidelity 2 workspaces and 2 assets byte-identical; the browser gate scanned 116 views with 90 axe runs, 12 team-panel states, 5 second-factor states, 4 privacy states, 2 roster walks, 58 mobile-fit measurements, zero uncaught errors, zero CSP-blocked inline styles and violations by impact {'moderate': 63}.
+
+**Why this round exists.** Two steps of the chain were measuring something other than what they
+claimed. Step 6 read as a lease-contention failure while it was really a build-alignment failure:
+`acceptance-20260927T030055Z` shows `worker-b` (profile `contention`) running an image hours old,
+because the chain derived its build list from `docker compose config --services`, and that listing
+does not report profile-gated services -- so the "two workers" in the contention reading were one
+new worker and one stale one, and the stale one wrote the literal `clean` into `media_assets` the way
+code before 020 did. Step 5 read as a recovery failure while it was really a second-claimant
+failure: `acceptance-20260927T035001Z` printed "expired lease was not reclaimed by the restarted
+worker" at the moment `generation_jobs.lease_owner` was `worker-0a906393`, the startup identity of a
+`worker-b` that had been started by hand 18 minutes earlier and was still heartbeating, while the
+worker that step kills identifies itself as `worker-e02a9f18`. Neither red said what it meant, and
+each was attributed to the code by a reader who had to dig it out of the database afterwards.
+
+**What changed.** `step_stack_up` now derives its build list from `docker compose --profile '*'
+config --format json` filtered to services that define `build` (measured on this host: `acceptance`,
+`api`, `gateway`, `migrate`, `payment-emulator`, `provider-emulator`, `web`, `worker`, `worker-b`;
+`clamav` has no build section and is left to whoever asks for the `scan` profile).
+`scripts/lease-contention.sh` refuses to submit a job unless the host's `services/worker/worker.py`
+hashes equal `/app/worker.py` inside both claimants. `scripts/chaos-worker-recovery.sh` removes
+`worker-b` on entry, the way `lease-contention.sh` always has, and refuses to proceed unless compose
+reports exactly one running service whose name starts with `worker`; its drill now prints the status
+and attempt count it last read instead of asserting a cause it cannot see over HTTP (no
+`lease_owner` is exposed by any endpoint). The chain's pre-run environment check gained `sha256sum`
+and `xargs` because a PATH without `/sbin` turns step 1 into `tracked=0 listed=229 stale=229`, which
+reads like a broken manifest rather than a missing host binary. `FRESH=1` makes the pipeline itself
+clear the volumes and records `fresh_database=` in the header, so "run on a fresh database" stops
+being a promise about the operator. `docs/E2E_ACCEPTANCE_RUNBOOK.md` §4 documented a 10-step chain
+including a `unit-test-docker` step that exists nowhere in the script; it now carries all 21.
+
+**Proving the guards have teeth, and where the guard itself was the defect.** The ratchet meant to
+protect step 2 pinned the literal string `$(docker compose config --services)` -- it had frozen the
+buggy spelling as the requirement, which is why it stayed green through the whole defect. It now
+judges the shape (enumeration derived from `compose config`, profile-wide, fail-fast) and carries a
+control that feeds it the profile-blind loop and asserts that only the new clause reddens. Verified
+by mutating the real file: `scripts/acceptance-all.sh` at sha `4d5bfe9c3371` passes, the same file
+with the profile-blind loop restored at sha `2de64be79e24` fails 2 tests, and `4d5bfe9c3371` again
+passes 10. The preflight's own two sides were measured against the live stale container: tree
+`6b13cb247c227cad`, `worker` `6b13cb247c227cad`, `worker-b` `a7cb1bb8d5ae10f7` before the rebuild and
+`6b13cb247c227cad` after it, and the certified run logs both `contention preflight:` lines agreeing.
+The single-claimant count is `2` with `worker-b` up and `1` after `rm -fs`, on both the plain
+`docker compose ps` and the `--profile '*'` form -- which is worth writing down, because `ps`
+reports a *running* profile-gated container without the flag, so this predicate is not the same trap
+as `config --services` was.
