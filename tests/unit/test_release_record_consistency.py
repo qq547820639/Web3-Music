@@ -529,8 +529,12 @@ def test_the_step_width_clause_fires_on_the_fourth_face():
 
 
 def test_the_host_clause_fires_on_the_fourth_face():
+    """The wrong reading is taken from another real run, so the control cannot drift with the docs."""
     runs = archived_runs()
-    stale = mutated_status_line('host_load="6.02 15.30 13.43"', 'host_load="22.05 22.50 23.10"')
+    certified = max(runs, key=lambda r: r["stamp"])
+    other = next(r for r in reversed(runs) if r["fails"] == 0 and r["host_load"]
+                 and r["host_load"] != certified["host_load"])
+    stale = mutated_status_line(f'host_load="{certified["host_load"]}"', f'host_load="{other["host_load"]}"')
     problems = problems_for(STATUS, runs, stale)
     assert any("says host load" in p for p in problems), problems
 

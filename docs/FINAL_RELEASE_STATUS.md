@@ -9,9 +9,9 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **20 steps PASS and 1 recorded as skipped** across 21 rows, commit `cb8b901`, 2026-09-27T04:02:34Z → 2026-09-27T04:18:18Z, evidence in `release-evidence/acceptance-20260927T040234Z/`, started under `host_load="6.02 15.30 13.43"` on a Docker VM 4 vCPU, with 14 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `fc70d13` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20 rows with `FAIL=0` in every `SUMMARY.txt`), and 17 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 2).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **20 steps PASS and 1 recorded as skipped** across 21 rows, commit `cc63bee`, 2026-09-27T07:03:18Z → 2026-09-27T07:29:50Z, evidence in `release-evidence/acceptance-20260927T070318Z/`, started under `host_load="25.52 13.84 10.07"` on a Docker VM 4 vCPU with `disk_free_kb=16905088` recorded beside it, with 15 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `fc70d13`, `cb8b901` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/21 rows with `FAIL=0` in every `SUMMARY.txt`), and 18 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 3).
 `414752d` was this file's authority until the round before last, and the reason the sentence is now machine-checked rather than maintained: the paragraph below it carried a count, a commit list, a row list and a red total that nothing compared against the archive, so the header could describe a run that was no longer the newest one for two full rounds before anyone noticed.
-The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260927T041301Z/report.json`, stamped with the same commit: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes.
+The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260927T072517Z/report.json`, stamped with the same commit: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes.
 
 What is version-controlled from that directory is only `SUMMARY.txt` (per-step verdicts and timestamps) and the
 browser run's `report.json`; the per-step logs and the two compose log files stay on the host that ran the pipeline.
@@ -27,7 +27,7 @@ total and the per-day split are stated once, in the sentence above, and
 `SUMMARY.txt` files -- this file was the fourth face carrying those figures with nothing comparing
 them, which is how it kept describing `414752d` as the authority for two rounds after two newer
 green runs had been archived.
-Four discovery records from this host are kept because each is the evidence for a defect that is now
+Five discovery records from this host are kept because each is the evidence for a defect that is now
 fixed: `acceptance-20260926T021711Z` stops at step 3 because the acceptance suite signed a provider
 webhook with its own copy of the secret literal while the container had never been given the
 variable, so a changed deployed value turned it into a 401; `acceptance-20260926T022643Z` stops at
@@ -39,7 +39,11 @@ message about leases for what was really a stale build; `acceptance-20260927T035
 with "expired lease was not reclaimed by the restarted worker" while that lease had in fact been
 reclaimed, by a `worker-b` started by hand 18 minutes earlier and still heartbeating
 (`generation_jobs.lease_owner` = `worker-0a906393`, that container's startup identity, against the
-killed worker's `worker-e02a9f18`).
+killed worker's `worker-e02a9f18`); `acceptance-20260927T065037Z` stops at step 12 with "an unarmed
+account still logs in with a password alone -- 500" because the Docker data filesystem had 718780 KB free and
+postgres raised `psycopg2.errors.DiskFull: could not extend file "base/18221/18380"` -- a full disk reached the
+record wearing a product defect's clothes, so the chain now refuses to start below `MIN_FREE_KB` (4 GiB default)
+and logs the reading in the same header.
 
 > **CI status is deliberately not claimed as evidence.** The branch was pushed, which
 > dispatches those jobs, but this environment cannot read their outcome: the repository is
@@ -821,6 +825,8 @@ Authoritative run `acceptance-20260926T232902Z` (commit `fc70d13`, fresh databas
 ## 2026-09-27 two rounds' worth of claims turn out to be about the machine, not the code
 
 Authoritative run `acceptance-20260927T040234Z` (commit `cb8b901`, fresh database requested as `FRESH=1` and recorded as `fresh_database=1` in the same header, 2026-09-27T04:02:34Z → 2026-09-27T04:18:18Z, 21 rows: ['static-verify | PASS', 'compose-up | PASS', 'acceptance | PASS', 'contract-test | PASS', 'chaos-worker-recovery | PASS', 'lease-contention | PASS', 'restore-fidelity-snapshot | PASS', 'backup-restore | PASS', 'restore-fidelity-compare | PASS', 'acceptance-rerun | PASS', 'erasure-drill | PASS', 'mfa-drill | PASS', 'member-drill | PASS', 'media-scan-drill | PASS', 'commercial-flow | PASS', 'reservation-race | PASS', 'market-reconciliation | PASS', 'provider-regression-100 | PASS', 'generic-rest-roundtrip | PASS', 'browser-a11y | PASS', 'capacity-gate-500 | SKIPPED'] with 20 PASS and `capacity-gate-500` skipped by switch, host load "6.02 15.30 13.43" on a 4-cpu Docker VM), browser record `release-evidence/browser-a11y-20260927T041301Z/report.json`. Step 1: unit ladder 313, authority matrix 96 routes / 51 writes. `scripts/media_scan_drill.py` 14/14, `scripts/member_drill.py` 98/98, `scripts/mfa_drill.py` 56/56, `scripts/erasure_drill.py` 53/53, `scripts/reconcile_market.py` 15/15, provider regression 100/100 at error rate 0.0% and generic-REST 25/25, lease contention 8 jobs across 2 workers with 160.0 credits settled once, restore fidelity 2 workspaces and 2 assets byte-identical; the browser gate scanned 116 views with 90 axe runs, 12 team-panel states, 5 second-factor states, 4 privacy states, 2 roster walks, 58 mobile-fit measurements, zero uncaught errors, zero CSP-blocked inline styles and violations by impact {'moderate': 63}.
+
+**Re-certified after the later fixes in this same round.** `acceptance-20260927T070318Z` (commit `cc63bee`, `FRESH=1` fresh database, 2026-09-27T07:03:18Z → 2026-09-27T07:29:50Z, 21 rows: 20 PASS and `capacity-gate-500` skipped by switch, host load "25.52 13.84 10.07" on a 4-cpu Docker VM, `disk_free_kb=16905088` in the same header), browser record `release-evidence/browser-a11y-20260927T072517Z/report.json`. The certification above it (`cb8b901`'s run, 04:02:34Z → 04:18:18Z) is now one of the prior green runs; this one additionally covers the CI payload census, the un-shadowable capacity profile and the disk precheck, and its step 1 ran 337 unit tests.
 
 **Why this round exists.** Two steps of the chain were measuring something other than what they
 claimed. Step 6 read as a lease-contention failure while it was really a build-alignment failure:
