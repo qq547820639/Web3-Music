@@ -8,6 +8,7 @@ from psycopg2.pool import ThreadedConnectionPool
 from botocore.client import Config
 from provider import close_http_client as close_provider_http_client, create_adapter
 from ledger import close_hold
+import media_scan
 from outcomes import error_signature, terminal_error
 from metrics import inc as metric_inc, set_gauge, start_server as start_metrics_server
 
@@ -28,6 +29,9 @@ PROVIDER_POLL_INTERVAL=max(0.5,float(os.getenv("PROVIDER_POLL_INTERVAL_SECONDS",
 PROVIDER_POLL_MAX_INTERVAL=max(PROVIDER_POLL_INTERVAL,float(os.getenv("PROVIDER_POLL_MAX_INTERVAL_SECONDS","10.0")))
 PROVIDER_ADAPTER_VERSION=os.getenv("PROVIDER_ADAPTER_VERSION","3.0.0")
 TRUSTED_INTERNAL={x.strip() for x in os.getenv("TRUSTED_INTERNAL_MEDIA_HOSTS","provider-emulator").split(",") if x.strip()}
+# 空 = 这台部署没有配扫描引擎，那么资产就记 unscanned；配了就必须扫出判决才准落桶。
+MEDIA_SCAN_ENDPOINT=os.getenv("MEDIA_SCAN_ENDPOINT","").strip()
+MEDIA_SCAN_TIMEOUT=max(1.0,float(os.getenv("MEDIA_SCAN_TIMEOUT_SECONDS","120")))
 rq=redis.Redis.from_url(REDIS_URL,decode_responses=True)
 default_adapter,default_provider_name=create_adapter()
 s3=boto3.client("s3",endpoint_url=S3_ENDPOINT,aws_access_key_id=S3_ACCESS,aws_secret_access_key=S3_SECRET,config=Config(signature_version="s3v4"),region_name="us-east-1")
@@ -237,20 +241,54 @@ async def fetch_media_with_retry(url: str):
     ) from last
 
 
-async def store_media(job,ordinal,tmp_path,sha,mime,size,duration_ms):
+async def scan_media(tmp_path):
+    """向配置的引擎要一个判决；没有引擎就返回 None，让调用方把资产记成 unscanned。
+
+    协议在 `media_scan.py` 里，那里能独立起一个 socket 服务证明它会开火。这两种失败被分开的
+    理由写在现场：引擎不可达是环境，不是内容——抛 Retryable 让整作业重来，不許把「扫不了」
+    记成「这颗候选有问题」。
+    """
+    if not MEDIA_SCAN_ENDPOINT:
+        return None
+    try:
+        return await asyncio.to_thread(media_scan.scan, MEDIA_SCAN_ENDPOINT, tmp_path, MEDIA_SCAN_TIMEOUT)
+    except (media_scan.ScanUnavailable, media_scan.ScanAmbiguous) as exc:
+        raise Retryable(f"media scan did not complete: {exc}") from exc
+
+
+def _scan_columns(scan):
+    if not scan or scan["status"] != "clean":
+        return "unscanned", None, None, None
+    return "clean", scan["engine"], scan.get("detail"), datetime.now(timezone.utc)
+
+
+async def store_media(job,ordinal,tmp_path,sha,mime,size,duration_ms,scan=None):
+    """落桶并登记一份音频资产；scan 是引擎给的判决，None 表示这台部署没配引擎。
+
+    这里以前无条件写 'clean'，而同一列正是 `services/api/app/main.py` 出流接口的判据——一句没有
+    机器背书的保证。现在 020 的触发器要求 clean 必须带引擎与时刻，unscanned 必须什么都不带。
+    """
     ext=mimetypes.guess_extension(mime) or Path(tmp_path).suffix or ".bin"
     key=f"{job['workspace_id']}/audio/{sha[:2]}/{sha}{ext}"
+    status,engine,detail,scanned_at=_scan_columns(scan)
     with connect() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("SELECT * FROM media_assets WHERE workspace_id=%s AND sha256=%s AND kind='audio'",(job["workspace_id"],sha))
         existing=cur.fetchone()
-        if existing:
+        if existing and existing["scan_status"]==status and (status!="clean" or existing["scan_engine"]==engine):
             return existing
     await asyncio.to_thread(
         s3.upload_file,tmp_path,S3_BUCKET,key,
-        ExtraArgs={"ContentType":mime,"Metadata":{"sha256":sha,"scan-status":"clean"}},
+        ExtraArgs={"ContentType":mime,"Metadata":{"sha256":sha,"scan-status":status,
+                                                  **({"scan-engine":engine} if engine else {})}},
     )
     with connect() as conn,conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("INSERT INTO media_assets(workspace_id,kind,bucket,object_key,sha256,mime_type,bytes,duration_ms,scan_status) VALUES(%s,'audio',%s,%s,%s,%s,%s,%s,'clean') ON CONFLICT(workspace_id,sha256,kind) DO UPDATE SET sha256=EXCLUDED.sha256 RETURNING *",(job["workspace_id"],S3_BUCKET,key,sha,mime,size,duration_ms))
+        cur.execute("""INSERT INTO media_assets(workspace_id,kind,bucket,object_key,sha256,mime_type,bytes,duration_ms,scan_status,scan_engine,scan_detail,scanned_at)
+                       VALUES(%s,'audio',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT(workspace_id,sha256,kind) DO UPDATE SET
+                         mime_type=EXCLUDED.mime_type,bytes=EXCLUDED.bytes,duration_ms=EXCLUDED.duration_ms,
+                         scan_status=EXCLUDED.scan_status,scan_engine=EXCLUDED.scan_engine,
+                         scan_detail=EXCLUDED.scan_detail,scanned_at=EXCLUDED.scanned_at
+                       RETURNING *""",(job["workspace_id"],S3_BUCKET,key,sha,mime,size,duration_ms,status,engine,detail,scanned_at))
         row=cur.fetchone();conn.commit();return row
 
 
@@ -321,10 +359,20 @@ async def process(job):
             if candidate.get("audio_url") and str(candidate.get("status","completed")).lower() not in {"failed","error"}:
                 tmp=None
                 try:
-                    tmp,sha,mime,size,duration=await fetch_media_with_retry(candidate["audio_url"]);media=await store_media(job,ordinal,tmp,sha,mime,size,duration)
+                    tmp,sha,mime,size,duration=await fetch_media_with_retry(candidate["audio_url"])
+                    # 先扫后落桶：判定为脏的字节根本不该进桶，所以这里不是在 store 之后打标记，
+                    # 而是在 store 之前决定是否走到那一步。
+                    scan=await scan_media(tmp)
+                    if scan and scan["status"]!="clean":
+                        raise RuntimeError(f'media scanner rejected the payload: {scan["detail"]}')
+                    media=await store_media(job,ordinal,tmp,sha,mime,size,duration,scan)
                     recipe={"song_spec_revision":job["spec_revision"],"provider":provider_name,"adapter_version":PROVIDER_ADAPTER_VERSION,"provider_job_id":job["provider_job_id"],"provider_clip_id":clip_id,"styles":job["spec"].get("styles"),"lyrics_sha256":hashlib.sha256(str(job["spec"].get("lyrics","")).encode()).hexdigest(),"audio_sha256":sha}
                     with connect() as conn,conn.cursor() as cur:
                         cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,media_asset_id,recipe,metadata) VALUES(%s,%s,%s,%s,'ready',%s,%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,clip_id,media["id"],psycopg2.extras.Json(recipe),psycopg2.extras.Json(candidate)));conn.commit();ready+=1
+                except Retryable:
+                    # 引擎不可达不是这份候选的错：整作业重试。把它记成候选失败，等于让「扫不了」
+                    # 长得像「这颗是脏字节」，而那正是本条要区分开的两件事。
+                    raise
                 except Exception as exc:
                     with connect() as conn,conn.cursor() as cur:
                         cur.execute("INSERT INTO audio_candidates(workspace_id,job_id,ordinal,provider_clip_id,status,recipe,metadata) VALUES(%s,%s,%s,%s,'failed',%s,%s) ON CONFLICT(job_id,ordinal) DO NOTHING",(job["workspace_id"],job_id,ordinal,clip_id,psycopg2.extras.Json({"provider":provider_name}),psycopg2.extras.Json({**candidate,"ingest_error":error_signature(exc)})));conn.commit();failed+=1;candidate_errors.append({"ordinal":ordinal,**error_signature(exc)})

@@ -20,7 +20,7 @@
 - JWT 存于浏览器 Local Storage；生产推荐 HttpOnly、Secure、SameSite Cookie 或企业 IdP；
 - 默认密码、JWT Secret、Webhook Secret 和 MinIO 凭证是演示值；
 - Provider/Payment Emulator 不处理真实凭证和资金；
-- 仅包含基础内容/权利案件模型，未集成独立反病毒、CSAM 检测或商业审核服务；
+- 未集成 CSAM 检测与商业内容审核；反病毒是一个**可插拔的边界**而不是默认能力：`media_assets.scan_status` 只允许 `unscanned`/`clean` 两态（`db/migrations/020_media_scan_truth.sql` 的 CHECK 与 `media_assets_scan_proof` 触发器），`clean` 必须带引擎自报名与扫描时刻，值只能来自 `services/worker/media_scan.py` 对引擎应答的白名单判读（只有 `stream(...) OK` 算干净）；引擎不可达时作业重试、判定为脏时字节不落桶。这台部署没配引擎就老实记 `unscanned`——本轮之前它无条件记 `clean`，而那一格同时是下载接口的判据；
 - Prometheus 没有认证，仅适合本地网络。
 
 ## 对外部署前强制要求

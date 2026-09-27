@@ -157,6 +157,9 @@ services:
       LEASE_SECONDS: 30
       METRICS_PORT: 9101
       TRUSTED_INTERNAL_MEDIA_HOSTS: provider-emulator
+      # 空 = 这台部署没有扫描引擎，资产记 unscanned（诚实缺省，见 020 的头注释）；
+      # 配了就必须拿到判决才准落桶，引擎不可达时作业整条重试，绝不默认放行。
+      MEDIA_SCAN_ENDPOINT: ${MEDIA_SCAN_ENDPOINT:-}
       MAX_MEDIA_BYTES: 52428800
     expose: ["9101"]
     extra_hosts: ["host.docker.internal:host-gateway"]
@@ -170,6 +173,25 @@ services:
       interval: 4s
       timeout: 3s
       retries: 40
+
+
+  # 可选的扫描引擎：`docker compose --profile scan up -d` 并把 MEDIA_SCAN_ENDPOINT=clamav:3310 交给 worker。
+  # 它不是缺省的一部分，理由是实测：本机 Docker VM 是 4 vCPU / 5.77 GiB（docker info 的
+  # MemTotal=6198632448），而 ClamAV 官方文档（https://docs.clamav.net/ ，2026-09-27 打开）写的最低
+  # 推荐内存就是 3 GiB+、磁盘 5 GiB 空闲；`docker pull clamav/clamav:1.4` 在这台 arm64 宿主上回答
+  # `no matching manifest for linux/arm64/v8`，也就是只能靠平台模拟跑，冷启动还要 freshclam 联网取库。
+  # 把一个 3 GiB 起的常驻体塞进还要跑整条 20 步认证链的 VM，代价由部署方按容量决定，不由这里默认。
+  clamav:
+    image: clamav/clamav:1.4
+    platform: linux/amd64
+    profiles: ["scan"]
+    expose: ["3310"]
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
 
 
   # Second live Worker for the lease contention drill (release gate G9-2). Defined here rather

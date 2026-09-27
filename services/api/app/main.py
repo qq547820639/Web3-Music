@@ -963,7 +963,11 @@ def stream_media(media_id:str,token:str=Query(...)):
     try: payload=verify_media_token(token,media_id)
     except ValueError: raise HTTPException(401,"invalid media token")
     row=fetch_one("SELECT * FROM media_assets WHERE id=%s AND workspace_id=%s",(media_id,payload["wid"]),payload["wid"])
-    if not row or row["scan_status"]!="clean": raise HTTPException(404,"media not found")
+    # 这里以前是 `scan_status!="clean"` 就 404，而那一格是 worker 无条件写的字面量，
+    # 所以它从来不拦任何东西，只让「已扫描」这件事看起来存在。020 之后真值在写入侧：
+    # 引擎判脏的字节在落桶之前就被拒（worker.scan_media），落不了桶就没有这一行，
+    # 于是这一句 `not row` 才是它一直想当的那道门。
+    if not row: raise HTTPException(404,"media not found")
     obj=s3_client().get_object(Bucket=row["bucket"],Key=row["object_key"])
     return StreamingResponse(obj["Body"].iter_chunks(chunk_size=65536),media_type=row["mime_type"],headers={"Content-Length":str(row["bytes"]),"Cache-Control":"private, max-age=60"})
 

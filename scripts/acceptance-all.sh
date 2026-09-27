@@ -210,6 +210,13 @@ step_member_drill() {
   python scripts/member_drill.py
 }
 
+step_media_scan_drill() {
+  # 媒体扫描边界（发布清单「病毒扫描」那一半）：020 之后一格 clean 只能来自引擎判决，
+  # 被拒的字节在落桶之前就被拒。这一步量的是数据库侧与服务侧的牙：伪造判决必须被拒、
+  # 诚实记为 unscanned 的资产必须照常可听、伪造 token 必须仍然被挡。
+  python scripts/media_scan_drill.py
+}
+
 step_commercial() {
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial
@@ -264,6 +271,7 @@ run_step "acceptance-rerun" step_acceptance_rerun
 run_step "erasure-drill" step_erasure_drill
 run_step "mfa-drill" step_mfa_drill
 run_step "member-drill" step_member_drill
+run_step "media-scan-drill" step_media_scan_drill
 run_step "commercial-flow" step_commercial
 run_step "reservation-race" step_reservation_race
 run_step "market-reconciliation" step_reconcile_market
