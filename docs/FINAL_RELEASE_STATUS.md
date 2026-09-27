@@ -981,7 +981,7 @@ Authoritative run `acceptance-20260927T194152Z` (commit `037b818`, fresh databas
 
 **Wiring.** `report-drill` is chain step 15 (50/50 live checks, on the freshly built image rather than a copied one) and a CI job, with `tests/unit/test_ci_covers_chain_payloads.py` enforcing that the two dispatch lists cannot diverge again. Its teardown is now asserted: three checks that the run left no fixture workspace, report or case behind -- the workspace used to leak, and one accumulation of eight of them is what made that visible. Reading the count out of psql turned into a lesson of its own: psql prints a command tag for a data-modifying statement even in tuples-only mode, so `SET ...; SELECT count(*)` puts the word `SET` above the number and `INSERT ... RETURNING id` puts `INSERT 0 1` below the row; the helper now takes a value only from a top-level SELECT, bare writes go through a separate call, and a first line that is a tag raises instead of being reported as a count.
 
-**What the Legal Hold sentence in `docs/RIGHTS_POLICY.md` actually means today.** The policy promises five actions on acceptance and a freeze on deletion; the round measured the flag rather than restating the promise. `legal_hold` blocks three doors: market listing (`002:568,574`), offer creation (`002:675,680`), brand award (`004:25,30` and its ambiguous-column correction `009:26,31`), plus `assert_offer_rights` (`commerce.py:48`, live at `market.py:492,510,626`). It does not touch download or export (`main.py:1183` via `domain/rights.py:43`, which reads only the capability status), issued licences, payment or split accounting, or the subject's own erasure. "Keep all evidence" is delivered by global append-only triggers, whose list is narrower than the sentence: `rights_evidence` and `licenses` refuse only DELETE (`002:462-463`), and `media_assets` has no DELETE guard at all -- a held asset's media is still deletable. Those gaps, and the question of whose hold counts when the holder is staff and the deleter is the subject, are recorded with their file:line in §待属主定值 item 6 rather than patched with a guessed guard.
+**What the Legal Hold sentence in `docs/RIGHTS_POLICY.md` actually means today.** The policy promises five actions on acceptance and a freeze on deletion; the round measured the flag rather than restating the promise. `legal_hold` blocks three doors: market listing (`002:568,574`), offer creation (`002:675,680`), brand award (`004:25,30` and its ambiguous-column correction `009:26,31`), plus `assert_offer_rights` (`commerce.py:48`, live at `market.py:492,510,626`). It does not touch download or export (`main.py:1230` via `domain/rights.py:43`, which reads only the capability status -- the `:1183` this file carried since the intake round had drifted onto `moderation_report_link`, and the drill re-took it), issued licences, payment or split accounting, or the subject's own erasure. "Keep all evidence" is delivered by global append-only triggers, whose list is narrower than the sentence: `rights_evidence` and `licenses` refuse only DELETE (`002:462-463`), and `media_assets` has no DELETE guard at all -- a held asset's media is still deletable. Those gaps, and the question of whose hold counts when the holder is staff and the deleter is the subject, are recorded with their file:line in §待属主定值 item 6 rather than patched with a guessed guard.
 
 **Residuals, stated rather than hidden.** The complaint door still has no address window of its own, but that is now a choice rather than a blocker: the trusted-address machinery landed after this run was taken (next section), so the intake could key a source window on the same digest if the queue ever needs one; today it holds a per-reporter window and a global one. The complaint queue is platform-admin-only by predicate *and* by role, and there is still no workflow around it -- no SLA, no escalation, no notifier -- which is a product decision, not a code gap. And this round's `disk_free_kb` is 8442608 on the same host that ran the previous one at 7808440; the capacity gate remains the row that has never gone green here.
 
@@ -1002,3 +1002,71 @@ Closes the open half of `docs/RELEASE_CHECKLIST.md` §已修 item 24 -- the sent
 **Live readings.** `scripts/mfa_drill.py` went 67 → **79/79** on the running stack: a login through the gateway records the address the gateway itself saw (`:528`), the same forged `X-Forwarded-For` arriving on the published port is ignored because that peer is not on the list (`:536`), one account past the configured 20 from one source is refused with the wait stated (`:561`), and five mistypes by one account are one account (`:585`). Unit ladder **395 passed** across 39 files. No chain run has been re-certified against these changes yet -- the figures above are local, and the next authoritative run restamps the four faces.
 
 **Residuals.** One account can still be held down a minute at a time by one person who knows its address; bounding that needs a self-service path (captcha or recovery channel), which is a product decision and is registered as such, not patched with a guessed puzzle. The source window is on the login door only -- the intake and the second factor keep their own keys. And the trust list now *must* agree with the gateway's static address because a resident test requires it, so moving the gateway means editing `docker-compose.yml:120` in the same commit; that coupling is the intended behaviour, not an oversight.
+
+## 2026-09-28 the Legal Hold sentence gets measured, and three of its four doors turn out to answer for a different reason
+
+Closes the last unclosed half of task #4 -- G10's `内容审核、病毒扫描、投诉和 Legal Hold` row. The complaint
+half landed last round; this is the hold half, and it began by noticing that `docs/RIGHTS_POLICY.md:74`,
+this file, and the checklist all restated "the flag blocks listing, offer creation and award" without any
+run ever having produced one.
+
+**What the flag is: two carriers, not one column.** `moderation_cases.legal_hold`
+(`db/migrations/002_creation_asset_market_os.sql:122`) and `rights_manifests.manifest->>'legal_hold'`.
+Only `POST /assets/{id}/rights-review` writes the latter, and it cannot write it alone --
+`services/api/app/routers/assets.py:174-177` sets seven capabilities to `blocked` in the same statement.
+That single fact is what makes three documented predicates unreachable, and `scripts/hold_drill.py` proves
+each unreachability with an arm rather than an argument:
+
+1. `rights_manifests` refuses UPDATE (`immutable_rights_manifests`, `db/migrations/001_production_candidate.sql:467`),
+   so a pinned manifest can never be flipped after the fact -- the drill issues the UPDATE and matches
+   `rights_manifests is immutable`.
+2. Every review **adds a version**, and both market functions test "is my pinned manifest still newest"
+   **before** they test the hold (`002:673-674`, `009:25`). A hold applied after an offer therefore answers
+   `offer rights manifest is stale`, and the drill pins that exact sentence instead of the one the docs
+   claimed -- two clauses masking each other is exactly the failure mode this repo has been bitten by before.
+3. On the creation side the same shape recurs: `commerce.py:46` tests capabilities, `commerce.py:48` tests the
+   flag, and the door never produces "flag set, capability allowed". So the flag disjunct has no producer
+   either. Measured consequence: **zero** rows join `asset_offers` to a held manifest anywhere in the database,
+   which the drill asserts as a stack-wide invariant -- which is why `002:568` is recorded as defence in
+   depth rather than as a live wall.
+
+**What is live, and it is the case half.** `002:680` refuses `asset is restricted`, `004:30`/`009:31` refuse
+`submission asset is restricted`, both matched verbatim. The release arm for each does not merely check the
+absence of a word: `prepare_brand_award` must **return its row** (`count = 1`) after dismissal, and the
+purchase route must actually pass, so a fixture that was never valid cannot be reported as a working guard.
+The predicate has two halves and is tested as two: clearing `legal_hold` while the case stays `open` keeps the
+offer hidden (`002:574` is flag OR status), which the previous prose in three files blurred.
+
+**What it does not touch, each with its premise asserted first.** Delivered export still returns a real zip;
+an issued licence stays `active`; the seller's own `/api/assets/{id}/export` is unaffected; the split rows
+count the same before and after -- and the drill requires that count to be **non-zero first**, because
+"nothing changed" reads identically when there was nothing there. Correcting that last door's pointer turned
+up a stale citation in three files: `main.py:1183` is now `moderation_report_link`; the export route is
+`:1230`. All three faces were re-read from the tree and re-pointed.
+
+**The append-only half: one guard works, one does not exist.** `rights_evidence` and `licenses` refuse DELETE
+even for `music_admin` (`rolsuper=t`), and `media_assets` has no DELETE trigger -- proven by a three-step
+probe on an unreferenced row: first show the session's triggers are armed (the same table refuses an
+unsupported `scan_status` write, `a clean media asset must name the engine that cleared it`), then show the
+DELETE lands, then show the row is gone. The gap stays registered in §待属主定值 item 6 rather than being
+closed by a guessed guard.
+
+**Readings.** `scripts/hold_drill.py` **42/42** on the live stack with the commercial overlay; it is chain
+step 19 (`hold-drill`, after `market-reconciliation`) and a step in CI's `commercial-flow` job, with
+`tests/unit/test_ci_covers_chain_payloads.py` keeping the two dispatch lists from diverging. It needed a
+precondition stated rather than assumed: three earlier runs of this drill spent the demo workspace's credits
+and it reddened as `402 available=0.0, required=10`, so it now tops up through the platform's own
+`/orders/credits` door via `e2e_client.ensure_credits` (`scripts/e2e_client.py:110`) instead of duplicating
+that logic. `tests/unit/test_legal_hold_surface.py` adds 8 resident cases (denominator by symmetric
+difference over the SQL reader set, the live `prepare_brand_award` body being 009's qualified rewrite, the
+two refusal sentences verbatim, and the negative doors with a `credit_holds` control so the bare word `hold`
+cannot silently widen or narrow the match); its must-fire control plants a read into a view that does not
+read the flag today and requires the ruler to report exactly that one line in both directions. Ladder
+**403 passed**, 40 files. Two harness bugs surfaced on the way and are fixed in the drill: `POST /jobs`
+answers **202** (a 200/201-only fixture guard reads success as refusal), and `sql_err()` took the **last**
+stderr line, which is `CONTEXT: PL/pgSQL function ... at RAISE` -- it names a function, not the platform's
+refusal, and it reddened nine checks at once before the ERROR line was used.
+
+**Not yet certified.** No authoritative chain run includes step 19 or these 403 tests yet; the four faces
+still describe `037b818`. The next `acceptance-all.sh` run is what restamps them, and it will carry the
+address-dimension round above as well.

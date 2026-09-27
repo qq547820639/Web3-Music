@@ -6,8 +6,9 @@
 #   static-verify → compose 起栈 → acceptance(test.sh) → contract-test →
 #   chaos-worker-recovery → lease-contention → restore-fidelity → backup/restore →
 #   复跑 acceptance → commercial-flow(commercial-test 覆层) → reservation-race →
-#   market-reconciliation → provider-regression → browser-a11y(BROWSER=1) →
-#   generic-rest-roundtrip(generic_rest 适配器覆层) → capacity-gate-500(CAPACITY=1)
+#   market-reconciliation → hold-drill(Legal Hold 真实覆盖面) → provider-regression →
+#   generic-rest-roundtrip(generic_rest 适配器覆层) → browser-a11y(BROWSER=1) →
+#   capacity-gate-500(CAPACITY=1)
 #
 # 每步打印醒目的分节与时间戳；任一步失败即打印诊断并 exit 1。
 # 全部通过后，将步骤摘要与 `docker compose logs --no-color` 归档到
@@ -295,6 +296,13 @@ step_reconcile_market() {
   python scripts/reconcile_market.py
 }
 
+step_hold_drill() {
+  # Legal Hold 的真实覆盖面：哪些门因为挂押拒绝、用哪句话拒绝、哪些门根本不读这个标记，
+  # 以及清单里哪一条谓词在现在的写入面下根本到不了（被前面的能力位/新鲜度判断挡在后面）。
+  # 需要商业覆层还挂着：市场那一层的门只在 approved 权益下才打得开。
+  python scripts/hold_drill.py
+}
+
 step_browser_a11y() {
   # The self-test arm proves the audit can fire before its verdict is trusted.
   python scripts/browser_a11y.py --self-test
@@ -337,6 +345,7 @@ run_step "report-drill" step_report_drill
 run_step "commercial-flow" step_commercial
 run_step "reservation-race" step_reservation_race
 run_step "market-reconciliation" step_reconcile_market
+run_step "hold-drill" step_hold_drill
 run_step "provider-regression-100" step_provider_regression
 
 # 放在浏览器验收之后：这一步会用覆层重建 api/worker，把 provider 身份换成 generic_rest。

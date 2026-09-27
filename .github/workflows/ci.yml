@@ -211,6 +211,15 @@ jobs:
             echo "::error title=worker-logs::$(docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color worker 2>/dev/null | tail -50 | tr -d '\r' | tr '\n' ' ' | head -c 4000)"
             exit 1
           fi
+      - name: Legal hold drill (with diagnostics)
+        shell: bash
+        run: |
+          if ! python scripts/hold_drill.py > /tmp/hold.log 2>&1; then
+            echo "::error title=hold-drill::$(tail -25 /tmp/hold.log | tr -d '\r' | tr '\n' ' ' | head -c 3000)"
+            docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color api 2>/dev/null | tail -30 | sed 's/^/::error title=api::/' || true
+            exit 1
+          fi
+          cat /tmp/hold.log
       - if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml logs --no-color > commercial-compose.log || true
       - if: always()

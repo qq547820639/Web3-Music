@@ -15,7 +15,7 @@
 |---|---|
 | static-verify（含 `pytest tests/unit`） | `static-and-unit` |
 | compose-up → acceptance → contract-test → chaos → lease-contention → restore-fidelity-snapshot → backup-restore → restore-fidelity-compare → acceptance-rerun → erasure/mfa/member/media-scan/report 五支演练 → generic-rest-roundtrip | `compose-acceptance` |
-| commercial-flow（commercial-test 覆层）+ market-reconciliation + reservation-race | `commercial-flow` |
+| commercial-flow（commercial-test 覆层）+ market-reconciliation + reservation-race + hold-drill | `commercial-flow` |
 | browser-a11y（`BROWSER=1` 才在本地跑） | `browser-a11y`（CI 每次都跑） |
 | capacity-gate-500（可选） | `capacity-500` |
 
@@ -145,10 +145,11 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 16 | commercial-flow | `docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d` → 同覆层 `--profile commercial-test run --rm acceptance-commercial` | 退出码 0 |
 | 17 | reservation-race | `python scripts/reservation_race.py`（需要步骤 16 的商业覆层仍在跑） | 打印 `reservation race passed: ... exactly one active licence` |
 | 18 | market-reconciliation | `python scripts/reconcile_market.py` | 打印 `market reconciliation: N/N checks passed`（licence/交付/退款/分账四表对账与 85/15 分账策略一致） |
-| 19 | provider-regression-100 | `python scripts/provider_regression.py "${REGRESSION_JOBS:-100}" "${REGRESSION_CONCURRENCY:-8}"` | 打印 `provider regression: N/N completed, error rate ...` 且无 `FAIL:` 行；台账闭合、无悬挂 hold |
-| 20 | generic-rest-roundtrip | `docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up --build -d` → `python scripts/provider_regression.py "${GENERIC_REST_JOBS:-25}" 4 generic_rest` | 退出码 0；`/api/bootstrap` 报出的 provider 身份必须是 `generic_rest`，否则 `expected provider ...` 直接判红 |
-| 21 | browser-a11y | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (BROWSER=1 才执行)`；`BROWSER=1` 时 `python scripts/browser_a11y.py --self-test` → `python scripts/browser_a11y.py` | 退出码 0，`browser a11y + walkthrough passed`；前置为 playwright + Chromium（`scripts/requirements-browser.txt`） |
-| 22 | capacity-gate-500 | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (CAPACITY=1 才执行)`；`CAPACITY=1` 时先 `docker compose down --remove-orphans`（商业覆层同做一次）释放端口，再 `./scripts/capacity-gate-500.sh` | 错误率 ≤ `CAPACITY_MAX_ERROR_RATE`（默认 1%）、p95 ≤ `CAPACITY_MAX_P95_MS`（默认 800ms），随后容量栈里的 acceptance 复跑通过 |
+| 19 | hold-drill | `python scripts/hold_drill.py`（需要步骤 16 的商业覆层仍在跑） | 打印 `legal hold drill: N/N checks passed`；两种载体各自的拒绝措辞、放行后的同一条调用必须开火与不开火、目录里读得到该标记的对象恰好那三个、以及 `media_assets` 没有删除触发器这一条实测缺口 |
+| 20 | provider-regression-100 | `python scripts/provider_regression.py "${REGRESSION_JOBS:-100}" "${REGRESSION_CONCURRENCY:-8}"` | 打印 `provider regression: N/N completed, error rate ...` 且无 `FAIL:` 行；台账闭合、无悬挂 hold |
+| 21 | generic-rest-roundtrip | `docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up --build -d` → `python scripts/provider_regression.py "${GENERIC_REST_JOBS:-25}" 4 generic_rest` | 退出码 0；`/api/bootstrap` 报出的 provider 身份必须是 `generic_rest`，否则 `expected provider ...` 直接判红 |
+| 22 | browser-a11y | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (BROWSER=1 才执行)`；`BROWSER=1` 时 `python scripts/browser_a11y.py --self-test` → `python scripts/browser_a11y.py` | 退出码 0，`browser a11y + walkthrough passed`；前置为 playwright + Chromium（`scripts/requirements-browser.txt`） |
+| 23 | capacity-gate-500 | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (CAPACITY=1 才执行)`；`CAPACITY=1` 时先 `docker compose down --remove-orphans`（商业覆层同做一次）释放端口，再 `./scripts/capacity-gate-500.sh` | 错误率 ≤ `CAPACITY_MAX_ERROR_RATE`（默认 1%）、p95 ≤ `CAPACITY_MAX_P95_MS`（默认 800ms），随后容量栈里的 acceptance 复跑通过 |
 
 **判读要点**：每步结束后控制台会打印 `STEP N RESULT: PASS/FAIL`。任一步 `FAIL` 会立即停止，并提示 `该步骤失败，日志在 …`。
 
