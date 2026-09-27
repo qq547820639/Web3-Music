@@ -117,6 +117,8 @@ KEEP_CAPACITY_STACK=1 \
 
 同轮一并观察（**本条已由读码 + 实测更正**）：`LOGIN_RATE_LIMIT_PER_MINUTE` 缺省 10 次/分钟，原先记为"按 IP 计"是误读——键实为 `login:sha256(email)`（`services/api/app/main.py:157`），即**按账号**，同一出口 IP 后的用户不会互相挤爆；实测第 11 次尝试起 429。真正的两个问题是：限流脚本对每次 INCR 都无条件 `EXPIRE 60`（含被拒的那次），窗口随敲门频率滑动，实测"每 30 秒敲一次"连 90 秒都进不去、直到静默满 75 秒才恢复；以及缺少跨账号维度，单账号可被知道邮箱者持续锁在门外，而分散撞库不受约束。本轮未动服务端缺省值，只把测试客户端退避改成 ≥75 秒（原来的 12–30 秒退避会被自己饿死），定值权留给属主。
 
+**2026-09-27 同一天的后续（本节记的是改前形状，保留不动）**：上面那两个问题都已定值并做完。滑动窗改成了固定窗口（`_login_gate` 只读、`_login_failed` 只在凭据失败那一支花额度），跨账号维度也有了——登录多了一道按**来源地址**计的去重集合窗口（`LOGIN_SOURCE_RATE_LIMIT_PER_MINUTE=20` 个不同账号/分钟），它成立的前提是 api 能拿到可信地址，而这要先做两处部署改动：网关覆盖 `X-Forwarded-For: $remote_addr`（`services/gateway/nginx.conf:32`、`:50`）、compose 把网关钉成静态地址并让 uvicorn 只信那一个（`docker-compose.yml:120`、`:251`、`services/api/Dockerfile:16`）。同一轮里 `auth_sessions.ip_hash` 从「对客户端 IP 取不加盐摘要」改成带 `ADDRESS_PEPPER` 的摘要，因为地址的全域只有 2**32，而不加盐那版当时记的还一直是网关容器。三处 75 秒退避随之降到 61 秒。取证、变异对照与仍未闭的一面全在 `docs/RELEASE_CHECKLIST.md`「已修」第 24 条，本节不再重复读数。
+
 ## 压测器选型记录（2026-09-25）
 
 当前 Gate 用的是仓内自研 `scripts/load-test-500.py`（asyncio，124 行，已自带

@@ -41,6 +41,10 @@ class Settings:
     payment_provider: str = os.getenv("PAYMENT_PROVIDER", "emulator")
     payment_base_url: str = os.getenv("PAYMENT_BASE_URL", "http://payment-emulator:8020").rstrip("/")
     payment_webhook_secret: str = os.getenv("PAYMENT_WEBHOOK_SECRET", "dev-payment-webhook-secret")
+    # Pepper for auth_sessions.ip_hash. An IPv4 address has 2**32 values and an IPv6 /64 has public
+    # enumeration tools already, so an unsalted SHA-256 of an address is a pseudonym a determined
+    # reader can undo in minutes -- which is exactly what the column claims to protect after erasure.
+    address_pepper: str = os.getenv("ADDRESS_PEPPER", "local-development-address-pepper-change-before-production-0123")
     public_api_base_url: str = os.getenv("PUBLIC_API_BASE_URL", "http://api:8000").rstrip("/")
     request_rate_limit_per_minute: int = int(os.getenv("REQUEST_RATE_LIMIT_PER_MINUTE", "300"))
     login_rate_limit_per_minute: int = int(os.getenv("LOGIN_RATE_LIMIT_PER_MINUTE", "10"))
@@ -66,6 +70,12 @@ class Settings:
     # arrivals rather than failures -- see _report_gate in app/main.py for why that polarity is right here.
     report_rate_limit_per_minute: int = int(os.getenv("REPORT_RATE_LIMIT_PER_MINUTE", "6"))
     report_global_rate_limit_per_minute: int = int(os.getenv("REPORT_GLOBAL_RATE_LIMIT_PER_MINUTE", "30"))
+    # How many *different accounts* one source may get wrong inside a minute before that source is
+    # held. Deliberately a count of accounts, not of attempts: a person at a shared office who mistypes
+    # their own password ten times has not attacked anyone, and the per-account window already
+    # describes them. This gate exists for the shape the per-account one cannot see -- one machine
+    # walking a list of addresses. See _source_gate in app/main.py.
+    login_source_rate_limit_per_minute: int = int(os.getenv("LOGIN_SOURCE_RATE_LIMIT_PER_MINUTE", "20"))
     s3_public_endpoint_url: str = os.getenv("S3_PUBLIC_ENDPOINT_URL", "").rstrip("/")
 
 
@@ -76,7 +86,8 @@ settings = Settings()
 # repository. A production boot is refused while any of them is in use -- see
 # deny_insecure_defaults(), which services/api/app/main.py calls from its lifespan, and the resident
 # test that keeps the list below in step with .env.example and with the defaults above.
-SIGNING_SECRETS = ("jwt_secret", "media_signing_secret", "provider_webhook_secret", "payment_webhook_secret")
+SIGNING_SECRETS = ("jwt_secret", "media_signing_secret", "provider_webhook_secret",
+                  "payment_webhook_secret", "address_pepper")
 
 INSECURE_SECRET_VALUES = frozenset({
     # the in-file defaults above
@@ -92,6 +103,9 @@ INSECURE_SECRET_VALUES = frozenset({
     "local-demo-media-secret-not-a-real-secret-c81d",
     "local-demo-provider-webhook-secret-4b7e",
     "local-demo-payment-webhook-secret-9a3c",
+    # the in-file pepper above, listed with the rest so a deployment cannot keep it by accident
+    "local-development-address-pepper-change-before-production-0123",
+    "local-demo-address-pepper-not-a-real-secret-3e9b",
 })
 
 

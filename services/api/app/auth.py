@@ -50,6 +50,17 @@ def token_hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def address_hash(client_ip: str) -> str:
+    """A keyed digest of a client address, for the one column that has to store one.
+
+    token_hash is right for a bearer token -- 256 bits of randomness make reversal irrelevant -- and
+    wrong for an address, whose whole space is 2**32 for IPv4. Peppering it means the stored value
+    reveals nothing without `ADDRESS_PEPPER`, so an old session row cannot be turned back into the
+    subscriber's home connection after the fact.
+    """
+    return hashlib.sha256(f"{settings.address_pepper}|{client_ip}".encode()).hexdigest()
+
+
 def issue_token(user_id: str, session_id: str | None = None, *, amr: list[str] | None = None,
                 purpose: str | None = None, ttl_seconds: int | None = None) -> str:
     """Access token. A `purpose` token is NOT an access token -- see decode_pending."""
@@ -131,7 +142,7 @@ def create_browser_session(cur, user_id: str, user_agent: str, client_ip: str, *
             token_hash(refresh_token),
             token_hash(csrf_token),
             token_hash(user_agent or ""),
-            token_hash(client_ip or ""),
+            address_hash(client_ip or ""),
             expires_at,
             ",".join(amr or ["pwd"]),
             mfa_at,

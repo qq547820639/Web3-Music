@@ -10,4 +10,7 @@ RUN set -e; for attempt in 1 2 3 4 5; do \
 COPY app ./app
 RUN mkdir -p /data/media
 EXPOSE 8000
-CMD ["sh","-c","exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS} --limit-concurrency ${API_LIMIT_CONCURRENCY} --timeout-keep-alive ${API_KEEPALIVE_SECONDS}"]
+# --forwarded-allow-ips is required, not defaulted: uvicorn's own fallback is 127.0.0.1, which behind a
+# gateway means "trust nobody", and every session would silently record the gateway container as the
+# client again. ${VAR:?} makes that a boot failure instead of a quiet loss of the audit trail.
+CMD ["sh","-c","exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS} --limit-concurrency ${API_LIMIT_CONCURRENCY} --timeout-keep-alive ${API_KEEPALIVE_SECONDS} --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS:?FORWARDED_ALLOW_IPS must name the proxy peer; see .env.example}\""]

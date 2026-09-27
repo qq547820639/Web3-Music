@@ -14,8 +14,8 @@ authenticated rather than workspace-scoped, and one less row means one less thin
 Each run still leaves audit events behind -- append-only by schema design
 (001_production_candidate.sql:468) -- so the residue is printed rather than scrubbed.
 
-Login is counted per account at ten failed credentials a minute in a fixed window, so this drill
-mints one pending token and reuses it: a pending token buys nothing on its own, because every
+Login is counted per account at ten failed credentials a minute in a fixed window, and per source at
+twenty *different* accounts a minute, so this drill mints one pending token and reuses it: a pending token buys nothing on its own, because every
 challenge still has to clear the single-use step/recovery guard. The window's own shape is measured
 at the end, against the counter in the shared store.
 """
@@ -100,6 +100,75 @@ def api_env(name: str) -> str:
     if out.returncode != 0:
         raise SystemExit(f"printenv {name} failed: {out.stderr.strip()[:200]}")
     return out.stdout.strip()
+
+
+
+def container_ip(service: str) -> str:
+    """The address a container holds on the compose network right now.
+
+    Read through compose rather than assumed: the api's trust list names the gateway's address, so a
+    drift between `networks:` in docker-compose.yml and what the running gateway actually has is the
+    failure mode that would silently send every session back to being recorded as the container.
+    """
+    cid = subprocess.run(["docker", "compose", "ps", "-q", service], capture_output=True, text=True)
+    if cid.returncode != 0 or not cid.stdout.strip():
+        raise SystemExit(f"compose ps -q {service} gave nothing: {cid.stderr.strip()[:200]}")
+    found = subprocess.run(["docker", "inspect", "-f",
+                            "{{range .NetworkSettings.Networks}}{{.IPAddress}}\n{{end}}",
+                            cid.stdout.strip()], capture_output=True, text=True)
+    lines = [x.strip() for x in (found.stdout or "").splitlines() if x.strip()]
+    if found.returncode != 0 or not lines:
+        raise SystemExit(f"docker inspect for {service} failed: {found.stderr.strip()[:200]}")
+    return lines[0]
+
+
+def container_file(service: str, path: str) -> str:
+    out = subprocess.run(["docker", "compose", "exec", "-T", service, "cat", path],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        raise SystemExit(f"cat {path} in {service} failed: {out.stderr.strip()[:200]}")
+    return out.stdout
+
+
+def api_login_from_inside(target: str, email: str, password: str) -> tuple[str, int, str]:
+    """Log in from *inside* the api container, so the peer address is known exactly.
+
+    Returns (the address that container sees as its own, status, Retry-After). The forged
+    X-Forwarded-For goes along on every call: what this measures is whether the server reads it, and
+    the answer must be "no" on both paths -- because the proxy overwrites the header, and because a
+    peer that is not on the allow-list is not believed about anything.
+    """
+    code = ("import socket,sys,httpx;"
+            "me=socket.gethostbyname(socket.gethostname());"
+            "r=httpx.post(sys.argv[1],json={'email':sys.argv[2],'password':sys.argv[3]},"
+            "headers={'X-Forwarded-For':'203.0.113.77'},timeout=30);"
+            "print(me,r.status_code,r.headers.get('retry-after',''))")
+    out = subprocess.run(["docker", "compose", "exec", "-T", "api", "python", "-c", code,
+                          target, email, password], capture_output=True, text=True)
+    if out.returncode != 0:
+        raise SystemExit(f"login from inside api failed: {(out.stderr or out.stdout).strip()[:220]}")
+    parts = out.stdout.strip().split()
+    if len(parts) < 2:
+        raise SystemExit(f"login from inside api returned an unreadable line: {out.stdout[:200]!r}")
+    return parts[0], int(parts[1]), (parts[2] if len(parts) > 2 else "")
+
+
+def newest_ip_hash(user_id: str) -> str:
+    return sql(f"SELECT ip_hash FROM auth_sessions WHERE user_id='{user_id}' ORDER BY created_at DESC LIMIT 1")
+
+
+def source_key(address: str, pepper: str) -> str:
+    return f"login:src:{hashlib.sha256(f'{pepper}|{address}'.encode()).hexdigest()}"
+
+
+def walk_source_accounts(count: int, email_prefix: str) -> list[int]:
+    """One wrong password each for `count` accounts that do not exist, from inside the api container."""
+    codes = []
+    for i in range(count):
+        _, status, _ = api_login_from_inside("http://127.0.0.1:8000/api/auth/login",
+                                             f"{email_prefix}-{i}@example.local", PASSWORD)
+        codes.append(status)
+    return codes
 
 
 def wait_out_challenge_window(user_id: str):
@@ -418,6 +487,106 @@ def main() -> int:
         check("when the window passes the account signs in, so this is throttling and not a lockout",
               reopened.status_code == 200, f"{reopened.status_code} {reopened.text[:160]}")
         redis_cli("DEL", login_key)
+
+        # ---- the address dimension: who the server is allowed to believe ----------------
+        # Everything above holds one account down; this holds one *machine* down, and it only exists
+        # because the api now has a client address it may trust. Both halves are measured, because the
+        # dangerous failure of a trust list is not an error -- it is the old silent behaviour coming
+        # back while every request still succeeds.
+        pepper = api_env("ADDRESS_PEPPER")
+        trusted = api_env("FORWARDED_ALLOW_IPS")
+        gateway_ip = container_ip("gateway")
+        check("the api names exactly one peer whose forwarding it believes, and that peer is the gateway",
+              bool(pepper) and bool(trusted) and trusted == gateway_ip and "*" not in trusted,
+              f"FORWARDED_ALLOW_IPS={trusted!r}, gateway container={gateway_ip!r}")
+        shipped = container_file("gateway", "/etc/nginx/conf.d/default.conf")
+        # Directive lines only. The comment that explains *why* appending is wrong names the variable it
+        # forbids, so a substring test over the whole file can never go green -- and would also pass on a
+        # config whose appends were merely commented out.
+        active = [x.strip() for x in shipped.splitlines() if x.strip() and not x.strip().startswith("#")]
+        # Counted over the directives that set this header, not over proxy_pass: four of the api's
+        # locations (/docs, /openapi.json, /health, /ready) carry no credentials and no rate limit, so
+        # they need no client chain, and demanding a directive on each of them would only teach the
+        # next reader to add one.
+        forwarders = [x for x in active if x.startswith("proxy_set_header X-Forwarded-For")]
+        writes = sum(1 for x in forwarders if "$remote_addr" in x)
+        appends = sum(1 for x in forwarders if "proxy_add_x_forwarded_for" in x)
+        check(f"all {len(forwarders)} directives that set the client chain write it rather than appending",
+              len(forwarders) >= 2 and appends == 0 and writes == len(forwarders),
+              f"{writes} writing, {appends} appending, over {len(forwarders)} X-Forwarded-For directives "
+              f"among {len(active)} active lines")
+        check("the recorded address is a keyed digest, not a bare hash of an address",
+              "ip_hash" in sql("SELECT string_agg(column_name,',') FROM information_schema.columns "
+                               "WHERE table_name='auth_sessions'")
+              and pepper != "",
+              "auth_sessions.ip_hash missing, or no pepper configured")
+
+        before = sql(f"SELECT count(*) FROM auth_sessions WHERE user_id='{probe_id}'")
+        mine, via_status, _ = api_login_from_inside("http://gateway/api/auth/login", PROBE, PASSWORD)
+        over_gateway = newest_ip_hash(probe_id)
+        keyed = lambda value: hashlib.sha256(f"{pepper}|{value}".encode()).hexdigest()
+        check(f"a login through the gateway records the address the gateway itself saw ({mine}), "
+              "not the forged header and not the proxy",
+              via_status == 200 and over_gateway == keyed(mine)
+              and over_gateway != keyed("203.0.113.77") and over_gateway != keyed(gateway_ip),
+              f"status {via_status}, stored {over_gateway[:16]}…, expected {keyed(mine)[:16]}… "
+              f"(forged would be {keyed('203.0.113.77')[:16]}…, gateway {keyed(gateway_ip)[:16]}…)")
+        _, direct_status, _ = api_login_from_inside("http://127.0.0.1:8000/api/auth/login", PROBE, PASSWORD)
+        direct_hash = newest_ip_hash(probe_id)
+        check("the same forged header arriving on the published port is ignored too, because that peer "
+              "is not on the list",
+              direct_status == 200 and direct_hash == keyed("127.0.0.1")
+              and direct_hash != keyed("203.0.113.77"),
+              f"status {direct_status}, stored {direct_hash[:16]}…, expected {keyed('127.0.0.1')[:16]}…")
+        check("and no stored row is the unsalted digest of any of those addresses",
+              sql(f"SELECT count(*) FROM auth_sessions WHERE user_id='{probe_id}' AND ip_hash IN ("
+                  f"'{hashlib.sha256(mine.encode()).hexdigest()}',"
+                  f"'{hashlib.sha256('127.0.0.1'.encode()).hexdigest()}',"
+                  f"'{hashlib.sha256('203.0.113.77'.encode()).hexdigest()}',"
+                  f"'{hashlib.sha256(gateway_ip.encode()).hexdigest()}')") == "0",
+              "an unsalted address digest is still being written")
+        check("the two probe logins minted exactly two more sessions and nothing else",
+              sql(f"SELECT count(*) FROM auth_sessions WHERE user_id='{probe_id}'")
+              == str(int(before) + 2), f"rows went {before} -> {sessions_at()}")
+
+        per_source = int(api_env("LOGIN_SOURCE_RATE_LIMIT_PER_MINUTE"))
+        src_key = source_key("127.0.0.1", pepper)
+        redis_cli("DEL", src_key)
+        walk_prefix = f"mfa-walk-{STAMP}"
+        codes = walk_source_accounts(per_source, walk_prefix)
+        check(f"a source may get {per_source} different accounts wrong in a window, which is the point",
+              codes == [401] * per_source, f"statuses: {codes}")
+        held, held_status, held_retry = api_login_from_inside("http://127.0.0.1:8000/api/auth/login",
+                                                              f"{walk_prefix}-x@example.local", PASSWORD)
+        check(f"one account past the {per_source} the window allows is refused from the same source, "
+              f"with the wait stated",
+              held_status == 429 and held_retry.isdigit() and 0 < int(held_retry) <= 60,
+              f"status {held_status}, Retry-After {held_retry!r}")
+        card_full = int(redis_cli("SCARD", src_key) or -1)
+        ttl_full = int(redis_cli("TTL", src_key) or -2)
+        again = walk_source_accounts(3, f"{walk_prefix}-more")
+        check("a refusal adds nothing to the window it reports, and the window keeps running down",
+              again == [429, 429, 429] and int(redis_cli("SCARD", src_key) or -1) == card_full
+              and 0 < int(redis_cli("TTL", src_key) or -2) <= ttl_full,
+              f"statuses {again}, cardinality {card_full} then {redis_cli('SCARD', src_key)}, "
+              f"ttl {ttl_full} then {redis_cli('TTL', src_key)}")
+        redis_cli("DEL", src_key)
+        released, released_status, _ = api_login_from_inside("http://127.0.0.1:8000/api/auth/login",
+                                                             f"{walk_prefix}-x@example.local", PASSWORD)
+        check("clearing the window is enough: nothing was written about the account itself",
+              released_status == 401,
+              f"the held address now answers {released_status} ({released!r}) -- a held source must be "
+              "throttling, not a ban that outlives the window")
+        one_key = source_key("127.0.0.1", pepper)
+        redis_cli("DEL", one_key)
+        same_email = f"mfa-same-{STAMP}@example.local"
+        singles = [api_login_from_inside("http://127.0.0.1:8000/api/auth/login", same_email, PASSWORD)[1]
+                   for _ in range(5)]
+        check("five mistypes by one account are one account: the source window does not notice them",
+              singles == [401] * 5 and int(redis_cli("SCARD", one_key) or -1) == 1,
+              f"statuses {singles}, cardinality {redis_cli('SCARD', one_key)}")
+        redis_cli("DEL", one_key)
+
         # Precise, because the window probe deliberately leaves something behind: an abandoned
         # enrolment keeps its sealed seed until the account re-enrols, is disarmed or is erased.
         # It is inert -- 015's confirm refuses it past the window, which is the check above -- but a

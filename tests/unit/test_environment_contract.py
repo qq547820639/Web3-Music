@@ -73,6 +73,9 @@ OTHER_CONSUMERS = {
     "API_WORKERS": "uvicorn's own flag, read by the api image's command line",
     "API_LIMIT_CONCURRENCY": "uvicorn's own flag, read by the api image's command line",
     "API_KEEPALIVE_SECONDS": "uvicorn's own flag, read by the api image's command line",
+    "FORWARDED_ALLOW_IPS": "uvicorn's own flag, read by the api image's command line -- and read *there* "
+                           "rather than in settings.py because the process that needs it is the one that "
+                           "decides whether to believe X-Forwarded-For, before any of this code runs",
     "PORT": "the emulator images' uvicorn --port argument",
     "GATEWAY_PORT": "a compose host-port mapping; it never enters a container",
     "PROMETHEUS_PORT": "a compose host-port mapping; it never enters a container",
@@ -236,7 +239,7 @@ def test_the_example_file_and_the_settings_defaults_agree_where_both_name_a_knob
     # asserts that every example value is on the refusal list). This test is about the boring
     # tunables, where "documented" and "equal to the default" are the same claim.
     exempt = {"JWT_SECRET", "MEDIA_SIGNING_SECRET", "PROVIDER_WEBHOOK_SECRET", "PAYMENT_WEBHOOK_SECRET",
-              "MFA_ENCRYPTION_KEY", "DEEPSEEK_API_KEY"}
+              "MFA_ENCRYPTION_KEY", "DEEPSEEK_API_KEY", "ADDRESS_PEPPER"}
     drift = {name: (values[name], defaults[name]) for name in defaults
              if name in values and name not in exempt and values[name] != defaults[name]}
     assert not drift, f".env.example ships a value that differs from the code default: {drift}"

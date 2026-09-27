@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.security import APIKeyCookie, HTTPBearer
 from pydantic import BaseModel, Field
 
-from .auth import ACCESS_COOKIE, CSRF_COOKIE, REFRESH_COOKIE, Actor, UserIdentity, create_browser_session, decode_pending, \
+from .auth import ACCESS_COOKIE, CSRF_COOKIE, REFRESH_COOKIE, Actor, UserIdentity, address_hash, create_browser_session, decode_pending, \
                    get_actor, get_user, issue_token, list_memberships, require_platform_admin, require_roles, token_hash, \
                    validate_browser_csrf, validate_refresh_session, verify_password
 from .mfa import hash_recovery as mfa_hash_recovery, new_recovery_codes as mfa_new_recovery_codes, \
@@ -167,9 +167,9 @@ def _login_gate(key: str) -> None:
     """Refuse while this account's window is full. Reads only -- a refusal spends none of the window it reports.
 
     Fixed window and failures-only, the same shape `_mfa_incr` gives the second factor and the step-up wall.
-    The bounded-but-real residual (one knocker can hold one account down a minute at a time, forever) needs
-    an address dimension, and the API has no address it may trust: uvicorn starts without --proxy-headers or
-    FORWARDED_ALLOW_IPS, so behind the gateway every browser arrives as the gateway container.
+    The bounded-but-real residual (one knocker can hold one account down a minute at a time, forever) is
+    what `_source_gate` exists for: it costs an attacker who wants to keep one person out nothing to
+    spread across accounts, and the source window is what notices the spreading.
     """
     if int(rq.get(key) or 0) >= settings.login_rate_limit_per_minute:
         ttl = rq.ttl(key)
@@ -181,13 +181,57 @@ def _login_failed(key: str) -> None:
     _mfa_incr(keys=[key], args=[LOGIN_WINDOW_SECONDS])
 
 
+def _client_address(request: Request) -> str:
+    """The source address this process is allowed to act on, or "" when there is none.
+
+    uvicorn installs ProxyHeadersMiddleware by default (`--proxy-headers` default=True, its own
+    main.py:223-226), and that middleware rewrites scope["client"] only when the *peer* is on
+    FORWARDED_ALLOW_IPS -- it then takes the first untrusted hop from the right of X-Forwarded-For
+    (middleware/proxy_headers.py:98-135). The compose gateway is the only address on that list, and
+    nginx writes the header rather than appending to it, so a forged X-Forwarded-For is not read on
+    either path: over the gateway it is overwritten, around the gateway the peer is not trusted.
+    """
+    return request.client.host if request.client else ""
+
+
+def _source_key(address: str) -> str:
+    return f"login:src:{address_hash(address)}"
+
+
+def _source_gate(address: str) -> None:
+    """Refuse while this source's window of distinct accounts is full. Reads only, like _login_gate.
+
+    What this counts is accounts, not attempts, because that is the only thing that separates an
+    attack from a clumsy office: N mistypes by one person are that person's business (the per-account
+    window already holds them), one mistype each by N people is a list being walked. With no address
+    to attribute to, the gate stands down rather than pooling unrelated strangers into one bucket --
+    the per-account window still applies.
+    """
+    if not address:
+        return
+    key = _source_key(address)
+    if int(rq.scard(key) or 0) >= settings.login_source_rate_limit_per_minute:
+        ttl = rq.ttl(key)
+        raise HTTPException(429, "too many accounts tried from this address",
+                            headers={"Retry-After": str(ttl) if ttl and ttl > 0 else str(LOGIN_WINDOW_SECONDS)})
+
+
+def _source_failed(address: str, email: str) -> None:
+    if not address:
+        return
+    _login_source_add(keys=[_source_key(address)], args=[LOGIN_WINDOW_SECONDS, email.lower()])
+
+
 @app.post("/api/auth/login")
 def login(body:LoginBody,request:Request,response:Response):
     key=_login_key(body.email)
+    address=_client_address(request)
     _login_gate(key)
+    _source_gate(address)
     row=fetch_one("SELECT * FROM users WHERE lower(email)=lower(%s)",(body.email,))
     if not row or row["status"]!="active" or not verify_password(body.password,row["password_hash"]):
         _login_failed(key)
+        _source_failed(address, body.email)
         raise HTTPException(401,"invalid credentials")
     if row["mfa_enrolled_at"] is not None:
         # No session and no cookies yet: the password alone must not produce anything a client can
@@ -237,6 +281,14 @@ def logout(request:Request,response:Response,user:UserIdentity=Depends(get_user)
 
 
 _mfa_incr = rq.register_script("local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; return n")
+
+# Same fixed-window rule as _mfa_incr, on a set instead of a counter: the first add opens the window
+# (TTL -1 means no expiry has been set yet) and every later add leaves it alone, so a source cannot
+# stay locked by keeping the list long. Returns the cardinality so the caller can read what it counted.
+_login_source_add = rq.register_script(
+    "redis.call('SADD', KEYS[1], ARGV[2]); "
+    "if redis.call('TTL', KEYS[1]) == -1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; "
+    "return redis.call('SCARD', KEYS[1])")
 
 
 def _mfa_throttle(kind: str, subject: str):

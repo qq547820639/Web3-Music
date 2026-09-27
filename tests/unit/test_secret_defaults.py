@@ -31,7 +31,8 @@ PRODUCTION = ROOT / "docker-compose.production.yml"
 CLEAN = {"jwt_secret": "a-real-jwt-key-from-a-secret-manager",
          "media_signing_secret": "a-real-media-key-from-a-secret-manager",
          "provider_webhook_secret": "a-real-provider-wh-key-from-a-secret-manager",
-         "payment_webhook_secret": "a-real-payment-wh-key-from-a-secret-manager"}
+         "payment_webhook_secret": "a-real-payment-wh-key-from-a-secret-manager",
+         "address_pepper": "a-real-address-pepper-from-a-secret-manager"}
 
 
 def configured(**overrides):

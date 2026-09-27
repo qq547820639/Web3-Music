@@ -26,7 +26,7 @@
 ## 对外部署前强制要求
 
 - OIDC/SSO、MFA、账户锁定、密码重置、Session Revoke 和 Key Rotation；
-- TLS、WAF、DDoS 防护、用户/IP/Workspace 级限流；
+- TLS、WAF、DDoS 防护、用户/IP/Workspace 级限流；（应用内已有账号维度、来源地址维度与投诉收件两道固定窗口，见 `docs/RELEASE_CHECKLIST.md`「已修」第 24 条；来源维度信的是网关自己看到的对端，信任表在 `docker-compose.yml:120` 写死成网关的静态地址，因此部署时若换网段必须同时改这一格。Workspace 级配额、TLS、WAF、DDoS 仍属部署侧，代码内没有 substitute 之物）
 - Vault/KMS/Secret Manager 和短期数据库凭证；
 - 托管 PostgreSQL/Redis/Object Storage，静态与传输加密；
 - SAST、DAST、依赖与容器扫描、SBOM、镜像签名和 Provenance；
