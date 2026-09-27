@@ -132,10 +132,14 @@ def test_the_census_sees_every_installing_image():
 # and on the 4 vCPU / 5.8 GiB Colima VM that is what killed an unrelated apt-get with SIGKILL while two
 # other images were pulling wheels.
 
-def compose_up_body(script: str) -> str:
-    """The body of step_stack_up(), the chain's build-and-start step."""
-    found = re.search(r"step_stack_up\(\)\s*\{(.*?)\n\}", script, re.DOTALL)
-    assert found, "acceptance-all.sh no longer defines step_stack_up"
+CHAIN = ROOT / "scripts/acceptance-all.sh"
+CAPACITY_SCRIPT = ROOT / "scripts/capacity-gate-500.sh"
+STACK_STEPS = ("step_stack_up", "step_commercial", "step_generic_rest_roundtrip")
+
+
+def function_body(text: str, name: str) -> str:
+    found = re.search(rf"{name}\(\)\s*\{{(.*?)\n\}}", text, re.DOTALL)
+    assert found, f"{name} is no longer defined in the chain"
     return found.group(1)
 
 
@@ -151,9 +155,9 @@ def shell_commands(body: str) -> str:
 
 
 def build_loop_head(body: str) -> str:
-    """The line feeding the chain's build loop, when that line is derived from `compose config`.
+    """The line feeding a build loop, when that line is derived from `compose config`.
 
-    Judged as a shape, not as one spelling. The first version of the clause below pinned the literal
+    Judged as a shape, not as one spelling. The first version of this clause pinned the literal
     `$(docker compose config --services)`, which is exactly the enumeration that hid this round's
     defect: `config --services` omits services that sit behind a profile, so `worker-b` was never
     rebuilt and the contention step raced a new worker against an hours-old one.
@@ -167,21 +171,29 @@ PROFILE_WIDE = re.compile(r"--profile\s+[\"']?\*|--all-profiles")
 
 
 def test_the_chain_builds_one_image_at_a_time():
-    body = shell_commands(compose_up_body((ROOT / "scripts/acceptance-all.sh").read_text(encoding="utf-8")))
-    assert "--build" not in body, \
+    text = CHAIN.read_text(encoding="utf-8")
+    assert "--build" not in shell_commands(text), \
         "`up --build` builds every service concurrently; measured on the release VM that killed " \
         "worker's apt-get with SIGKILL (rc 137) while other images were downloading"
-    head = build_loop_head(body)
+    helper = function_body(text, "build_images_in_order")
+    head = build_loop_head(helper)
     assert head, \
-        "the build loop must enumerate whatever compose reports, not a hand-kept list of service " \
+        "the build helper must enumerate whatever compose reports, not a hand-kept list of service " \
         "names that silently goes stale when a profile or a service is added"
     assert PROFILE_WIDE.search(head), \
         "the enumeration has to see profile-gated services: `config --services` skips them, which is " \
         "how acceptance-20260927T030055Z step 6 came to race worker (rebuilt) against worker-b " \
         "(hours old, no media_scan.py) -- the stale one wrote the literal 'clean' into media_assets, " \
         "migration 020's trigger refused it, and a job settled partial"
-    assert re.search(r"docker compose[^\n]*\bbuild\b[^\n]*\|\|\s*return 1", body), \
+    assert re.search(r"docker compose[^\n]*\bbuild\b[^\n]*\|\|\s*return 1", helper), \
         "a failed image build has to fail the step rather than fall through to `up`"
+    for step in STACK_STEPS:
+        body = function_body(text, step)
+        assert "build_images_in_order" in body, f"{step} starts a stack without the serial build helper"
+        assert re.search(r"docker compose[^\n]*up -d", body), f"{step} no longer starts the stack"
+    capacity = shell_commands(CAPACITY_SCRIPT.read_text(encoding="utf-8"))
+    assert "--build" not in capacity, "the capacity gate builds every image at once again"
+    assert re.search(r"docker compose[^\n]*\bbuild\b", capacity), "the capacity gate stopped building"
 
 
 def test_the_build_shape_detector_fires_on_the_concurrent_form():
@@ -189,12 +201,23 @@ def test_the_build_shape_detector_fires_on_the_concurrent_form():
            "  docker compose up --build -d\n"
            "  docker compose ps\n"
            "}\n")
-    body = shell_commands(compose_up_body(old))
+    body = shell_commands(function_body(old, "step_stack_up"))
     assert "--build" in body
     assert not build_loop_head(body)
-    assert "--build" in compose_up_body(old)  # the prose-strip is what makes the reading above honest
-    current = shell_commands(compose_up_body((ROOT / "scripts/acceptance-all.sh").read_text(encoding="utf-8")))
-    assert "--build" not in current
+    assert "--build" in function_body(old, "step_stack_up")  # the prose-strip is what makes the above honest
+    assert "--build" not in shell_commands(CHAIN.read_text(encoding="utf-8"))
+
+
+def test_a_step_that_drops_the_helper_is_reported_by_name():
+    """The per-step clause needs its own red side: a step going back to `up --build` must not pass."""
+    text = CHAIN.read_text(encoding="utf-8")
+    drifted = text.replace("  build_images_in_order -f docker-compose.yml -f docker-compose.commercial-test.yml\n"
+                           "  docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up -d",
+                           "  docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d")
+    assert drifted != text, "the fixture no longer matches the commercial step"
+    body = shell_commands(function_body(drifted, "step_commercial"))
+    assert "build_images_in_order" not in body
+    assert "--build" in body
 
 
 def test_the_profile_clause_fires_on_the_form_that_caused_this_round():
@@ -204,36 +227,35 @@ def test_the_profile_clause_fires_on_the_form_that_caused_this_round():
     compose-derived, serial and fail-fast. Only the profile-wide flag separates it from this round's
     shape -- so if that flag were dropped, this control is what reddens, not the chain's step 6.
     """
-    blind = ("step_stack_up() {\n"
+    blind = ("build_images_in_order() {\n"
              "  for service in $(docker compose config --services); do\n"
              "    docker compose build \"$service\" || return 1\n"
              "  done\n"
-             "  docker compose up -d\n"
              "}\n")
-    blind_body = shell_commands(compose_up_body(blind))
+    blind_body = shell_commands(function_body(blind, "build_images_in_order"))
     assert build_loop_head(blind_body), "the derived-from-config clause must NOT be what catches it"
     assert re.search(r"docker compose[^\n]*\bbuild\b[^\n]*\|\|\s*return 1", blind_body)
     assert not PROFILE_WIDE.search(build_loop_head(blind_body)), \
         "the profile clause went quiet on the exact shape it was written for"
 
-    wide = ("step_stack_up() {\n"
+    wide = ("build_images_in_order() {\n"
             "  for service in $(docker compose --profile '*' config --format json); do\n"
             "    docker compose --profile '*' build \"$service\" || return 1\n"
             "  done\n"
             "}\n")
-    wide_head = build_loop_head(shell_commands(compose_up_body(wide)))
+    wide_head = build_loop_head(shell_commands(function_body(wide, "build_images_in_order")))
     assert wide_head and PROFILE_WIDE.search(wide_head)
     flags = lambda line: sorted(set(re.findall(r"--[\w-]+", line)))  # noqa: E731  (one-use reader)
-    assert flags(wide_head) == flags(build_loop_head(
-        shell_commands(compose_up_body((ROOT / "scripts/acceptance-all.sh").read_text(encoding="utf-8"))))), \
+    assert flags(wide_head) == flags(build_loop_head(function_body(
+        CHAIN.read_text(encoding="utf-8"), "build_images_in_order"))), \
         "the fixture no longer describes the flags the chain's enumeration is called with"
 
-    hand_list = ("step_stack_up() {\n"
+    hand_list = ("build_images_in_order() {\n"
                  "  for service in api worker gateway; do\n"
                  "    docker compose build \"$service\" || return 1\n"
                  "  done\n"
                  "}\n")
-    assert not build_loop_head(shell_commands(compose_up_body(hand_list))), \
+    assert not build_loop_head(shell_commands(function_body(hand_list, "build_images_in_order"))), \
         "a hand-kept list reads as derived enumeration and passes quietly"
 
 

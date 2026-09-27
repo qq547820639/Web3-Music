@@ -143,6 +143,27 @@ finish_evidence() {
 }
 
 # ---- 各步骤实现（仅编排，不重复实现既有脚本逻辑） ----
+
+# build_images_in_order [compose 文件参数...]：把「带 build 段」的服务一个一个建，然后交给 up。
+# 不用 `up --build`，两个理由都是实测来的：
+#   * 并发。Colima 那台 4 vCPU / 5.8 GiB 的虚机里，`up --build` 同时拉起全部镜像，权威运行
+#     acceptance-20260926T161826Z 第 2 步里 worker 的 `apt-get install ffmpeg` 与另两个镜像的 pip
+#     下载挤在同一时刻，apt 被 SIGKILL（退码 137）。峰值并发本身就是放大项，排成一条队即可消掉。
+#   * 盲区。`docker compose config --services` 默认不报带 profiles 的服务，于是 worker-b（contention
+#     档）永远不会被重建——权威运行 acceptance-20260927T030055Z 第 6 步就是这个形状：worker-b 跑的是
+#     几小时前的镜像（/app 里没有 media_scan.py），按旧代码把 'clean' 当字面量写库，被 020 的触发器
+#     当场拒掉，一个作业 partial，而报出来的是一句关于租约的红。所以这里读的是
+#     `--profile '*' config --format json`，再按「有没有 build 段」过滤：纯镜像服务（clamav 在这台
+#     arm64 宿主上没有可用清单）不在这里 pull，交给按 profile 自便的部署方。
+# 三个用覆层起栈的步骤（stack_up / commercial / generic-rest）都走这里，不再各自持有 `--build`。
+build_images_in_order() {
+  local service
+  for service in $(docker compose "$@" --profile '*' config --format json \
+      | python -c 'import json,sys; print(" ".join(sorted(n for n, s in json.load(sys.stdin)["services"].items() if s.get("build"))))'); do
+    docker compose "$@" --profile '*' build "$service" || return 1
+  done
+}
+
 step_static_verify() {
   ./scripts/static-verify.sh
 }
@@ -156,21 +177,7 @@ step_stack_up() {
   if [ "${FRESH:-0}" = "1" ]; then
     docker compose --profile '*' down -v --remove-orphans
   fi
-  # 逐个构建，而不是 `up --build`。后者会在 Colima 那台 4 vCPU / 5.8 GiB 的虚机里同时拉起全部镜像，
-  # 实测权威运行 acceptance-20260926T161826Z 第 2 步：worker 的 `apt-get install ffmpeg` 与另外两个
-  # 镜像的 pip 下载挤在同一时刻，apt 那一步被 SIGKILL（退码 137），而同一条链上 payment/provider 两个
-  # 镜像刚靠重试装上依赖建好。峰值并发本身就是这一轮的放大项，把它排成一条队：任一镜像失败即整步失败，
-  # 建好之后 up 只负责起现成的镜像。
-  local service
-  # 只遍历「有 build 段」的服务，并且把 profiles 里的也算进来。`config --services` 默认不报带
-  # profiles 的服务，于是 worker-b（contention 档）与 clamav（scan 档）永远不会被这条链重建——
-  # 实测权威运行 acceptance-20260927T030055Z 第 6 步：worker-b 跑的是几小时前的镜像（/app 里没有
-  # media_scan.py），它按旧代码把 'clean' 当字面量写库，被 020 的触发器当场拒掉，一个作业因此 partial。
-  # 纯镜像服务（clamav 在这台 arm64 宿主上根本没有可用清单）不在这里 pull，交给部署方按 profile 自便。
-  for service in $(docker compose --profile '*' config --format json \
-      | python -c 'import json,sys; print(" ".join(sorted(n for n, s in json.load(sys.stdin)["services"].items() if s.get("build"))))'); do
-    docker compose --profile '*' build "$service" || return 1
-  done
+  build_images_in_order
   docker compose up -d
   docker compose ps
 }
@@ -237,7 +244,8 @@ step_media_scan_drill() {
 }
 
 step_commercial() {
-  docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d
+  build_images_in_order -f docker-compose.yml -f docker-compose.commercial-test.yml
+  docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up -d
   docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml --profile commercial-test run --rm acceptance-commercial
 }
 
@@ -265,7 +273,8 @@ step_generic_rest_roundtrip() {
   # （它已经提供该适配器默认的那组 /v1 路径）。第三个参数会让 provider_regression 先核对
   # /api/bootstrap 报出的 provider 身份，覆层没生效就直接判红，而不是静默沿用默认适配器跑绿。
   # 这不等于真实 Provider：合同、凭据与对方的错误词汇仍然缺，见 G9 条目。
-  docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up --build -d
+  build_images_in_order -f docker-compose.yml -f docker-compose.generic-rest.yml
+  docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up -d
   python scripts/provider_regression.py "${GENERIC_REST_JOBS:-25}" 4 generic_rest
 }
 
