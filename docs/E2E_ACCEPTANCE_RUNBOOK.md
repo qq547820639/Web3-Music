@@ -35,6 +35,23 @@
 | Docker Compose | **v2.x**（`docker compose` 子命令，非 `docker-compose`） | `docker compose version` |
 | Bash | 3.2+（脚本 shebang 为 bash） | `bash --version` |
 | GNU `date` / `tr` / `tee` / `cat` | 任意现代版本 | `date -u +%Y%m%dT%H%M%SZ` |
+| Python（**跑在宿主上**，不是容器里） | 3.10+（PEP 604 语法）+ `pytest` | `python -V`（注意是 `python` 而不是 `python3`） |
+| Node.js | 任意能 `--check` ES2020 的版本 | `node --version` |
+
+> **第 1 步与四支演练在宿主的 Python 里跑，不在容器里**：`scripts/static-verify.sh` 直接执行
+> `python -m compileall`、`node --check`、`sh -n`、`scripts/authority_matrix.py --check` 与
+> `pytest -q tests/unit`，`python scripts/*_drill.py` 同理。本机没装全局 `python`，这条链用的是
+> `/Users/panhao/.venvs/w3m-e2e`（3.12.13），依赖 = `services/api/requirements.txt`
+> （fastapi 0.116.1 / httpx 0.28.1 / jsonschema 4.25.0 / redis 6.4.0 / pyotp 2.10.0 / segno 1.6.6 …）
+> \+ `scripts/requirements-drill.txt`（zxing-cpp 3.1.1）\+ `scripts/requirements-browser.txt`
+> （playwright 1.63.0）\+ `pytest`。运行前必须把它的 bin 放到 PATH 前面：
+> `export PATH="/Users/panhao/.venvs/w3m-e2e/bin:$PATH"`；否则 `acceptance-all.sh:29-33` 的预检（清单
+> 是 `python node docker sha256sum xargs`）以 `预检失败：PATH 上没有可执行的 python。…` 退出码 2 立刻停下
+> ——**这条红是跑错 shell，不是被测代码**。本轮两种错法都实测过：不设 PATH 时 `python` 不存在，第 1 步不会
+> 开始；退而用系统 `python3`（3.9）或 `~/.local/bin/pytest`（9.1.1，其解释器没装 fastapi）时，
+> `pytest -q tests/unit` 在**收集阶段**就停（前者 10 个 `TypeError: unsupported operand type(s) for |`
+> 加 `psycopg2.pool` 缺失，后者 16 个 `ModuleNotFoundError: No module named 'fastapi'`），一条用例都没跑到，
+> 而输出长得像套件坏了。
 
 > 脚本全程 POSIX-sh 语法，`sh -n` 与 `bash -n` 均可通过，但运行时请用 bash（`./scripts/acceptance-all.sh`）。
 

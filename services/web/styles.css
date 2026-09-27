@@ -102,7 +102,7 @@ button:disabled {
 .notice p {
   margin: 0 0 8px;
 }
-.privacy-meta p, .privacy-meta h5 {
+.privacy-meta p, .privacy-meta h4 {
   margin: 8px 0 0;
 }
 .privacy-list {
@@ -184,6 +184,18 @@ textarea {
 }
 .panel h3,.panel h2 {
   margin: 0;
+}
+/* The document outline was renumbered (panel titles h3 -> h2, subsections h4 -> h3) because every view
+   jumped from its page h1 straight to h3 and axe reported heading-order on 20 of them. No rule here used
+   to state a heading size -- the level was supplying it through the UA sheet -- so these lines carry the
+   sizes the app was already rendering, now that the level no longer does. */
+.panel-head h2,.account-grid .panel > h2 {
+  margin: 0;
+  font-size: 1.17em;
+}
+.account-grid .panel h3 {
+  margin: 12px 0 6px;
+  font-size: 1em;
 }
 .login-shell {
   min-height: 100vh;
@@ -650,8 +662,9 @@ textarea {
 .asset-card:hover,.offer-card:hover,.brief-card:hover {
   border-color: #434a58;
 }
-.asset-card h3,.offer-card h3,.brief-card h3,.catalog-card h3 {
+.asset-card h2,.offer-card h2,.brief-card h2,.catalog-card h2 {
   margin: 0 0 8px;
+  font-size: 1.17em;
 }
 .hash {
   font-family: ui-monospace,monospace;

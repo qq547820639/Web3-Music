@@ -320,6 +320,9 @@ async function api(path, options = {}, retry = true) {
 function setAuthScreen(logged) {
   $('#login').hidden = logged;
   $('#app').hidden = !logged;
+  // The skip link must land somewhere on screen. Its target used to be #main in both states, and #main
+  // lives inside #app -- so on the sign-in screen Enter moved focus to a hidden element and did nothing.
+  $('.skip-link').setAttribute('href', logged ? '#main' : '#login');
 }
 // The second factor has exactly one piece of state: a pending token that a code can be spent on.
 // It lives only in this variable and only until it is spent, expires, or the user goes back.
@@ -438,16 +441,20 @@ async function init() {
     // must not be able to drift on which workspace is selected when the stored one is gone.
     renderWorkspaceOptions();
     $('#identity').textContent = state.user.display_name;
-    setAuthScreen(true);
-    await refreshBootstrap();
-    await loadProjects();
+    // Handlers go on before the app is shown. `#app` used to become visible two awaited fetches ahead of
+    // bindNavigation(), so a top-bar click during boot was dropped without a word -- and on a slow
+    // connection that window is exactly when a person is most likely to click.
     bindNavigation();
     bindListControls();
     $('#blindToggle').onchange = () => {
       state.blindMode = $('#blindToggle').checked;
       renderCandidates(state.candidates);
     };
-    await navigate('creation');
+    setAuthScreen(true);
+    await refreshBootstrap();
+    await loadProjects();
+    // state.view, not 'creation': a click that landed during boot is the request the app should honour.
+    await navigate(state.view);
   } catch (err) {
     // A signed-out visitor is the normal first paint: /api/auth/me answering 401 is not an
     // application fault, and logging it as one put an expected 401 into the error channel on every
@@ -1208,7 +1215,7 @@ async function loadAssets() {
   $('#assetPager').innerHTML = pagerHtml('assets');
   $('#assetCards').innerHTML = state.assets.length ? state.assets.map(a => {
     const caps = a.manifest?.capabilities || {};
-    return `<article class="asset-card" data-asset="${a.id}"><p class="eyebrow">ASSET SNAPSHOT</p><h3>${escapeHtml(a.title || a.snapshot?.spec?.title || 'Untitled')}</h3><p>R${a.spec_revision} · ${fmtDate(a.created_at)}</p><p class="hash">${escapeHtml(a.media_hash)}</p><div class="capabilities">${Object.entries(caps).slice(0, 6).map(([k, v]) => `<span class="cap ${v.status}">${escapeHtml(k)} · ${escapeHtml(v.status)}</span>`).join('')}</div></article>`;
+    return `<article class="asset-card" data-asset="${a.id}"><p class="eyebrow">ASSET SNAPSHOT</p><h2>${escapeHtml(a.title || a.snapshot?.spec?.title || 'Untitled')}</h2><p>R${a.spec_revision} · ${fmtDate(a.created_at)}</p><p class="hash">${escapeHtml(a.media_hash)}</p><div class="capabilities">${Object.entries(caps).slice(0, 6).map(([k, v]) => `<span class="cap ${v.status}">${escapeHtml(k)} · ${escapeHtml(v.status)}</span>`).join('')}</div></article>`;
   }).join('') : '<div class="panel muted">尚未创建 Master 资产。</div>';
   $$('[data-asset]').forEach(c => c.onclick = () => selectAsset(c.dataset.asset));
 }
@@ -1419,7 +1426,7 @@ async function createOffer(assetId) {
 // Market OS
 async function loadCatalog() {
   const rows = await api('/api/catalog');
-  $('#catalog').innerHTML = rows.map(p => `<article class="catalog-card"><p class="eyebrow">${escapeHtml(p.product_type)}</p><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.description)}</p><div class="price">${fmtMoney(p.unit_amount, p.currency)}</div><p>${p.credits ? `${p.credits} Credits` : ''}</p><button data-buy-sku="${p.sku}">购买</button></article>`).join('');
+  $('#catalog').innerHTML = rows.map(p => `<article class="catalog-card"><p class="eyebrow">${escapeHtml(p.product_type)}</p><h2>${escapeHtml(p.name)}</h2><p>${escapeHtml(p.description)}</p><div class="price">${fmtMoney(p.unit_amount, p.currency)}</div><p>${p.credits ? `${p.credits} Credits` : ''}</p><button data-buy-sku="${p.sku}">购买</button></article>`).join('');
   $$('[data-buy-sku]').forEach(b => b.onclick = () => buyCatalog(b.dataset.buySku, b));
 }
 async function buyCatalog(sku, btn) {
@@ -1464,7 +1471,7 @@ $('#reloadOffers').onclick = loadOffers;
 async function loadOffers() {
   const data = await api('/api/marketplace/offers');
   const rows = data.items || [];
-  $('#marketOffers').innerHTML = rows.length ? rows.map(o => `<article class="offer-card"><p class="eyebrow">${escapeHtml(o.seller_name)}</p><h3>${escapeHtml(o.title)}</h3><p>${escapeHtml(o.description)}</p><div class="price">${fmtMoney(o.price_amount, o.currency)}</div><p>${escapeHtml(o.territory)} · ${o.duration_days || '永久'} 天 · ${o.exclusive ? '独家' : '非独家'}</p><button data-purchase-offer="${o.id}">购买许可</button></article>`).join('') : '<div class="panel muted">暂无公开许可报价。先在资产页完成权利复核并发布报价。</div>';
+  $('#marketOffers').innerHTML = rows.length ? rows.map(o => `<article class="offer-card"><p class="eyebrow">${escapeHtml(o.seller_name)}</p><h2>${escapeHtml(o.title)}</h2><p>${escapeHtml(o.description)}</p><div class="price">${fmtMoney(o.price_amount, o.currency)}</div><p>${escapeHtml(o.territory)} · ${o.duration_days || '永久'} 天 · ${o.exclusive ? '独家' : '非独家'}</p><button data-purchase-offer="${o.id}">购买许可</button></article>`).join('') : '<div class="panel muted">暂无公开许可报价。先在资产页完成权利复核并发布报价。</div>';
   $$('[data-purchase-offer]').forEach(b => b.onclick = () => purchaseOffer(b.dataset.purchaseOffer, b));
 }
 async function purchaseOffer(id, btn) {
@@ -1545,7 +1552,7 @@ $('#createBrief').onclick = async () => {
 };
 async function loadBriefs() {
   const rows = await api('/api/brand-briefs/public');
-  $('#briefs').innerHTML = rows.length ? rows.map(b => `<article class="brief-card"><p class="eyebrow">${escapeHtml(b.buyer_name)}</p><h3>${escapeHtml(b.title)}</h3><p>${escapeHtml(b.description)}</p><div class="price">${fmtMoney(b.budget_amount, b.currency)}</div><button data-submit-brief="${b.id}">提交资产</button></article>`).join('') : '<div class="panel muted">暂无公开品牌需求。</div>';
+  $('#briefs').innerHTML = rows.length ? rows.map(b => `<article class="brief-card"><p class="eyebrow">${escapeHtml(b.buyer_name)}</p><h2>${escapeHtml(b.title)}</h2><p>${escapeHtml(b.description)}</p><div class="price">${fmtMoney(b.budget_amount, b.currency)}</div><button data-submit-brief="${b.id}">提交资产</button></article>`).join('') : '<div class="panel muted">暂无公开品牌需求。</div>';
   $$('[data-submit-brief]').forEach(b => b.onclick = () => submitBrief(b.dataset.submitBrief));
 }
 async function submitBrief(briefId) {
@@ -2508,7 +2515,7 @@ function renderExportSummary(data) {
   box.append(coverage);
   const excluded = Object.entries(data.excluded || {});
   if (excluded.length) {
-    const head = document.createElement('h5');
+    const head = document.createElement('h4');
     head.textContent = '刻意不给出的字段';
     const list = document.createElement('ul');
     list.className = 'privacy-list';

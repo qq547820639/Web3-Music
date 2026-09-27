@@ -38,8 +38,17 @@ def test_critical_and_serious_are_blocking():
     assert gate_failures([scan(violations=[violation("serious")])])
 
 
-def test_moderate_is_tolerated_per_the_documented_criterion():
-    assert gate_failures([scan(violations=[violation("moderate")])]) == []
+def test_moderate_is_blocking_and_minor_is_the_floor():
+    # moderate joined the blocking set when the last 64 of them were closed on 2026-09-27: the criterion
+    # read "0 critical, 0 serious" for four rounds while a screen with no landmark and 20 views with a
+    # skipped heading level sat underneath it as a number in a document. `minor` stays tolerated -- that is
+    # what makes this a policy about moderate rather than a policy that rejects everything, and it is the
+    # arm that would notice someone widening the set to the point where the gate cannot be green.
+    assert gate_failures([scan(violations=[violation("moderate")])]), \
+        "a moderate finding must be blocking now"
+    assert gate_failures([scan(violations=[violation("minor")])]) == []
+    assert any("moderate" in line for line in gate_failures([scan(violations=[violation("moderate")])])), \
+        "the finding must name the impact it is refusing, or a red says nothing about which rule moved"
 
 
 def test_scan_that_returned_nothing_is_not_a_pass():

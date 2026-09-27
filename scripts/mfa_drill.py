@@ -14,9 +14,10 @@ authenticated rather than workspace-scoped, and one less row means one less thin
 Each run still leaves audit events behind -- append-only by schema design
 (001_production_candidate.sql:468) -- so the residue is printed rather than scrubbed.
 
-Login is counted per account and throttled at ten a minute with a sliding window, so this drill
+Login is counted per account at ten failed credentials a minute in a fixed window, so this drill
 mints one pending token and reuses it: a pending token buys nothing on its own, because every
-challenge still has to clear the single-use step/recovery guard.
+challenge still has to clear the single-use step/recovery guard. The window's own shape is measured
+at the end, against the counter in the shared store.
 """
 from __future__ import annotations
 
@@ -89,6 +90,15 @@ def redis_cli(*arguments: str) -> str:
                          capture_output=True, text=True)
     if out.returncode != 0:
         raise SystemExit(f"redis-cli failed: {out.stderr.strip()[:200]}")
+    return out.stdout.strip()
+
+
+def api_env(name: str) -> str:
+    """Read what the deployed container was actually given, rather than assuming the default."""
+    out = subprocess.run(["docker", "compose", "exec", "-T", "api", "printenv", name],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        raise SystemExit(f"printenv {name} failed: {out.stderr.strip()[:200]}")
     return out.stdout.strip()
 
 
@@ -344,6 +354,70 @@ def main() -> int:
                                   headers=bearer(plain.json()["access_token"]), timeout=40)
             check("when the window passes the account is usable again, not locked out",
                   released.status_code == 200, f"{released.status_code} {released.text[:160]}")
+
+        # ---- the login door: a fixed window that only a failed credential can extend ----
+        # Read against the counter in the shared store, not inferred from status codes. Before this round
+        # the login key refreshed its TTL on every INCR -- refused attempts included -- so the window was
+        # really "sixty seconds since the last knock" (75s of silence was needed to observe recovery), and
+        # a *successful* login spent a unit of it, which is why the browser gate had to wait a minute just
+        # to authenticate the same owner eight times. Both properties are tested for here, and each one is
+        # the kind that comes back on its own if nobody is looking at the store.
+        per_minute = int(api_env("LOGIN_RATE_LIMIT_PER_MINUTE"))
+        login_key = f"login:{hashlib.sha256(WINDOW_PROBE.lower().encode()).hexdigest()}"
+        redis_cli("DEL", login_key)
+        quiet = [sign_in(WINDOW_PROBE).status_code for _ in range(per_minute + 2)]
+        check(f"{per_minute + 2} successful logins in a row cannot fill the window",
+              set(quiet) == {200}, f"statuses: {quiet}")
+        check("and they leave the counter empty, because only a failed credential is counted",
+              redis_cli("EXISTS", login_key) == "0",
+              f"key {login_key} reads {redis_cli('GET', login_key) or '-'} after {per_minute + 2} logins")
+        statuses = [httpx.post(BASE + "/auth/login", json={"email": WINDOW_PROBE, "password": f"wrong-{n}"},
+                               timeout=40).status_code for n in range(per_minute + 5)]
+        limit = statuses.index(429) + 1 if 429 in statuses else None
+        check("repeated wrong passwords are throttled", limit is not None, f"statuses: {statuses}")
+        check(f"the window opens after exactly {per_minute} failed credentials, not before",
+              limit == per_minute + 1, f"first refusal at attempt {limit}, statuses: {statuses}")
+        check("and it is monotone: nothing succeeds once it is full",
+              limit is not None and set(statuses[:limit - 1]) == {401} and set(statuses[limit - 1:]) == {429},
+              f"statuses: {statuses}")
+        # The wall sits in front of the credential check, so knowing the password buys nothing while the
+        # window is full -- and because a refusal spends nothing, this attempt must not move the counter.
+        outranked = sign_in(WINDOW_PROBE)
+        check("while throttled, even the right password is refused", outranked.status_code == 429,
+              f"{outranked.status_code} {outranked.text[:160]}")
+        filled = redis_cli("GET", login_key)
+        ttl = int(redis_cli("TTL", login_key) or -2)
+        check("the counter is a bounded window in the shared store, not a permanent lock",
+              0 < ttl <= 60, f"key {login_key} TTL {ttl}")
+        retry_after = outranked.headers.get("Retry-After", "")
+        check("the refusal says how long to wait, and says the window's own number",
+              retry_after.isdigit() and 0 < int(retry_after) <= 60 and abs(int(retry_after) - ttl) <= 2,
+              f"Retry-After {retry_after!r} against TTL {ttl}")
+        # Decay has to be measured *while* the door is being knocked on: a nap after the last refusal lets
+        # even a refreshing limiter count down, and that is how the first version of this check read green
+        # against the pre-fix script. So the traffic runs until two seconds of wall time have gone by, the
+        # number of refused requests it fit in is reported, and the window is required to have spent about
+        # that much of itself -- which a limiter that re-arms on every refusal cannot do.
+        ttl_before = ttl
+        knocked, started = 0, time.monotonic()
+        while time.monotonic() - started < 2.0:
+            httpx.post(BASE + "/auth/login", json={"email": WINDOW_PROBE, "password": "again"}, timeout=40)
+            knocked += 1
+        elapsed = time.monotonic() - started
+        after = redis_cli("GET", login_key)
+        ttl_after = int(redis_cli("TTL", login_key) or -2)
+        check("a refusal spends none of the window it reports",
+              filled == after == str(per_minute),
+              f"counter read {filled!r} then {after!r} against a limit of {per_minute}")
+        check(f"the window kept counting down through {knocked} refused requests in {elapsed:.1f}s "
+              "instead of restarting",
+              knocked >= 5 and 0 < ttl_after <= ttl_before - 1,
+              f"TTL {ttl_before} then {ttl_after} after {elapsed:.1f}s of refusals")
+        time.sleep(max(ttl_after, 1) + 2)
+        reopened = sign_in(WINDOW_PROBE)
+        check("when the window passes the account signs in, so this is throttling and not a lockout",
+              reopened.status_code == 200, f"{reopened.status_code} {reopened.text[:160]}")
+        redis_cli("DEL", login_key)
         # Precise, because the window probe deliberately leaves something behind: an abandoned
         # enrolment keeps its sealed seed until the account re-enrols, is disarmed or is erased.
         # It is inert -- 015's confirm refuses it past the window, which is the check above -- but a

@@ -91,7 +91,7 @@ def sign_in(email: str) -> str:
             return response.json()["access_token"]
         if response.status_code != 429:
             response.raise_for_status()
-        time.sleep(75)  # the login window is per account and slides on every attempt
+        time.sleep(61)  # per-account login window, fixed at 60s, extended only by failed credentials
     raise SystemExit(f"login for {email} kept getting rate limited")
 
 

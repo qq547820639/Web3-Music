@@ -346,8 +346,8 @@ inside the window and could therefore be starved by its own retries.
 ## Scope of the external-tooling review, and what was skipped
 
 Per project practice, new or large components are compared against mature implementations
-before being built. Three such comparisons were made this round, all from material actually
-retrieved in this session; retrieval limits are named rather than papered over.
+before being built. Four such comparisons are recorded here -- three from that round and one added this round -- each from
+material actually retrieved by the session that wrote it; retrieval limits are named rather than papered over.
 
 ### Load generator (earlier this day)
 
@@ -403,6 +403,40 @@ declaration (the payload states which `table.column` stores it reads, and the dr
 every `users(id)` foreign key in the live schema from it), and Fides' "a privacy request leaves
 an audit trail" idea became the `privacy.account.erase` audit row written in the same
 transaction as the erasure itself.
+
+### The login limiter: what "a minute" should mean (this round)
+
+Turning a documented owner-decision into code is an authentication-side change, so it got the same
+comparison as the other three. What was actually opened this session, and what each source changed:
+
+- **OWASP Authentication Cheat Sheet** (<https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html>,
+  read this round) — the two sentences that decide the shape: *"The counter of failed logins should be
+  associated with the account itself, rather than the source IP address"*, and *"care must be taken to
+  prevent it from being used to cause a denial of service by locking out other users' accounts."* The first
+  keeps this repository's existing key (`login:sha256(email)`); the second is what the old shape got wrong
+  from the other side, since a window that re-arms on every refusal cannot be bounded.
+- **Keycloak's brute-force detection** (`server_admin` guide,
+  <https://www.keycloak.org/docs/latest/server_admin/index.html>, read this round) — it tracks failures
+  *per user* and *per IP/agent address* as two dimensions, and its `Temporary Lockout` decays through
+  `wait increment` up to `max failure wait`. Borrowed: a refusal must state a **bounded** wait, which is
+  what `Retry-After` is now. Not borrowed: permanent lockout, and the address dimension — that one needs a
+  client address this stack does not have (the residual is written out in `RELEASE_CHECKLIST.md` row 24).
+  The retrieved page text does not list the numeric defaults, so none are claimed here.
+- A cheat sheet dedicated to rate limiting was searched for and is **not claimed**: the URL the search
+  returned (`.../cheatsheets/Rate_Limiting_Cheat_Sheet.html`) answers 404, so the fixed-window-vs-sliding
+  choice is attributed to the measurement in row 24, not to a document.
+
+| candidate | fit | licence | activity | risk | quality | adaptation cost |
+|---|---|---|---|---|---|---|
+| In-repo: reuse `_mfa_incr` (the fixed-window Lua the second factor and the step-up wall already use) + failures-only counting + `Retry-After` (chosen) | the whole requirement is three behaviours: a refusal must not extend the window it reports, only a failed credential may spend it, and the remaining wait has to be named — all on this key and this store | own code | n/a | nothing new becomes reachable: the gate only reads, the writer is the same atomic script two other gates already run on, and knowing the password buys no budget | one shape now governs all three credential gates, and `tests/unit/test_login_limiter.py` pins each behaviour with its own mutation arm | lowest: no new dependency, no new container, no deployment change |
+| `limits` 5.8.0, with `slowapi` 0.1.10 as the FastAPI surface | supplies exactly the vocabulary this decision needed — `FixedWindowRateLimiter`, `MovingWindowRateLimiter`, `SlidingWindowCounterRateLimiter` per its API pages (<https://limits.readthedocs.io/en/stable/api.html>, read this round) — plus Redis storage | MIT for both, read from the PyPI JSON API fields (`license_expression: MIT`, classifier `License :: OSI Approved :: MIT License`), not from a README | `limits` release uploaded 2026-02-05, `slowapi` 2026-06-13; `requires_python` `>=3.10` and `<4.0,>=3.7` respectively | it limits on the remote address, and this stack has no trustworthy one: uvicorn is started without `--proxy-headers` or `FORWARDED_ALLOW_IPS` (`services/api/Dockerfile:13`, and `FORWARDED` has zero hits repo-wide), so every request arriving through the gateway presents the gateway container — one bucket for the whole site | maintained and well-formed; it is the reason "fixed window" is now the word used in the code | a runtime dependency added to the API image, a second limiter store, decorators on a route that already has an atomic script, and it still would not close the account-DoS the OWASP sentence warns about |
+| `django-ratelimit` 4.1.0 | cache-based limiting for Django — the framework is the disqualifier | Apache-2.0 (its own `license` field) | last release uploaded 2023-07-24 | n/a | n/a | not applicable: this API is FastAPI |
+
+**What was borrowed:** Keycloak's `max failure wait` thought (a bounded, self-reported wait), and `limits`'
+strategy vocabulary (the code and the docs now say *fixed window* instead of describing what the Lua does).
+**Why nothing was adopted:** the repository already held both hard parts — an atomic INCR with conditional
+EXPIRE, and the failures-only / success-clears semantics `_step_up_gate` documents — while the missing part
+(a per-address dimension) is a deployment property, not a package.
 
 **What was deliberately not surveyed**: the remaining changes are scope-clear local fixes
 reusing a pattern already in this repository — the reservation and refund guards follow

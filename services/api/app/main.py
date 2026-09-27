@@ -52,10 +52,6 @@ app=FastAPI(title="Resonance AI Music Asset Platform",version="13.0.0",lifespan=
 app.add_middleware(CORSMiddleware,allow_origins=list(settings.cors_origins),allow_credentials=True,allow_methods=["GET","POST","PUT","PATCH","DELETE"],allow_headers=["Authorization","Content-Type","X-Workspace-Id","Idempotency-Key","X-Request-Id","X-CSRF-Token"])
 rq=redis.Redis.from_url(settings.redis_url,decode_responses=True)
 
-# Atomic INCR + EXPIRE. Running these as two separate commands leaves a window
-# where a crash between them makes the key permanent and locks an email forever.
-_login_incr = rq.register_script("local n = redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], ARGV[1]); return n")
-
 
 @app.middleware("http")
 async def request_context(request: Request,call_next):
@@ -160,13 +156,39 @@ def _clear_session_cookies(response: Response):
         response.delete_cookie(name,path="/",domain=settings.cookie_domain,secure=settings.cookie_secure,samesite="lax")
 
 
+LOGIN_WINDOW_SECONDS = 60
+
+
+def _login_key(email: str) -> str:
+    return f"login:{hashlib.sha256(email.lower().encode()).hexdigest()}"
+
+
+def _login_gate(key: str) -> None:
+    """Refuse while this account's window is full. Reads only -- a refusal spends none of the window it reports.
+
+    Fixed window and failures-only, the same shape `_mfa_incr` gives the second factor and the step-up wall.
+    The bounded-but-real residual (one knocker can hold one account down a minute at a time, forever) needs
+    an address dimension, and the API has no address it may trust: uvicorn starts without --proxy-headers or
+    FORWARDED_ALLOW_IPS, so behind the gateway every browser arrives as the gateway container.
+    """
+    if int(rq.get(key) or 0) >= settings.login_rate_limit_per_minute:
+        ttl = rq.ttl(key)
+        raise HTTPException(429, "too many login attempts",
+                            headers={"Retry-After": str(ttl) if ttl and ttl > 0 else str(LOGIN_WINDOW_SECONDS)})
+
+
+def _login_failed(key: str) -> None:
+    _mfa_incr(keys=[key], args=[LOGIN_WINDOW_SECONDS])
+
+
 @app.post("/api/auth/login")
 def login(body:LoginBody,request:Request,response:Response):
-    key=f"login:{hashlib.sha256(body.email.lower().encode()).hexdigest()}"
-    attempts=int(_login_incr(keys=[key], args=[60]))
-    if attempts>settings.login_rate_limit_per_minute: raise HTTPException(429,"too many login attempts")
+    key=_login_key(body.email)
+    _login_gate(key)
     row=fetch_one("SELECT * FROM users WHERE lower(email)=lower(%s)",(body.email,))
-    if not row or row["status"]!="active" or not verify_password(body.password,row["password_hash"]): raise HTTPException(401,"invalid credentials")
+    if not row or row["status"]!="active" or not verify_password(body.password,row["password_hash"]):
+        _login_failed(key)
+        raise HTTPException(401,"invalid credentials")
     if row["mfa_enrolled_at"] is not None:
         # No session and no cookies yet: the password alone must not produce anything a client can
         # mistake for an authenticated credential. The key names below are deliberately the ones
@@ -218,14 +240,10 @@ _mfa_incr = rq.register_script("local n = redis.call('INCR', KEYS[1]); if n == 1
 
 
 def _mfa_throttle(kind: str, subject: str):
-    """A fixed window, unlike the login limiter.
-
-    The login counter refreshes its TTL on every attempt (main.py:50 runs EXPIRE
-    unconditionally), which is what makes a locked account stay locked while it is being
-    prodded; that behaviour is a documented open decision for the owner and is left alone. A
-    six-digit code oracle gets the stricter shape from the start: only the first INCR sets the
-    expiry, so the window cannot be extended by the attempts it is counting.
-    """
+    """A fixed window: only the first INCR sets the expiry, so the window cannot be extended by the
+    attempts it is counting. This is the script all three credential gates on this surface now share --
+    the login counter (`_login_failed`), the step-up wall (`_step_up_failed`), and the code oracle here,
+    which is the strictest of them because a six-digit code is an oracle rather than a door."""
     key=f"mfa:{kind}:{hashlib.sha256(subject.encode()).hexdigest()}"
     n=int(_mfa_incr(keys=[key], args=[60]))
     if n>settings.mfa_challenge_rate_limit_per_minute: raise HTTPException(429,"too many second-factor attempts")

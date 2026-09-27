@@ -255,9 +255,12 @@ async function init() {
       await refreshAll();
     };
     $('#identity').textContent = state.user.display_name;
+    // Bound before the app is shown, the way the studio now does it: #app was made visible first, so any
+    // await inserted between the two would silently put a dead click window back, and nothing measures it.
+    bindNav();
     $('#login').hidden = true;
     $('#app').hidden = false;
-    bindNav();
+    $('.skip-link').setAttribute('href', '#main');
     await refreshAll();
   } catch (e) {
     // An unauthenticated cold load is the normal first paint of this app: /api/auth/me answering 401
@@ -266,6 +269,9 @@ async function init() {
     if (e && e.status !== 401) console.error(e);
     $('#login').hidden = false;
     $('#app').hidden = true;
+    // #main lives inside #app, so on the sign-in screen a skip link pointing at it moved focus to a
+    // hidden element. The sign-in screen is the main content of that state, and it is now a <main>.
+    $('.skip-link').setAttribute('href', '#login');
   }
 }
 function bindNav() {

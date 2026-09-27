@@ -35,7 +35,12 @@ ORIGINS = (("studio", WEB_URL, "services/web/index.html"), ("control-plane", ADM
 EMAIL = os.environ.get("E2E_EMAIL", "owner@example.local")
 PASSWORD = os.environ.get("E2E_PASSWORD", "demo-owner")
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "mobile": {"width": 390, "height": 844}}
-BLOCKING_IMPACTS = ("critical", "serious")
+# moderate joined the blocking set on 2026-09-27, when the last 64 of them were closed (the sign-in
+# screen had no landmark, and panel headings jumped h1 -> h3). Leaving the set at critical/serious
+# is what let those sit for four rounds while the gate read green, so the set is now the widest axe
+# impact this product's pages can be held to; `minor` stays tolerated because no rule in this
+# axe version reports minor on these pages, and a criterion nobody can trip is not a criterion.
+BLOCKING_IMPACTS = ("critical", "serious", "moderate")
 BLOCKING_CONSOLE = re.compile(r"uncaught|refused to execute|would have been blocked|failed to fetch", re.I)
 CSP_BLOCK = re.compile(r"violates the following content security policy|refused to apply inline style", re.I)
 
@@ -349,6 +354,16 @@ def login(page, base: str, auditor: Auditor, viewport: str, tries: int = 5, emai
     response = page.goto(base, wait_until="networkidle")
     auditor.record_headers(base, response)
     auditor.scan(page, "login", viewport, require="#loginForm")
+    # The bypass link has to land on something rendered in whichever state the page is in. On the sign-in
+    # screen its href used to be #main, which lives inside the hidden #app, so Enter moved focus nowhere;
+    # keyboard_checks() holds the signed-in half to the same bar by following the focus itself.
+    skip = page.evaluate(
+        "() => { const a = document.querySelector('.skip-link');"
+        " const href = a ? (a.getAttribute('href') || '#__none__') : '#__none__';"
+        " const t = document.querySelector(href);"
+        " return {href: a ? a.getAttribute('href') : null, rendered: !!t && !!t.offsetParent}; }")
+    if skip.get("href") != "#login" or not skip.get("rendered"):
+        raise SystemExit(f"{base}: the sign-in screen's skip link does not bypass to something rendered: {skip}")
     detail = ""
     for attempt in range(tries):
         page.fill("#email", email)
@@ -362,18 +377,23 @@ def login(page, base: str, auditor: Auditor, viewport: str, tries: int = 5, emai
             return
         except PlaywrightTimeout:
             detail = login_error(page)
-            # The limiter is per account (login:sha256(email), limit 10), and this suite
-            # authenticates the same owner eight times. Measured against the live API,
-            # every attempt — refused ones included — refreshes the 60s window, so the
-            # wait has to exceed it; a 12s or 30s retry never gets back in.
-            page.wait_for_timeout(75000 if RATE_LIMITED.search(detail) else 3000)
+            # The counter is keyed per account (login:sha256(email)) and counts ONLY failed
+            # credentials, in a fixed 60-second window: a refusal reads it without extending it,
+            # so 61s is guaranteed to clear it. Successful logins no longer spend the budget,
+            # which is why the eight authentications this suite performs are no longer what
+            # fills the window.
+            page.wait_for_timeout(61000 if RATE_LIMITED.search(detail) else 3000)
     raise SystemExit(f"login never succeeded after {tries} attempts: {detail or 'no error text'}")
 
 
 def press_until(page, button, expect: str, what: str, tries: int = 12):
-    """Handlers are bound only at the end of boot (bindNavigation runs after the
-    first data load), so a click can land on an inert button. Retry until the
-    expected state shows up instead of assuming the page was ready."""
+    """Click, then wait for the state the click is meant to produce, retrying the click.
+
+    This is for controls whose *result* depends on data still arriving (a dialog that needs a fetch, a
+    panel that fills itself on first open). It is not for the boot window any more: navigation handlers
+    used to be bound only after the first data load, so a click could land on an inert button, and
+    retrying hid that. walk_boot_click() now measures the boot window on purpose, with one click.
+    """
     from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
     for _ in range(tries):
@@ -392,6 +412,74 @@ def goto_view(page, name: str, marker: str):
 
 def goto_tab(page, name: str, pane: str):
     press_until(page, page.get_by_role("tab", name=name), f"#{pane}.active", f"{name} tab")
+
+
+BOOT_HOLD = 3.0
+
+
+def walk_boot_click(browser, size, auditor: Auditor, viewport: str) -> list[str]:
+    """One top-bar click, issued while boot is still loading, must switch the view.
+
+    The defect this measures (RELEASE_CHECKLIST 待属主定值 2): `#app` became visible two awaited fetches
+    before bindNavigation() put handlers on the nav buttons, so the first click a person makes on a slow
+    connection did nothing at all. press_until() clicked again until it worked, which made the symptom
+    unobservable -- a workaround cannot also be the evidence.
+
+    /api/bootstrap is held for BOOT_HOLD seconds so the window is produced rather than raced for, and both
+    premises are read back before the single click is judged: the held request really did reach this handler,
+    and `#creditPill` -- which init writes only after that fetch returns -- still carried no number when the
+    click was issued. Either premise failing returns a finding instead of a silent pass, because a check
+    that cannot tell "fixed" from "never exercised" is the shape this repository keeps having to relearn.
+    """
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    held: list[str] = []
+    context = browser.new_context(viewport=size)
+    page = context.new_page()
+    auditor.arm(page)
+
+    def slow(route):
+        held.append(route.request.url)
+        time.sleep(BOOT_HOLD)
+        route.continue_()
+
+    auditor.attach_console(page, f"{viewport}-boot-click")
+    try:
+        login(page, WEB_URL, auditor, viewport)
+        # Registered after arm(): with two matching routes the last one registered is consulted first,
+        # which is what walk_stale_panels measured the hard way.
+        page.route("**/api/bootstrap", slow)
+        page.goto(WEB_URL, wait_until="domcontentloaded")
+        page.wait_for_selector("#app:not([hidden])", timeout=20000)
+        pill = (page.locator("#creditPill").text_content() or "").strip()
+        if re.search(r"\d", pill):
+            return [f"boot had already finished when the click was issued (creditPill={pill!r}), "
+                    "so the window this check exists for was never exercised"]
+        if not held:
+            return ["the held /api/bootstrap never reached the route handler, so the click was not "
+                    "issued during boot"]
+        page.get_by_role("button", name="资产视图").click()
+        try:
+            page.wait_for_selector("#view-assets.active", timeout=1500)
+        except PlaywrightTimeout:
+            return [f"a single nav click at {pill!r} (boot still loading) did not switch the view, "
+                    "so the handlers were not bound when #app became visible"]
+        if page.locator("#view-creation.active").count():
+            return ["the boot-window click switched to 资产 without leaving 创作"]
+        from playwright.sync_api import TimeoutError as _Timeout
+        try:
+            # The held fetch has to come back and be rendered: a click that switched the view but left
+            # the page starved of its data would be a different defect, not a pass. Judged by waiting for
+            # the pill to carry a number, because at this instant the hold is still running by design.
+            page.wait_for_function(
+                "() => { const p = document.querySelector('#creditPill'); return p && /\\d/.test(p.textContent); }",
+                timeout=int((BOOT_HOLD + 12) * 1000))
+        except _Timeout:
+            return ["the held /api/bootstrap came back but the app never painted its numbers, "
+                    "so the view the click switched to was left without data"]
+        return []
+    finally:
+        context.close()
 
 
 def walk_studio(page, auditor: Auditor, viewport: str):
@@ -635,8 +723,12 @@ def self_test(auditor: Auditor) -> int:
         problems.append("gate accepted a critical violation")
     if not gate_failures([view("serious", violations=[violation("serious")])]):
         problems.append("gate accepted a serious violation")
-    if gate_failures([view("moderate", violations=[violation("moderate")])]):
-        problems.append("gate fired on a moderate-only report, which the documented criterion tolerates")
+    if not gate_failures([view("moderate", violations=[violation("moderate")])]):
+        problems.append("gate accepted a moderate violation, which the criterion now refuses -- the 64 "
+                        "left over on 2026-09-27 sat behind exactly this tolerance")
+    if gate_failures([view("minor", violations=[violation("minor")])]):
+        problems.append("gate fired on a minor-only finding; minor is not in the blocking set, so a policy "
+                        "that blocks everything is being mistaken for a policy that blocks moderate")
     if gate_failures([view("clean")]):
         problems.append("gate rejected a clean report")
     if not gate_failures([view("blind", audited=False)]):
@@ -703,7 +795,7 @@ def self_test(auditor: Auditor) -> int:
             print(" -", p)
         return 1
     print(f"self-check passed: axe-core {AXE_VERSION} flags image-alt (impact={impacts['image-alt']}) "
-          f"and the gate rejects it while tolerating moderate-only; the clip probe named "
+          f"and the gate rejects it, rejects moderate, and still tolerates minor-only; the clip probe named "
           f"{clip_probe['clipped']} of "
           f"{clip_probe['clipped'] + clip_probe['scrollers'] + clip_probe['fields']} overflowing boxes "
           f"and exempted {clip_probe['scrollers']} scroll container(s) plus {clip_probe['fields']} form field(s)")
@@ -1377,6 +1469,8 @@ def main() -> int:
     privacy: list[str] = []
     team: list[str] = []
     roster: list[str] = []
+    boot: list[str] = []
+    boot_walks = 0
     roster_walks = 0
     team_probes: list[str] = []
     privacy_probes: list[dict] = []
@@ -1435,6 +1529,8 @@ def main() -> int:
                         retire_team_probe(team_user)
                 if stage == "axe":
                     keyboard += keyboard_checks(page, auditor, viewport)
+                    boot += walk_boot_click(browser, size, auditor, viewport)
+                    boot_walks += 1
                 page.get_by_role("button", name="退出").click()
                 page.wait_for_selector("#login:not([hidden])", timeout=20000)
                 if stage == "axe" and probe:
@@ -1487,10 +1583,15 @@ def main() -> int:
         [] if roster_walks >= expected_walks else
         [f"the roster walk ran on {roster_walks} of {expected_walks} viewports, "
          "so the platform directory was not exercised where it was skipped"])
+    boot = boot + (
+        [] if boot_walks >= expected_walks else
+        [f"the boot-window click ran on {boot_walks} of {expected_walks} viewports, "
+         "so navigation during loading was not exercised where it was skipped"])
     failures = (gate_failures(auditor.scans)
                 + sorted(set(privacy))
                 + sorted(set(team))
                 + sorted(set(roster))
+                + sorted(set(boot))
                 + mobile_fit_failures(auditor.scans, require=not args.desktop_only)
                 + clip_failures(auditor.scans)
                 + keyboard + csp_failures(auditor.security_headers, [WEB_URL, ADMIN_URL])
@@ -1500,6 +1601,7 @@ def main() -> int:
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "git_commit": git_commit(),
         "mobile_fit_measured": mobile_scans,
+        "boot_window_clicks": boot_walks,
         "web_url": WEB_URL,
         "admin_url": ADMIN_URL,
         "axe_core": AXE_VERSION,
@@ -1534,6 +1636,8 @@ def main() -> int:
           f"{len(privacy_probes)} probe accounts erased ({', '.join(p['email'] for p in privacy_probes) or 'none'})")
     print(f"team walk: {len(team_probes)} roster walks with offer/accept/re-role/revoke/remove exercised "
           f"({', '.join(sorted(team_probes)) or 'none'})")
+    print(f"boot-window click: {boot_walks} single nav click(s) issued while /api/bootstrap was "
+          f"still held, each required to switch the view")
     print(f"roster walk: {roster_walks} platform-admin directory walks, each followed by a non-administrator "
           f"refusal and an injected panel failure "
           f"({', '.join(report['roster_states']) or 'none'})")

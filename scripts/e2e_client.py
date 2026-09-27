@@ -1,12 +1,12 @@
 """Shared client for the host-side drills: login, price lookup and credit funding.
 
 The API throttles logins per **account** (key login:sha256(email),
-LOGIN_RATE_LIMIT_PER_MINUTE, default 10), and several drills authenticate the same
-owner back to back, so a legitimate 429 is expected, not a defect. Retry instead of
-weakening the control — and wait longer than the window: measured against the live
-API, every attempt refreshes the 60s TTL, including the ones that are refused, so
-retrying at 12s or 30s intervals keeps the account locked indefinitely. Only 75s of
-silence was observed to recover it.
+LOGIN_RATE_LIMIT_PER_MINUTE, default 10). The window is a fixed 60 seconds and only a
+FAILED credential extends it: a refusal merely reads the counter, and a successful
+login never spends it, so the back-to-back legitimate sign-ins these drills perform no
+longer fill the window -- a 429 now means wrong passwords were tried. Retry instead of
+weakening the control, and wait 61s: that clears a 60s window with no headroom.
+75s was the measured requirement of the previous, now superseded, sliding shape.
 """
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ def login(base: str, email: str, password: str, attempts: int = 5, timeout: int 
         last = f"{r.status_code} {r.text[:200]}"
         if r.status_code != 429:
             r.raise_for_status()
-        time.sleep(75)
+        time.sleep(61)
     raise SystemExit(f"login for {email} kept getting rate limited: {last}")
 
 
