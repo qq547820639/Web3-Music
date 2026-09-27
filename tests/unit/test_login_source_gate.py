@@ -171,7 +171,7 @@ def test_a_keyed_digest_is_not_reachable_by_the_unkeyed_one():
     """The two derivations must not coincide for any of the shapes the stack actually holds."""
     import hashlib
     pepper = "unit-test-pepper"
-    for address in ("127.0.0.1", "172.28.95.7", "172.28.95.10", "203.0.113.77", "::1"):
+    for address in ("127.0.0.1", "172.28.95.7", "172.28.95.250", "203.0.113.77", "::1"):
         assert hashlib.sha256(address.encode()).hexdigest() != \
             hashlib.sha256(f"{pepper}|{address}".encode()).hexdigest()
 
@@ -189,6 +189,16 @@ def test_the_trust_list_is_one_address_and_cannot_be_widened_by_a_stray_env():
     assert len(addresses) == 1, f"the compose file pins {len(addresses)} static addresses: {addresses}"
     assert value.strip('"') == addresses[0], \
         f"the trusted address {value} is no longer the gateway's pinned {addresses[0]}"
+    # Which address is not free either. Docker's allocator fills a /24 from .2 upward in creation order
+    # and the gateway is created last because api/web/admin depend on it, so a low pin is a coin flip
+    # against a sibling -- measured, not theorised: with the gateway pinned at .10, `web` had taken it
+    # and chain step 2 of acceptance-20260927T221550Z died on `Address already in use`. `iprange`, the
+    # usual fence, is rejected by this compose version (`additional properties 'iprange' not allowed`),
+    # so the pin has to sit above the pool's reach. A stack has ~13 containers; .128 and up is unreachable.
+    octet = int(value.strip('"').rsplit(".", 1)[-1])
+    assert octet >= 128, (f"the gateway's pinned octet {octet} sits inside the range the allocator "
+                          "consumes first, so `up` can fail with 'Address already in use' depending on "
+                          "creation order -- pin it above .127")
 
 
 def test_the_server_is_told_to_use_it_and_refuses_to_guess():
@@ -273,11 +283,18 @@ def test_the_gate_detectors_fire_on_the_shapes_that_would_silently_return():
         "the digest detector cannot see the unsalted form come back"
 
     # 4. the trust list widened to everybody, in the exact form the compose file allows
-    wide = mutated(COMPOSE.read_text(encoding="utf-8"), 'FORWARDED_ALLOW_IPS: "172.28.95.10"',
+    wide = mutated(COMPOSE.read_text(encoding="utf-8"), 'FORWARDED_ALLOW_IPS: "172.28.95.250"',
                    'FORWARDED_ALLOW_IPS: "*"')
     value = [x for x in wide.splitlines() if "FORWARDED_ALLOW_IPS" in x][0].split(":", 1)[1].strip()
-    assert value.strip('"') == "*" and value.strip('"') != "172.28.95.10", \
+    assert value.strip('"') == "*" and value.strip('"') != "172.28.95.250", \
         "the widening the trust detector exists for is not the shape it tests"
+
+    # 4b. the pin moved back down into the allocator's reach -- the exact shape that reddened chain
+    #     step 2 of acceptance-20260927T221550Z, where `web` had already been given .10.
+    low = mutated(COMPOSE.read_text(encoding="utf-8"), "172.28.95.250", "172.28.95.10", times=2)
+    pinned = re.findall(r"ipv4_address:\s*([\d.]+)", low)[0]
+    assert pinned == "172.28.95.10" and int(pinned.rsplit(".", 1)[-1]) < 128, \
+        "the octet rule cannot see a low pin come back"
 
     # 5. the proxy back to appending, on an active line
     appending = mutated(NGINX.read_text(encoding="utf-8"),

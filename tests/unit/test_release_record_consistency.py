@@ -51,6 +51,18 @@ def archived_runs():
     return runs
 
 
+def authority(runs):
+    """The record's authority is the newest all-green archived run, not the newest directory.
+
+    A judged-red finding can legitimately post after it -- acceptance-20260927T221550Z, the compose address
+    collision this round found by running the chain, did exactly that -- and a guard that read "newest" off
+    the directory listing would demand the record certify a run that failed.
+    """
+    greens = [r for r in runs if r["fails"] == 0]
+    assert greens, "the archive holds no all-green run for the record to be about"
+    return max(greens, key=lambda r: r["stamp"])
+
+
 def split(runs, certified):
     """Everything the docs call 'prior' -- the archived runs other than the one being cited."""
     others = [r for r in runs if r["stamp"] != certified]
@@ -374,7 +386,12 @@ def test_the_status_file_quotes_each_round_its_own_host_readings():
     # Coverage floor: the rule is line-local by construction, so a section that stops naming its run
     # and its machine state on one line would silently drop out of the check rather than fail it.
     paired = [r for line in STATUS.read_text(encoding="utf-8").splitlines() for r in paired_readings(line)]
-    newest = max(archived_runs(), key=lambda r: r["stamp"])
+    # The authority is the newest **all-green** run, not the newest directory. A judged-red finding can
+    # legitimately be newer -- acceptance-20260927T221550Z is exactly that case, the compose collision this
+    # round discovered by running the chain -- so reading "newest" off the directory listing would demand
+    # that the record certify a run that failed.
+    runs = archived_runs()
+    newest = authority(runs)
     assert paired, "no line in the status file pairs a run with its host readings"
     assert any(stamp == newest["stamp"] for stamp, _, _ in paired), \
         f"the certified run {newest['stamp']} is not paired with its readings: {paired}"
@@ -490,6 +507,25 @@ def test_the_status_face_reports_a_green_count_that_drifted():
     assert any("says 12 prior" in p for p in problems), problems
 
 
+def test_a_newer_red_run_does_not_become_the_authority():
+    """The two readings of "newest" must be shown to differ, or the green-only floor is untested.
+
+    Plant a judged-red directory newer than every archived green: the directory listing's newest is the
+    plant, the record's authority stays the newest all-green run. Swapping the rule back to
+    `max(archived_runs())` would make this assertion invert, which is the point.
+    """
+    runs = archived_runs()
+    plant = {"stamp": "20990101T000000Z", "commit": "x" * 40, "rows": 23,
+             "fails": 1, "host_load": "1.0 1.0 1.0", "cpus": "4"}
+    with_red = runs + [plant]
+    assert max(with_red, key=lambda r: r["stamp"]) is plant, "the plant is not the newest directory"
+    authority = max([r for r in with_red if r["fails"] == 0], key=lambda r: r["stamp"])
+    assert authority["stamp"] != plant["stamp"], "a run that failed became the record's authority"
+    real_green = max([r for r in runs if r["fails"] == 0], key=lambda r: r["stamp"])
+    assert authority["stamp"] == real_green["stamp"], \
+        "the authority moved away from the newest archived green for no reason"
+
+
 def test_the_status_face_reports_a_wrong_red_total_and_day_split():
     assert any("judged reds" in p for p in
                check_status(good=STATUS_GOOD.replace("and 1 judged-red", "and 9 judged-red")))
@@ -542,7 +578,7 @@ def test_the_step_width_clause_fires_on_the_fourth_face():
 def test_the_host_clause_fires_on_the_fourth_face():
     """The wrong reading is taken from another real run, so the control cannot drift with the docs."""
     runs = archived_runs()
-    certified = max(runs, key=lambda r: r["stamp"])
+    certified = authority(runs)
     other = next(r for r in reversed(runs) if r["fails"] == 0 and r["host_load"]
                  and r["host_load"] != certified["host_load"])
     stale = mutated_status_line(f'host_load="{certified["host_load"]}"', f'host_load="{other["host_load"]}"')

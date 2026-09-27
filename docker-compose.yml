@@ -117,7 +117,7 @@ services:
       # Pinned literal for the same reason DEMO_STACK is: this is the one peer whose X-Forwarded-For
       # the api may believe, and an interpolated value could be widened to "*" by a stray .env. The
       # gateway's address is fixed by the `networks:` block at the bottom of this file.
-      FORWARDED_ALLOW_IPS: "172.28.95.10"
+      FORWARDED_ALLOW_IPS: "172.28.95.250"
       ADDRESS_PEPPER: ${ADDRESS_PEPPER:?ADDRESS_PEPPER must be set; see .env.example}
       PUBLIC_API_BASE_URL: http://api:8000
       CORS_ORIGINS: http://localhost:4173,http://localhost:4174,http://localhost:8080
@@ -248,7 +248,7 @@ services:
         # DHCP-assigned one would drift and the trust list would then silently stop matching -- which
         # is the failure this whole block exists to prevent, and it fails *quietly*: requests still
         # succeed, only the audit column and the source gate go back to seeing the container.
-        ipv4_address: 172.28.95.10
+        ipv4_address: 172.28.95.250
     depends_on:
       api: {condition: service_healthy}
       web: {condition: service_healthy}
@@ -282,9 +282,19 @@ services:
 
 networks:
   default:
-    # Declared so the gateway can hold a fixed address (172.28.95.10) and so the trust list can name
-    # one peer instead of a range. If another project on the host already owns this /24, compose says
-    # so loudly at `up` -- an overlap it refuses, not one it quietly reroutes around.
+    # Declared so the gateway can hold a fixed address and so the trust list can name one peer instead
+    # of a range. If another project on the host already owns this /24, compose says so loudly at `up`
+    # -- an overlap it refuses, not one it quietly reroutes around.
+    #
+    # Where the pin sits is not arbitrary. Measured on this host at acceptance-20260927T221550Z: the
+    # gateway used to be pinned at .10, but the allocator hands out .2, .3, .4... in creation order and
+    # the gateway starts LAST (it depends on api/web/admin), so `web` already held .10 and the gateway
+    # came up as `failed to set up container networking: Address already in use` -- chain step 2 red.
+    # `iprange` (the usual way to fence the pool out) is rejected by this compose version:
+    # `networks.default.ipam.config.0 additional properties 'iprange' not allowed`, measured with
+    # `docker compose config`. So the pin lives above anything the pool can reach: with roughly a dozen
+    # containers per stack, dynamic allocation cannot arrive at the top of a /24, and a collision would
+    # fail loudly at `up` rather than silently. tests/unit/test_login_source_gate.py pins the octet.
     ipam:
       config:
         - subnet: 172.28.95.0/24
