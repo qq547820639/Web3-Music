@@ -26,5 +26,22 @@ cleanup
 docker compose --profile contention up -d worker worker-b
 sleep "${WORKER_SETTLE_SECONDS:-12}"
 
+# And both claimants must be the same build, namely the one under certification. This is not
+# tidiness: in acceptance-20260927T030055Z step 6, worker-b was still running an image from hours
+# earlier (the chain only rebuilt what `compose config --services` lists, and a service behind a
+# profile is not in it), so the race was between a new worker and an old one -- the old code wrote
+# the literal 'clean' into media_assets, migration 020's trigger refused it, a job settled partial
+# and the step failed with a message about leases. A reading from two different builds is not
+# evidence about concurrency at all, so it is refused before any job is submitted.
+tree_sha=$(sha256sum services/worker/worker.py | cut -c1-16)
+for claimant in worker worker-b; do
+  inside=$(docker compose exec -T "$claimant" sha256sum /app/worker.py | cut -c1-16)
+  if [ "$inside" != "$tree_sha" ]; then
+    echo "LEASE CONTENTION FAIL: $claimant runs /app/worker.py $inside, the tree has $tree_sha"
+    exit 1
+  fi
+  echo "contention preflight: $claimant's /app/worker.py == the tree ($tree_sha)"
+done
+
 python scripts/lease_contention.py prepare "$JOBS"
 python scripts/lease_contention.py verify "$TIMEOUT"

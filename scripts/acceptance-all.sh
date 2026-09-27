@@ -22,7 +22,11 @@ cd "$(dirname "$0")/.."
 # 环境预检：缺少解释器或 Docker 时直接退出，且不生成证据目录。
 # 早先版本让第 1 步自己失败，于是落盘一份「static-verify FAIL」的证据，
 # 它记录的是跑错 shell（venv 不在 PATH）而不是被测代码，容易被误读成验收结论。
-for tool in python node docker; do
+# sha256sum 与 xargs 也进了这个清单，因为它们是第 1/6/8 步在宿主上调的外部二进制：
+# 实测 2026-09-27T03:36:31Z，一条不含 /sbin 的 PATH 让第 1 步先打
+# 「xargs: sha256sum: No such file or directory」，再打「tracked=0 listed=229 stale=229」，
+# 这份证据读起来像清单坏了，而真正坏的是跑它的 shell。
+for tool in python node docker sha256sum xargs; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "预检失败：PATH 上没有可执行的 $tool。请先激活运行环境，把 venv 的 bin 目录放到 PATH 前面再运行。" >&2
     exit 2
@@ -149,8 +153,14 @@ step_stack_up() {
   # 镜像刚靠重试装上依赖建好。峰值并发本身就是这一轮的放大项，把它排成一条队：任一镜像失败即整步失败，
   # 建好之后 up 只负责起现成的镜像。
   local service
-  for service in $(docker compose config --services); do
-    docker compose build "$service" || return 1
+  # 只遍历「有 build 段」的服务，并且把 profiles 里的也算进来。`config --services` 默认不报带
+  # profiles 的服务，于是 worker-b（contention 档）与 clamav（scan 档）永远不会被这条链重建——
+  # 实测权威运行 acceptance-20260927T030055Z 第 6 步：worker-b 跑的是几小时前的镜像（/app 里没有
+  # media_scan.py），它按旧代码把 'clean' 当字面量写库，被 020 的触发器当场拒掉，一个作业因此 partial。
+  # 纯镜像服务（clamav 在这台 arm64 宿主上根本没有可用清单）不在这里 pull，交给部署方按 profile 自便。
+  for service in $(docker compose --profile '*' config --format json \
+      | python -c 'import json,sys; print(" ".join(sorted(n for n, s in json.load(sys.stdin)["services"].items() if s.get("build"))))'); do
+    docker compose --profile '*' build "$service" || return 1
   done
   docker compose up -d
   docker compose ps

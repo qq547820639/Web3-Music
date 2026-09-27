@@ -16,7 +16,7 @@
 | static-verify（含 `pytest tests/unit`） | `static-and-unit` |
 | compose 起栈 → acceptance(test.sh) → contract → chaos → backup → restore → 复跑 acceptance | `compose-acceptance` |
 | commercial-flow（commercial-test 覆层） | `commercial-flow` |
-| capacity-gate-500（可选） | 无 CI 等价，本地容量验证 |
+| capacity-gate-500（可选） | `capacity-500` |
 
 > 💡 若本机没有 Docker，直接 `git push` 到仓库即可让 GitHub Actions 替你执行同一套 E2E，结果在仓库 **Actions** 页查看，日志以 artifacts 留存（`compose-logs` / `commercial-compose-logs` / `release-evidence`）。
 
@@ -107,16 +107,27 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 
 | # | 步骤名 | 实际执行 | 通过判据 |
 |---|---|---|---|
-| 1 | static-verify | 编译校验（Python/JS/sh）+ JSON/OpenAPI/JSON Schema 校验 + `architecture-audit.py` + `pytest -q tests/unit` | 退出码 0，无 `missing required contracts` |
-| 2 | unit-test-docker | `scripts/test.sh`：`build acceptance` + `run --rm acceptance`（`run` 按依赖自动拉起 api/worker/web/admin） | 退出码 0 |
-| 3 | compose-up | `docker compose up --build -d` + `docker compose ps` | 全部服务 `Up`/`healthy` |
-| 4 | acceptance | `docker compose --profile test run --rm acceptance` | 退出码 0，pytest 全过 |
-| 5 | contract-test | `scripts/contract-test.sh`（provider/payment 契约测试） | 退出码 0 |
-| 6 | chaos-worker-recovery | 杀 worker → 等租约到期 → 拉起 → 校验补偿/恢复 | 退出码 0，`verify` 通过 |
-| 7 | backup-restore | `backup.sh acceptance` → `RESTORE_CONFIRM=YES restore.sh backups/acceptance` | 备份校验通过、恢复完成 |
-| 8 | acceptance-rerun | 复跑默认 acceptance（验证恢复后的数据一致性） | 退出码 0 |
-| 9 | commercial-flow | commercial-test 覆层起栈 + `acceptance-commercial`（`test_commercial.py`） | 退出码 0 |
-| 10 | capacity-gate-500 | 仅 `CAPACITY=1` 时跑；否则 SKIPPED | 错误率 ≤ 1%、p95 ≤ 800ms、随后 acceptance 通过 |
+| 1 | static-verify | `scripts/static-verify.sh`：`python -m compileall` + `node --check` + `sh -n` + `scripts/source-manifest.sh check` + `scripts/authority_matrix.py --check` + Compose/JSON/JSON Schema/OpenAPI 校验 + `scripts/architecture-audit.py` + `pytest -q tests/unit` | 退出码 0；`architecture-audit.py` 打印 `architecture contracts valid`，末行是 `pytest -q tests/unit` 的结果 |
+| 2 | compose-up | `scripts/acceptance-all.sh` 的 `step_stack_up`：`docker compose --profile '*' config --format json` 取带 `build` 段的服务，逐个 `docker compose --profile '*' build "$service"`（串行，任一失败即整步失败），再 `docker compose up -d`、`docker compose ps` | 退出码 0；`docker compose ps` 全部服务状态为 `Up`/`healthy` |
+| 3 | acceptance | `scripts/test.sh`：`docker compose --profile test build acceptance` + `docker compose --profile test run --rm acceptance` | 退出码 0，pytest 全过 |
+| 4 | contract-test | `scripts/contract-test.sh`：`docker compose --profile test run --rm acceptance pytest -q test_provider_contract.py test_payment_contract.py` | 退出码 0 |
+| 5 | chaos-worker-recovery | `scripts/chaos-worker-recovery.sh`：`chaos_worker_recovery.py submit` → `docker compose kill -s KILL worker` → `sleep "${LEASE_WAIT_SECONDS:-35}"` → `docker compose up -d worker` → `chaos_worker_recovery.py verify` | 退出码 0，`verify` 通过：过期租约被重启的 worker 收回、恢复作业取消、额度无泄漏 |
+| 6 | lease-contention | `scripts/lease-contention.sh`：`docker compose --profile contention up -d worker worker-b` → 双跑者镜像预检 → `lease_contention.py prepare` → `lease_contention.py verify` | 预检先行：宿主 `services/worker/worker.py` 与 `worker`、`worker-b` 容器内 `/app/worker.py` 的 sha256 必须两两相等，各打一行 `contention preflight:`；不等即 `LEASE CONTENTION FAIL: <name> runs ...` 退出 1——**这一行红说明比的是两个构建，而不是竞态失败**。之后 `lease contention passed` 要求本轮至少两个不同 `lease_owner` 真实认领、作业不重复、额度只结算一次 |
+| 7 | restore-fidelity-snapshot | `python scripts/restore_fidelity.py snapshot` | 退出码 0 且打印 `restore-fidelity snapshot written: N assets ...`；覆盖 0 资产或台账为空即失败 |
+| 8 | backup-restore | `scripts/backup.sh acceptance` → `RESTORE_CONFIRM=YES ./scripts/restore.sh backups/acceptance`（restore 内部先跑 `scripts/verify-backup.sh`） | 备份清单校验通过、`Restore complete`、栈重新 `docker compose up -d` |
+| 9 | restore-fidelity-compare | `python scripts/restore_fidelity.py compare` | 打印 `restore fidelity passed: ... byte-identical, ledgers unchanged`；任何资产字节或台账余额漂移打 `RESTORE FIDELITY FAIL` 并退出 1 |
+| 10 | acceptance-rerun | `docker compose --profile test run --rm acceptance` | 退出码 0（验证恢复后的数据一致性） |
+| 11 | erasure-drill | `python scripts/erasure_drill.py` | 退出码 0，`erasure drill: N/N checks passed` |
+| 12 | mfa-drill | `python scripts/mfa_drill.py` | 退出码 0，`mfa drill: N/N checks passed` |
+| 13 | member-drill | `python scripts/member_drill.py` | 退出码 0，`member drill: N/N checks passed` |
+| 14 | media-scan-drill | `python scripts/media_scan_drill.py` | 退出码 0，`media scan drill: N/N checks passed`（伪造判决被 DB 拒、诚实 `unscanned` 资产仍可听、且无残留行） |
+| 15 | commercial-flow | `docker compose -f docker-compose.yml -f docker-compose.commercial-test.yml up --build -d` → 同覆层 `--profile commercial-test run --rm acceptance-commercial` | 退出码 0 |
+| 16 | reservation-race | `python scripts/reservation_race.py`（需要步骤 15 的商业覆层仍在跑） | 打印 `reservation race passed: ... exactly one active licence` |
+| 17 | market-reconciliation | `python scripts/reconcile_market.py` | 打印 `market reconciliation: N/N checks passed`（licence/交付/退款/分账四表对账与 85/15 分账策略一致） |
+| 18 | provider-regression-100 | `python scripts/provider_regression.py "${REGRESSION_JOBS:-100}" "${REGRESSION_CONCURRENCY:-8}"` | 打印 `provider regression: N/N completed, error rate ...` 且无 `FAIL:` 行；台账闭合、无悬挂 hold |
+| 19 | generic-rest-roundtrip | `docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up --build -d` → `python scripts/provider_regression.py "${GENERIC_REST_JOBS:-25}" 4 generic_rest` | 退出码 0；`/api/bootstrap` 报出的 provider 身份必须是 `generic_rest`，否则 `expected provider ...` 直接判红 |
+| 20 | browser-a11y | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (BROWSER=1 才执行)`；`BROWSER=1` 时 `python scripts/browser_a11y.py --self-test` → `python scripts/browser_a11y.py` | 退出码 0，`browser a11y + walkthrough passed`；前置为 playwright + Chromium（`scripts/requirements-browser.txt`） |
+| 21 | capacity-gate-500 | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (CAPACITY=1 才执行)`；`CAPACITY=1` 时先 `docker compose down --remove-orphans`（商业覆层同做一次）释放端口，再 `./scripts/capacity-gate-500.sh` | 错误率 ≤ `CAPACITY_MAX_ERROR_RATE`（默认 1%）、p95 ≤ `CAPACITY_MAX_P95_MS`（默认 800ms），随后容量栈里的 acceptance 复跑通过 |
 
 **判读要点**：每步结束后控制台会打印 `STEP N RESULT: PASS/FAIL`。任一步 `FAIL` 会立即停止，并提示 `该步骤失败，日志在 …`。
 
@@ -158,13 +169,13 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 
 | 现象 | 可能原因 | 处置 |
 |---|---|---|
-| 步骤 3 起栈失败，端口冲突 | 8080/8000/8010/8020/54329/63799/9000/9090 等被占用 | `lsof` 定位占用进程，释放后重跑 |
+| 步骤 2 起栈失败，端口冲突 | 8080/8000/8010/8020/54329/63799/9000/9090 等被占用（`build` 阶段不占端口，冲突发生在随后的 `docker compose up -d`） | `lsof` 定位占用进程，释放后重跑 |
 | 镜像拉取失败 / 构建超时 | 网络不通、镜像源不可达、磁盘不足 | 配置镜像加速、`docker system df` 检查磁盘、重试 |
-| 步骤 4/8 账本差异或断言失败 | 前序步骤残留脏数据、`restore` 后未等待健康 | 确认 §4 顺序执行；`docker compose ps` 看 healthcheck；必要时 `scripts/reset.sh` 清栈后重跑 |
-| 步骤 8（复跑 acceptance）额度泄漏/余额不符 | 恢复点与测试数据不一致 | 确认步骤 7 使用 `backups/acceptance`；检查 `SUMMARY.txt` 时间线是否连续 |
-| 步骤 6 chaos 超时 | worker 租约等待不够 | 调大 `LEASE_WAIT_SECONDS`（默认 35）后单独重跑 `scripts/chaos-worker-recovery.sh` |
-| 步骤 9 商业闭环失败 | Provider 未处于 `approved_commercial` | 确认 commercial-test 覆层已应用（脚本已自动加 `-f`）；检查 `commercial-compose-logs.txt` |
-| 步骤 10 容量 Gate 失败 | 资源不足 / Provider 限流 | 提高 CPU/RAM，调大 `CAPACITY_MAX_P95_MS`，或 `KEEP_CAPACITY_STACK=1` 保留现场排查 |
+| 步骤 3/10 账本差异或断言失败 | 前序步骤残留脏数据、`restore` 后未等待健康 | 确认 §4 顺序执行；`docker compose ps` 看 healthcheck；必要时 `scripts/reset.sh` 清栈后重跑 |
+| 步骤 10（复跑 acceptance）额度泄漏/余额不符 | 恢复点与测试数据不一致 | 确认步骤 8 使用 `backups/acceptance`；检查 `SUMMARY.txt` 时间线是否连续 |
+| 步骤 5 chaos 超时 | worker 租约等待不够 | 调大 `LEASE_WAIT_SECONDS`（默认 35）后单独重跑 `scripts/chaos-worker-recovery.sh` |
+| 步骤 15 商业闭环失败 | Provider 未处于 `approved_commercial` | 确认 commercial-test 覆层已应用（脚本已自动加 `-f`）；检查 `commercial-compose-logs.txt` |
+| 步骤 21 容量 Gate 失败 | 资源不足 / Provider 限流 | 提高 CPU/RAM，调大 `CAPACITY_MAX_P95_MS`，或 `KEEP_CAPACITY_STACK=1` 保留现场排查 |
 
 ---
 

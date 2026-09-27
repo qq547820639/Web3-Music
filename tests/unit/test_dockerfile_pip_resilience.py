@@ -150,14 +150,37 @@ def shell_commands(body: str) -> str:
                      if line.strip() and not line.strip().startswith("#"))
 
 
+def build_loop_head(body: str) -> str:
+    """The line feeding the chain's build loop, when that line is derived from `compose config`.
+
+    Judged as a shape, not as one spelling. The first version of the clause below pinned the literal
+    `$(docker compose config --services)`, which is exactly the enumeration that hid this round's
+    defect: `config --services` omits services that sit behind a profile, so `worker-b` was never
+    rebuilt and the contention step raced a new worker against an hours-old one.
+    """
+    found = re.search(r"for\s+\w+\s+in\s+\$\(docker compose[^\n]*\bconfig\b[^\n]*", body)
+    return found.group(0) if found else ""
+
+
+# `--profile '*'` and `--all-profiles` are the two spellings that make config see the whole file.
+PROFILE_WIDE = re.compile(r"--profile\s+[\"']?\*|--all-profiles")
+
+
 def test_the_chain_builds_one_image_at_a_time():
     body = shell_commands(compose_up_body((ROOT / "scripts/acceptance-all.sh").read_text(encoding="utf-8")))
     assert "--build" not in body, \
         "`up --build` builds every service concurrently; measured on the release VM that killed " \
         "worker's apt-get with SIGKILL (rc 137) while other images were downloading"
-    assert re.search(r"for\s+\w+\s+in\s+\$\(docker compose config --services\)", body), \
-        "the build loop must enumerate the compose services, not a hand-kept list that goes stale"
-    assert re.search(r"docker compose build \"?\$\{?\w+\}?\"?\s*\|\|\s*return 1", body), \
+    head = build_loop_head(body)
+    assert head, \
+        "the build loop must enumerate whatever compose reports, not a hand-kept list of service " \
+        "names that silently goes stale when a profile or a service is added"
+    assert PROFILE_WIDE.search(head), \
+        "the enumeration has to see profile-gated services: `config --services` skips them, which is " \
+        "how acceptance-20260927T030055Z step 6 came to race worker (rebuilt) against worker-b " \
+        "(hours old, no media_scan.py) -- the stale one wrote the literal 'clean' into media_assets, " \
+        "migration 020's trigger refused it, and a job settled partial"
+    assert re.search(r"docker compose[^\n]*\bbuild\b[^\n]*\|\|\s*return 1", body), \
         "a failed image build has to fail the step rather than fall through to `up`"
 
 
@@ -168,10 +191,50 @@ def test_the_build_shape_detector_fires_on_the_concurrent_form():
            "}\n")
     body = shell_commands(compose_up_body(old))
     assert "--build" in body
-    assert not re.search(r"for\s+\w+\s+in\s+\$\(docker compose config --services\)", body)
+    assert not build_loop_head(body)
     assert "--build" in compose_up_body(old)  # the prose-strip is what makes the reading above honest
     current = shell_commands(compose_up_body((ROOT / "scripts/acceptance-all.sh").read_text(encoding="utf-8")))
     assert "--build" not in current
+
+
+def test_the_profile_clause_fires_on_the_form_that_caused_this_round():
+    """Each new clause needs the minimal shape it exists to reject, and one it must not touch.
+
+    The profile-blind loop is the hard case: it passes every other assertion here, because it is
+    compose-derived, serial and fail-fast. Only the profile-wide flag separates it from this round's
+    shape -- so if that flag were dropped, this control is what reddens, not the chain's step 6.
+    """
+    blind = ("step_stack_up() {\n"
+             "  for service in $(docker compose config --services); do\n"
+             "    docker compose build \"$service\" || return 1\n"
+             "  done\n"
+             "  docker compose up -d\n"
+             "}\n")
+    blind_body = shell_commands(compose_up_body(blind))
+    assert build_loop_head(blind_body), "the derived-from-config clause must NOT be what catches it"
+    assert re.search(r"docker compose[^\n]*\bbuild\b[^\n]*\|\|\s*return 1", blind_body)
+    assert not PROFILE_WIDE.search(build_loop_head(blind_body)), \
+        "the profile clause went quiet on the exact shape it was written for"
+
+    wide = ("step_stack_up() {\n"
+            "  for service in $(docker compose --profile '*' config --format json); do\n"
+            "    docker compose --profile '*' build \"$service\" || return 1\n"
+            "  done\n"
+            "}\n")
+    wide_head = build_loop_head(shell_commands(compose_up_body(wide)))
+    assert wide_head and PROFILE_WIDE.search(wide_head)
+    flags = lambda line: sorted(set(re.findall(r"--[\w-]+", line)))  # noqa: E731  (one-use reader)
+    assert flags(wide_head) == flags(build_loop_head(
+        shell_commands(compose_up_body((ROOT / "scripts/acceptance-all.sh").read_text(encoding="utf-8"))))), \
+        "the fixture no longer describes the flags the chain's enumeration is called with"
+
+    hand_list = ("step_stack_up() {\n"
+                 "  for service in api worker gateway; do\n"
+                 "    docker compose build \"$service\" || return 1\n"
+                 "  done\n"
+                 "}\n")
+    assert not build_loop_head(shell_commands(compose_up_body(hand_list))), \
+        "a hand-kept list reads as derived enumeration and passes quietly"
 
 
 # ---------------------------------------------------------------- apt on the same footing ----
