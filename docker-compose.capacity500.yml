@@ -1,15 +1,35 @@
 # Cost-optimized single-host capacity profile for load/staging verification.
 # This is not a substitute for managed HA production infrastructure.
+#
+# The values below are written literally on purpose. They used to be dollar-brace interpolations with a
+# default (`NAME:-4`), and on any host with a `.env` -- which is every host, because the api/worker
+# containers take `env_file: [.env]` and `capacity-gate-500.sh` itself does `cp -n .env.example .env` --
+# Compose resolved the name from `.env`, so the profile's own number never reached the container:
+# `.env.example` ships `API_WORKERS=1`, and `docker compose exec api sh -c 'echo $API_WORKERS'` answered
+# 1 while this file said 4. Pinning the literals makes the container answer 4, with four
+# `Started server process` lines behind it.
+#
+# What the change buys, measured on this host (4 vCPU VM), same stack and same fresh database, only the
+# worker count differing, each arm recreated and the pair repeated: p50 of GET /api/projects through the
+# gateway drops reproducibly -- 128 users x 5: 1089.9/1091.5ms on one worker against 577.3/723.2ms on
+# four; 500 x 2: 7271.8/6375.4ms against 3508.8/5000.2ms; 500 x 5: 6501.0ms against 2106.3ms.
+# Throughput and p95 do NOT separate reliably: at 128 x 5 the four-worker arm read p95 1152.0ms then
+# 4517.9ms on two passes (the one-worker arm 1374.9/1391.1ms), and at 500 concurrent both arms stay an
+# order of magnitude above this gate's 800ms budget. So: the profile's parallelism is now what the
+# profile says it is, and it halves median latency; it does not make 500 concurrent pass on this
+# machine, and no latency reading here was taken twice in a way that would support a throughput claim.
+# `tests/unit/test_environment_contract.py` keeps the values un-shadowable. Caller-facing knobs
+# (CAPACITY_USERS, CAPACITY_MAX_P95_MS, ...) are arguments to scripts/capacity-gate-500.sh, not here.
 services:
   api:
     environment:
-      API_WORKERS: ${API_WORKERS:-4}
-      API_LIMIT_CONCURRENCY: ${API_LIMIT_CONCURRENCY:-512}
-      DB_POOL_MIN: ${DB_POOL_MIN:-2}
-      DB_POOL_MAX: ${DB_POOL_MAX:-12}
-      DB_POOL_ACQUIRE_TIMEOUT_SECONDS: ${DB_POOL_ACQUIRE_TIMEOUT_SECONDS:-8}
-      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
-      MEDIA_DELIVERY_MODE: ${MEDIA_DELIVERY_MODE:-proxy}
+      API_WORKERS: "4"
+      API_LIMIT_CONCURRENCY: "512"
+      DB_POOL_MIN: "2"
+      DB_POOL_MAX: "12"
+      DB_POOL_ACQUIRE_TIMEOUT_SECONDS: "8"
+      DB_STATEMENT_TIMEOUT_MS: "15000"
+      MEDIA_DELIVERY_MODE: "proxy"
     deploy:
       resources:
         limits:
@@ -17,13 +37,13 @@ services:
           memory: 4G
   worker:
     environment:
-      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-12}
-      WORKER_DB_POOL_MIN: ${WORKER_DB_POOL_MIN:-2}
-      WORKER_DB_POOL_MAX: ${WORKER_DB_POOL_MAX:-20}
-      POLL_WINDOW_SECONDS: ${POLL_WINDOW_SECONDS:-600}
-      PROVIDER_POLL_INTERVAL_SECONDS: ${PROVIDER_POLL_INTERVAL_SECONDS:-3}
-      PROVIDER_POLL_MAX_INTERVAL_SECONDS: ${PROVIDER_POLL_MAX_INTERVAL_SECONDS:-10}
-      PROVIDER_ADAPTER_VERSION: ${PROVIDER_ADAPTER_VERSION:-3.0.0}
+      WORKER_CONCURRENCY: "12"
+      WORKER_DB_POOL_MIN: "2"
+      WORKER_DB_POOL_MAX: "20"
+      POLL_WINDOW_SECONDS: "600"
+      PROVIDER_POLL_INTERVAL_SECONDS: "3"
+      PROVIDER_POLL_MAX_INTERVAL_SECONDS: "10"
+      PROVIDER_ADAPTER_VERSION: "3.0.0"
     deploy:
       resources:
         limits:

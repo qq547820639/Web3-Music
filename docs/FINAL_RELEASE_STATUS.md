@@ -882,3 +882,23 @@ there, so the exemption cannot outlive the fact.
 coverage claim, not a pass claim; the equivalent steps are green on this host (media-scan drill 14/14 at
 chain step 14, restore-fidelity snapshot and compare at steps 7 and 9 of
 `release-evidence/acceptance-20260927T040234Z/`), and that is the strongest reading available locally.
+
+**A third thing two of this round's reds had in common: a reading blamed on the machine that the
+configuration had actually produced.** `docs/RELEASE_CHECKLIST.md` carries `capacity-gate-500` as
+"judged red on this host, host capacity", and the file's own capacity profile asked for four Uvicorn
+workers -- but it asked as `${API_WORKERS:-4}`, and Compose resolves that from the host environment and
+`.env`, which every host here has (`capacity-gate-500.sh` copies `.env.example` into place, and `.env.example`
+ships `API_WORKERS=1`). `docker compose exec api sh -c 'echo $API_WORKERS'` answered 1 while the profile
+said 4, so every capacity number ever recorded was taken on one worker. Pinning the literals makes the
+container answer 4, with four `Started server process` lines behind it, and `tests/unit/test_environment_contract.py` now forbids a profile value that the host can shadow.
+Re-measured with only the worker count changed, each arm recreated and repeated on this 4 vCPU VM
+(GET /api/projects via the gateway): median latency does move -- 128 users x 5 gives p50
+1089.9/1091.5ms on one worker against 577.3/723.2ms on four, 500 x 2 gives 7271.8/6375.4ms against
+3508.8/5000.2/5445.8ms -- but p95 and throughput do not separate reproducibly (the four-worker arm read
+p95 1152.0ms on one pass and 4517.9ms on the next at 128 users), so the claim "128 concurrent passes the
+800ms budget on four workers", which a single first pass appeared to support, is **withdrawn**. The 500-user
+conclusion is still not obtained on this host; what changed is that the red is now attributable to the
+host rather than partly to a configuration nobody intended to test. During one 500-user run
+`docker stats --no-stream` showed `loadtest` 68.79%, `api` 71.07% and `postgres` 89.28% CPU -- the load
+generator, the service and the database share the four cores, which is why the table in
+`docs/COST_OPTIMIZED_500_CONCURRENCY.md` reports repeats instead of single numbers.

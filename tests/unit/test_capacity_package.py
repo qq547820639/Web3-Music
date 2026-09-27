@@ -20,9 +20,28 @@ def test_load_gate_percentile_math():
 
 
 def test_capacity_compose_has_low_cost_parallelism_and_loadtest():
+    """The profile's numbers have to be the numbers a container receives.
+
+    This test used to assert `API_WORKERS == "${API_WORKERS:-4}"` -- the interpolation's text, never its
+    resolution. That is how the profile's own value went unused on every host: `.env.example` ships
+    `API_WORKERS=1`, Compose resolved the name from `.env` (which CI and `capacity-gate-500.sh` both
+    copy into place), and the "500-user capacity profile" ran one Uvicorn worker while the test stayed
+    green. Measured on this stack with only the worker count changed, each arm recreated and repeated,
+    p50 of GET /api/projects through the gateway at 500 users x 5 requests: 6501.0ms on one worker
+    against 2106.3ms on four (and 1089.9/1091.5ms against 577.3/723.2ms at 128 users). The throughput
+    and p95 readings did not separate across passes, so this test asserts the configuration, not a
+    latency budget.
+    """
     data = yaml.safe_load((ROOT / "docker-compose.capacity500.yml").read_text())
-    assert data["services"]["api"]["environment"]["API_WORKERS"] == "${API_WORKERS:-4}"
-    assert data["services"]["worker"]["environment"]["WORKER_CONCURRENCY"] == "${WORKER_CONCURRENCY:-12}"
+    api = data["services"]["api"]["environment"]
+    worker = data["services"]["worker"]["environment"]
+    assert api["API_WORKERS"] == "4"
+    assert worker["WORKER_CONCURRENCY"] == "12"
+    assert not any(isinstance(value, str) and "${" in value for value in api.values()), \
+        "a dollar-brace value here is resolved from the host's .env, not from this file"
+    # ...and the host default really does differ, which is what makes the assertion above load-bearing.
+    example = (ROOT / ".env.example").read_text()
+    assert "API_WORKERS=1" in example, "the host default is no longer the shadow this guard exists for"
     assert "loadtest" in data["services"]
 
 

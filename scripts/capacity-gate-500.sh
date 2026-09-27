@@ -15,7 +15,21 @@ trap cleanup EXIT INT TERM
 ./scripts/static-verify.sh
 cp -n .env.example .env 2>/dev/null || true
 
-docker compose $FILES up --build -d postgres redis minio migrate provider-emulator payment-emulator api worker web admin gateway
+# One image at a time, then start them. The fan-out is the hazard, not the build: on this 4 vCPU VM,
+# `up --build` running every image at once is what killed worker's `apt-get install ffmpeg` with SIGKILL
+# (rc 137) while two other images were pulling wheels -- measured in acceptance-20260926T161826Z and
+# fixed in `step_stack_up` (scripts/acceptance-all.sh:152-172), which this mirrors including the
+# profile-blindness lesson: enumerate what `compose config` reports with `--profile '*'`, and build only
+# the services that actually declare a `build:` section.
+targets="postgres redis minio migrate provider-emulator payment-emulator api worker web admin gateway"
+for service in $(docker compose $FILES --profile '*' config --format json | python -c '
+import json, sys
+wanted = set("postgres redis minio migrate provider-emulator payment-emulator api worker web admin gateway".split())
+services = json.load(sys.stdin)["services"]
+print(" ".join(sorted(n for n, s in services.items() if n in wanted and s.get("build"))))'); do
+  docker compose $FILES build "$service" || exit 1
+done
+docker compose $FILES up -d $targets
 
 docker compose $FILES --profile capacity run --rm loadtest \
   --base-url http://gateway \

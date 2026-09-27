@@ -240,3 +240,60 @@ def test_the_example_file_and_the_settings_defaults_agree_where_both_name_a_knob
     drift = {name: (values[name], defaults[name]) for name in defaults
              if name in values and name not in exempt and values[name] != defaults[name]}
     assert not drift, f".env.example ships a value that differs from the code default: {drift}"
+
+
+# --------------------------------------------------- a profile that the host can shadow ----
+#
+# docker-compose.capacity500.yml states the configuration a capacity reading is taken under. It used
+# to write those numbers as dollar-brace interpolations with a default, and because every host that runs
+# this stack has a `.env` -- CI copies it, `capacity-gate-500.sh` copies it, and the containers read
+# `env_file: [.env]` -- Compose resolved the name from `.env` and the profile's own number never reached
+# the container. `.env.example` ships `API_WORKERS=1`, so the "500-user capacity profile" ran one
+# Uvicorn worker: `docker compose exec api sh -c 'echo $API_WORKERS'` answered 1 while the profile said
+# 4. Measured on this host with only the worker count changed, each arm recreated and repeated, median
+# latency of GET /api/projects through the gateway: 128 users x 5 -> p50 1089.9/1091.5ms on one worker
+# against 577.3/723.2ms on four; 500 x 5 -> 6501.0ms against 2106.3ms. Throughput and p95 did not
+# separate reliably across passes (the four-worker arm read p95 1152.0ms then 4517.9ms), which is why
+# this guard is about the configuration being what the file says, and not about a latency budget.
+
+CAPACITY_PROFILE = ROOT / "docker-compose.capacity500.yml"
+PROFILE_INTENTS = {"api": {"API_WORKERS": "4", "DB_POOL_MAX": "12"},
+                   "worker": {"WORKER_CONCURRENCY": "12", "WORKER_DB_POOL_MAX": "20"}}
+
+
+def shadowable_values(text):
+    """Every container-environment value in a compose document that the host's env can replace."""
+    found = []
+    for service, spec in ((yaml.safe_load(text) or {}).get("services") or {}).items():
+        for name, value in (spec.get("environment") or {}).items():
+            if isinstance(value, str) and "${" in value:
+                found.append(f"{service}.{name}={value}")
+    return sorted(found)
+
+
+def test_the_capacity_profile_states_values_the_host_cannot_shadow():
+    assert shadowable_values(CAPACITY_PROFILE.read_text(encoding="utf-8")) == []
+
+
+def test_the_capacity_profile_still_states_the_measured_numbers():
+    """De-interpolating to something else would satisfy the check above while changing the profile."""
+    services = (yaml.safe_load(CAPACITY_PROFILE.read_text(encoding="utf-8")) or {}).get("services") or {}
+    for service, wanted in PROFILE_INTENTS.items():
+        env = services[service]["environment"]
+        for name, value in wanted.items():
+            assert str(env.get(name)) == value, f"{service}.{name}: {env.get(name)!r} != {value!r}"
+
+
+def test_the_shadow_detector_fires_on_the_shape_the_profile_used_to_have():
+    sample = "services:\n  api:\n    environment:\n      API_WORKERS: ${API_WORKERS:-4}\n"
+    assert shadowable_values(sample) == ["api.API_WORKERS=${API_WORKERS:-4}"]
+
+
+def test_the_shadow_detector_ignores_what_a_profile_cannot_pin():
+    """Secrets and ports must stay interpolated; flagging them would make the rule get deleted."""
+    sample = ("services:\n  minio:\n    environment:\n"
+              "      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set}\n"
+              "    ports: [\"${GATEWAY_PORT:-8080}:80\"]\n")
+    assert shadowable_values(sample) == ["minio.MINIO_ROOT_USER=${MINIO_ROOT_USER:?set}"]
+    assert "minio.MINIO_ROOT_USER" not in str(PROFILE_INTENTS)
+    assert not any("MINIO" in item for item in shadowable_values(CAPACITY_PROFILE.read_text(encoding="utf-8")))
