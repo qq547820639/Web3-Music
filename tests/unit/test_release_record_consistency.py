@@ -302,3 +302,139 @@ def test_the_host_clause_refuses_a_reading_with_nothing_behind_it():
     problems = host_clause("control", 'host_load="5.81 4.99 5.67"、Docker VM 4 vCPU',
                            {"host_load": None, "cpus": None})
     assert len([p for p in problems if "records none" in p]) == 2, problems
+
+
+# ------------------------------------------- the status file's own per-round readings ----
+
+STATUS = ROOT / "docs/FINAL_RELEASE_STATUS.md"
+STAMP_ON_LINE = re.compile(r"acceptance-(\d{8}T\d{6}Z)")
+LOAD_ON_LINE = re.compile(r'host load "([^"]*)" on a (\d+)-cpu')
+
+
+def paired_readings(line):
+    """The run and the readings a single line states, or nothing when the line is ambiguous.
+
+    Either order is allowed -- one section names the evidence directory first, another quotes the
+    machine state first -- but a line carrying two runs or two load averages is not something this
+    rule may guess at, so it is skipped rather than paired arbitrarily.
+    """
+    stamps = STAMP_ON_LINE.findall(line)
+    loads = LOAD_ON_LINE.findall(line)
+    if len(stamps) == 1 and len(loads) == 1:
+        return [(stamps[0], loads[0][0], loads[0][1])]
+    return []
+
+
+def status_reading_problems(runs):
+    """The English status file quotes a load average per round, so each line is paired with its own run.
+
+    The three Chinese faces carry one reproducibility sentence and are checked against the certified
+    run; the status file accumulates a section per round, so the only sound rule is line-local: the
+    run named on the line and the readings on that same line must agree with that run's SUMMARY.
+    """
+    by_stamp = {r["stamp"]: r for r in runs}
+    problems = []
+    for line in STATUS.read_text(encoding="utf-8").splitlines():
+        for stamp, load, cpus in paired_readings(line):
+            run = by_stamp.get(stamp)
+            if run is None:
+                problems.append(f"{STATUS.name}: line cites {stamp}, which is not in the tracked archive")
+                continue
+            if run.get("host_load") is None:
+                problems.append(f"{STATUS.name}: {stamp} quotes a load average, its SUMMARY records none")
+                continue
+            if load != run["host_load"] or cpus != str(run["cpus"]):
+                problems.append(f"{STATUS.name}: {stamp} says load {load!r}/{cpus}-cpu, SUMMARY says "
+                                f"{run['host_load']!r}/{run['cpus']}-cpu")
+    return problems
+
+
+def test_the_status_file_quotes_each_round_its_own_host_readings():
+    problems = status_reading_problems(archived_runs())
+    assert not problems, " | ".join(problems)
+    # Coverage floor: the rule is line-local by construction, so a section that stops naming its run
+    # and its machine state on one line would silently drop out of the check rather than fail it.
+    paired = [r for line in STATUS.read_text(encoding="utf-8").splitlines() for r in paired_readings(line)]
+    newest = max(archived_runs(), key=lambda r: r["stamp"])
+    assert paired, "no line in the status file pairs a run with its host readings"
+    assert any(stamp == newest["stamp"] for stamp, _, _ in paired), \
+        f"the certified run {newest['stamp']} is not paired with its readings: {paired}"
+
+
+def test_the_status_check_fires_on_a_load_average_borrowed_from_another_round():
+    """Line pairing is the whole point: the same file holds several rounds, so a global rule would let
+    a section describe one run while quoting another machine state."""
+    runs = [run(CERTIFIED, "eeeeeee", 20) | {"host_load": "5.81 4.99 5.67", "cpus": "4"}]
+    good = f'run `acceptance-{CERTIFIED}` host load "5.81 4.99 5.67" on a 4-cpu Docker VM'
+    assert not status_reading_problems_on(good, runs), status_reading_problems_on(good, runs)
+    bad = f'run `acceptance-{CERTIFIED}` host load "22.05 22.50 23.10" on a 4-cpu Docker VM'
+    assert any("SUMMARY says" in p for p in status_reading_problems_on(bad, runs)), bad
+    wrong_cpus = f'run `acceptance-{CERTIFIED}` host load "5.81 4.99 5.67" on a 8-cpu Docker VM'
+    assert any("SUMMARY says" in p for p in status_reading_problems_on(wrong_cpus, runs)), wrong_cpus
+    assert status_reading_problems_on("a paragraph with no run named in it", runs) == []
+    ambiguous = (f'`acceptance-{CERTIFIED}` and `acceptance-20260920T000000Z` '
+                 'host load "1.00 1.00 1.00" on a 4-cpu')
+    assert status_reading_problems_on(ambiguous, runs) == [], \
+        "a line naming two runs must be skipped, not paired with whichever comes first"
+
+
+def status_reading_problems_on(text, runs):
+    """The line rule, pointed at a sample instead of the file."""
+    by_stamp = {r["stamp"]: r for r in runs}
+    problems = []
+    for line in text.splitlines():
+        for stamp, load, cpus in paired_readings(line):
+            found = by_stamp.get(stamp)
+            if found is None:
+                problems.append(f"cites {stamp}, not tracked")
+            elif load != found["host_load"] or cpus != str(found["cpus"]):
+                problems.append(f"{stamp} says {load}/{cpus}, SUMMARY says {found['host_load']}/{found['cpus']}")
+    return problems
+
+
+# ------------------------------------------- a citation must point at tracked evidence ----
+
+EVIDENCE_REF = re.compile(r"release-evidence/((?:acceptance|browser-a11y)-(?:\d{8}T\d{6}Z))")
+DOCUMENTS = (CHECKLIST, REPORT, CHANGELOG, STATUS, ROOT / "docs/CODE_WALKTHROUGH.md")
+
+
+def tracked_evidence():
+    listed = subprocess.run(["git", "-C", str(ROOT), "ls-files", "release-evidence"],
+                            capture_output=True, text=True, check=True).stdout.split()
+    return {pathlib.Path(relative).parent.name for relative in listed}
+
+
+def citation_problems(tracked):
+    """Every evidence directory the record names has to be in the repository, not just on this laptop.
+
+    The reproducibility argument is that a reader can re-derive the figures from the archive; a run
+    cited by a document but left untracked is exactly the reading nobody else can check, and it stays
+    invisible to every other guard here because those read the tracked set as their denominator.
+    """
+    problems = []
+    for path in DOCUMENTS:
+        cited = set(EVIDENCE_REF.findall(path.read_text(encoding="utf-8")))
+        for stamp in sorted(cited - tracked):
+            problems.append(f"{path.name}: cites release-evidence/{stamp}, which is not tracked")
+    return problems
+
+
+def test_every_evidence_directory_the_record_cites_is_tracked():
+    problems = citation_problems(tracked_evidence())
+    assert not problems, " | ".join(problems)
+
+
+def test_the_citation_check_fires_on_an_untracked_run():
+    """The denominator is the tracked set, so the sample has to show a missing directory reddens it --
+    an empty intersection would otherwise pass for the wrong reason."""
+    tracked = tracked_evidence()
+    assert tracked, "nothing is tracked under release-evidence/, so this guard compares prose to nothing"
+    sample = "证据 `release-evidence/acceptance-20260101T000000Z/SUMMARY.txt`"
+    stamp = EVIDENCE_REF.findall(sample)[0]
+    assert stamp not in tracked
+    assert any("not tracked" in p for p in citation_problems_on(sample, tracked)), sample
+    assert citation_problems_on(sample, tracked | {stamp}) == []
+
+
+def citation_problems_on(text, tracked):
+    return [f"cites {stamp}, not tracked" for stamp in set(EVIDENCE_REF.findall(text)) - tracked]
