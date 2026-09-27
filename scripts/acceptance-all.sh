@@ -37,6 +37,28 @@ docker info >/dev/null 2>&1 || {
   exit 2
 }
 
+# 磁盘余量预检。这条链要在同一台虚机里跑 100 次生成、备份与恢复，写盘满了不会以「环境红」的样子
+# 出现，而是以产品缺陷的样子出现：实测 2026-09-27T06:55:07Z（权威链第 12 步 mfa-drill）报的是
+# 「未武装账号仍可用口令登录 —— 500 Internal Server Error」，而 api 容器里的真因是
+# `psycopg2.errors.DiskFull: could not extend file "base/18221/18380"`，当时 `df /` 只剩 718780 KB。
+# 阈值由那次失败的位置往上抬：708 MB 是实测会死的量，缺省 4 GiB 是「离死还远到可以开始」。
+# 测不到就写 unknown 并继续——unknown 不等于通过，读数本身进 SUMMARY 头部。
+MIN_FREE_KB=${MIN_FREE_KB:-4194304}
+probe_image=$(docker compose --profile '*' config --format json 2>/dev/null \
+  | python -c 'import json,sys; print((json.load(sys.stdin).get("services") or {}).get("postgres", {}).get("image") or "")' 2>/dev/null)
+disk_free_kb=unknown
+if [ -n "$probe_image" ] && docker image inspect "$probe_image" >/dev/null 2>&1; then
+  disk_free_kb=$(docker run --rm --entrypoint df "$probe_image" / 2>/dev/null | awk 'NR==2 {print $4}')
+  [ -n "$disk_free_kb" ] || disk_free_kb=unknown
+fi
+if [ "$disk_free_kb" != "unknown" ] && [ "$disk_free_kb" -lt "$MIN_FREE_KB" ]; then
+  echo "预检失败：Docker 数据盘只剩 ${disk_free_kb} KB，低于阈值 ${MIN_FREE_KB} KB。" >&2
+  echo "本轮实测：docker image prune -f 报回收 3.671 GB 后，同一挂载的余量从 718780 KB 升到 16915364 KB。" >&2
+  echo "清出空间后重跑；确要在小盘上跑请显式给 MIN_FREE_KB=<更小值>。" >&2
+  exit 2
+fi
+echo "disk_free_kb=$disk_free_kb min_free_kb=$MIN_FREE_KB probe_image=${probe_image:-none}"
+
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 EVIDENCE_DIR="release-evidence/acceptance-${STAMP}"
 RESULTS_FILE="${EVIDENCE_DIR}/SUMMARY.txt"
@@ -69,6 +91,7 @@ host_load_reading() {
   echo "$(host_load_reading)"
   echo "git_commit=$(git rev-parse HEAD 2>/dev/null || echo unavailable)"
   echo "fresh_database=${FRESH:-0}"
+  echo "disk_free_kb=$disk_free_kb"
   echo ""
   echo "STEP | RESULT | STARTED_AT | FINISHED_AT"
 } > "$RESULTS_FILE"
