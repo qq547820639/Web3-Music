@@ -37,7 +37,7 @@ METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
 # 55 against 142 for settings, 408 against 504 for the worker), and two of the short names it used resolve to
 # different files than the prose meant (`quality.py` lives under `app/domain/`, `provider.py` under
 # `services/worker/`). Both the number and the path are recomputed here.
-LINE_SCANNED = ("docs/CODE_WALKTHROUGH.md",)
+LINE_SCANNED = ("docs/CODE_WALKTHROUGH.md", "docs/README_FOR_DEVELOPERS.md")
 LINE_CLAIM = re.compile(r"`([^`]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z]{2,5})`（(\d+) 行）")
 
 # The same shape for resident-test case counts: prose that names a test file and states how many cases it
@@ -230,12 +230,15 @@ def line_count_problems(root, doc, text):
 
 def test_the_walkthroughs_line_counts_are_todays_counts():
     problems = []
+    total = 0
     for doc in LINE_SCANNED:
         text = (ROOT / doc).read_text(encoding="utf-8")
         found = LINE_CLAIM.findall(text)
+        total += len(found)
+        assert found, f"{doc} is scanned for line-count claims but states none; drop it from LINE_SCANNED"
         problems += line_count_problems(ROOT, doc, text)
-        assert len(found) >= 7, f"{doc} states {len(found)} line counts; the census below assumed seven"
     assert not problems, "\n".join(problems)
+    assert total >= 10, f"only {total} line-count claims across {LINE_SCANNED}; the census is not what it was"
 
 
 def test_the_line_count_rule_fires_on_a_stale_number(tmp_path):

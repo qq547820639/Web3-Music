@@ -104,6 +104,28 @@ Worker 恢复演练：
 ./scripts/release-evidence.sh
 ```
 
+## 文书读数的落地方式：为什么是自己盖章而不是引入现成工具
+
+六份发布文书（`docs/RELEASE_CHECKLIST.md`、`docs/TEST_REPORT.md`、`docs/FINAL_RELEASE_STATUS.md`、
+`docs/CODE_WALKTHROUGH.md`、`docs/E2E_ACCEPTANCE_RUNBOOK.md`、`docs/CHANGELOG_COST500.md`）里的每个运行读数，
+现在都由 `scripts/release_face_cells.py` 按「标记行 + 正则 + 模板」就地改写；这套做法是在比过两条现成路线之后
+留下的选择，写在这里免得后来者以为只是顺手造的轮子。
+
+- 候选一，构建期转叙：mdBook 的 `{{#include file.rs:anchor}}`（`https://rust-lang.github.io/mdBook/format/mdbook.html`，
+  MIT，主线活跃）支持按行号与具名锚点把外部片段插进章节。功能匹配度：能解决"数字来自别处"，但它插入的是整段
+  外部文本，要保住中文句子周围的上下文就得把每句话拆成独立片段文件；License：MIT 无冲突；维护与质量：无问题；
+  安全：本地渲染，无新增面；适配成本：要给 192 行纯 Markdown 的文档集引入一本书的构建工具链，而本仓的文档
+  按 GitHub 直接读、不出站点。**结论：借语义不引依赖**——我们的"标记行"就是它的具名锚点思路，
+  正则命中不为 1 就整轮拒写，这一点是它的锚点模式没有的判决语义。
+- 候选二，报告直出：`pytest-json-report` 1.5.0（`https://pypi.org/project/pytest-json-report/`，MIT）把
+  session 时间、环境元数据、逐用例耗时与结果写成 JSON，供下游自动消费；其页面对"把数字写进人读的文档"
+  没有任何机制。本仓已经在用它的一条坑：`environment` 字段在 pytest-metadata ≥3 下恒为空对象，
+  所以它连元数据都不可靠。**结论：只用它做机读侧，不做文书侧**。
+- 留下的自研部分共 1242 行 Python——`scripts/stamp_release_faces.py`（433 行）、`scripts/release_face_cells.py`（682 行）与 `scripts/metric_line.py`（127 行）——只做三件事：从在册件读数（`stamp_release_faces.figures()`）、
+  按格改写（`release_face_cells.apply()`，任一格解析不到就整体不落盘）、以及把"格要的数没人算"与
+  "算出来的数没人引用"两个方向都钉成常驻用例（`tests/unit/test_release_face_cells.py`）。
+  替换任一现成方案都要先把"取不到读数即整轮拒写"这条判决语义重新实现一遍——这是本仓文书唯一不能退化的性质。
+
 ## 正式 Provider
 
 生产接入使用 `generic_rest`：
