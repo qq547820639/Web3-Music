@@ -14,7 +14,7 @@
 | 本脚本步骤 | 等价 CI job |
 |---|---|
 | static-verify（含 `pytest tests/unit`） | `static-and-unit` |
-| compose-up → acceptance → contract-test → chaos → lease-contention → restore-fidelity-snapshot → backup-restore → restore-fidelity-compare → acceptance-rerun → erasure/mfa/member/media-scan/report 五支演练 → generic-rest-roundtrip | `compose-acceptance` |
+| compose-up → acceptance → contract-test → chaos → lease-contention → restore-fidelity-snapshot → backup-restore → restore-fidelity-compare → acceptance-rerun → **gateway follows the api across a recreate** → erasure/mfa/member/media-scan/report 五支演练 → generic-rest-roundtrip | `compose-acceptance` |
 | commercial-flow（commercial-test 覆层）+ market-reconciliation + reservation-race + hold-drill | `commercial-flow` |
 | browser-a11y（`BROWSER=1` 才在本地跑） | `browser-a11y`（CI 每次都跑） |
 | capacity-gate-500（可选） | `capacity-500` |

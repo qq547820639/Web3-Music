@@ -96,6 +96,52 @@ jobs:
       - name: Restore did not change a byte of the media or the ledger
         run: python scripts/restore_fidelity.py compare
       - run: docker compose --profile test run --rm acceptance
+      - name: Gateway follows the api across a recreate
+        shell: bash
+        run: |
+          # Why this step sits here rather than three steps later: acceptance-20260928T054641Z turned red in
+          # the second-factor drill, and the cause was the restore just above -- restore.sh recreates the
+          # application tier, the recreated api gets a different address from Docker's IPAM, and an
+          # `upstream { server api:8000; }` resolves that name once, at config load. Every request through
+          # the gateway then dialled the previous container's address (which the pool had handed to the
+          # worker) and got 502, while the gateway's own healthcheck kept reporting healthy because it asks a
+          # local path. Ask the gateway, right after the thing that moves the address, and ask it again after
+          # deliberately moving it once more.
+          port="$(docker compose port gateway 80 | cut -d: -f2)"
+          test -n "$port" || { echo "::error title=gateway-port::compose reported no published port for gateway:80"; exit 1; }
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:${port}/health")"
+          if [ "$code" != "200" ]; then
+            echo "::error title=gateway-after-restore::/health through the gateway (127.0.0.1:${port}) is $code, not 200, right after the restore"
+            docker compose logs --no-color gateway | tail -20 | tr -d '\r'
+            exit 1
+          fi
+          before="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose ps -q api)")"
+          net="$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$(docker compose ps -q web)")"
+          # The IPAM hands a recreated container the lowest free address, and in a stopped-then-started
+          # single-service case that is usually the one it just gave up -- so the "did the proxy keep up"
+          # question would go unasked. Occupy that address first and the recreated api has to move.
+          docker compose stop api
+          docker run -d --network "$net" --ip "$before" --name gw-staleness-steal alpine:3 sleep 300 >/dev/null
+          docker compose up -d --force-recreate api > /tmp/recreate.log 2>&1 || { tail -20 /tmp/recreate.log; exit 1; }
+          for _ in $(seq 1 40); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q api)" 2>/dev/null || echo starting)" = "healthy" ] && break
+            sleep 2
+          done
+          after="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose ps -q api)")"
+          docker rm -f gw-staleness-steal >/dev/null 2>&1
+          if [ "$before" = "$after" ]; then
+            echo "::warning title=gateway-arm-vacuous::the api came back on ${after}; the re-resolution leg proved nothing this run"
+          fi
+          # The resolver caches for valid=10s, so a green immediately after the recreate would prove nothing;
+          # idle past the window and let the first request be the one that has to re-resolve.
+          sleep 14
+          code2="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:${port}/health")"
+          if [ "$code2" != "200" ]; then
+            echo "::error title=gateway-stale-upstream::/health through the gateway is $code2 after the api moved ${before} -> ${after}: the proxy is dialling the old container address"
+            docker compose logs --no-color gateway | tail -20 | tr -d '\r'
+            exit 1
+          fi
+          echo "gateway proxied /health (200) after the restore and after the api moved ${before} -> ${after}"
       - name: Subject access export and erasure drill
         shell: bash
         run: |
