@@ -1109,6 +1109,17 @@ per-step logs, which `.gitignore` keeps off the tree -- so they cannot be recomp
 the way the commit sequence and the red census can. They are appended by hand from the current run's log
 (`p50 4.09s / p95 5.28s` and `4.11s / 4.16s` here), and the sentences say so ("计数会跨跑传，耗时不会").
 
+**HEAD vs. the certified tree, measured rather than asserted.** Three commits sit between `ef88d14` (the tree
+the run above certified) and the record-only commits that followed it, and `git diff --name-only ef88d14..HEAD`
+returns zero paths under `services/`, `db/`, `shared/`, both compose files, `Makefile`, `checks/` and `tests/`.
+What did change is the record, the evidence archive (five browser `report.json` files and a previously
+un-staged all-green run, `acceptance-20260926T230624Z`, which raised the reproducible-set census from 18 prior
+greens to 19 and forced a re-stamp), the CI workflow, and the two stamping scripts. Because the stamping
+scripts are themselves under test, the same ladder was re-run after those edits at the current HEAD:
+`static-verify` rc=0, `tracked=246 listed=246 missing=0 stale=0 mismatched=0`, `423 passed`. So no product
+behaviour has gone un-certified -- but the next chain run remains the thing that restamps the faces, and it
+will also be the first to exercise the new CI step in GitHub's own runner rather than on this machine.
+
 ## 2026-09-28 two reds that were about the machine, and the port that was never ours
 
 `acceptance-20260928T051817Z` and `acceptance-20260928T054641Z` both failed on things the code was right
