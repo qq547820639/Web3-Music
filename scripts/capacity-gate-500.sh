@@ -43,7 +43,8 @@ if [ "${CAPACITY_FROM_HOST:-0}" = "1" ]; then
   [ -n "$published" ] || { echo "::error title=gateway-port::compose 没有报告 gateway:80 的发布端口" \
     "（端口未发布，或输出形状不是 host:port）"; exit 1; }
   { echo "identity gate: base-url=http://127.0.0.1:$published port=$published"; \
-    python scripts/gateway_identity.py --base-url "http://127.0.0.1:$published" --port "$published"; } \
+    python scripts/gateway_identity.py --base-url "http://127.0.0.1:$published" --port "$published" \
+      --compose-files "docker-compose.yml,docker-compose.capacity500.yml"; } \
     | tee -a "$log"
   [ "${PIPESTATUS[0]}" = "0" ] || exit 1
   python scripts/load-test-500.py \

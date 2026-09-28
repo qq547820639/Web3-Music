@@ -27,28 +27,33 @@ def gate():
 CONTRACT = {"paths": {f"/api/{i}": {} for i in range(7)}}
 
 
+CLEAN = (["dockerd(1)"], "18080", ["18080"])
+
+
 def test_the_clean_pair_passes(gate):
+    """The three axes together: one claimant, our contract, and this project's own published port."""
     full = gate.contract_paths(CONTRACT)
-    assert gate.judge(["dockerd(1)"], full, full) == [], (
-        "唯一的监听者加上与本站一致的接口表被拒了，这道门会在每次正常压测上误红")
+    claims, port, published = CLEAN
+    assert gate.judge(claims, full, full, port, published) == [], (
+        "唯一的监听者、与本站一致的接口表、再加上本项目发布的端口，仍被拒了，这道门会在每次正常压测上误红")
 
 
 def test_a_second_claimant_on_the_port_is_named(gate):
     full = gate.contract_paths(CONTRACT)
-    problems = gate.judge(["dockerd(1)", "ssh(9)"], full, full)
+    problems = gate.judge(["dockerd(1)", "ssh(9)"], full, full, "18080", ["18080"])
     assert any("2 个监听者" in p and "ssh(9)" in p for p in problems), (
         f"两个认领者被读成了清白：{problems}")
 
 
 def test_an_unreadable_listener_axis_is_refused_not_passed(gate):
     full = gate.contract_paths(CONTRACT)
-    assert any("看不见不等于清白" in p for p in gate.judge(None, full, full)), (
+    assert any("看不见不等于清白" in p for p in gate.judge(None, full, full, "18080", ["18080"])), (
         "读不到监听者清单被当成通过——那正是把「看不见」折成「清白」的形状")
 
 
 def test_a_foreign_endpoint_set_is_caught_by_the_contract(gate):
     full = gate.contract_paths(CONTRACT)
-    problems = gate.judge(["dockerd(1)"], {"/api/0", "/health"}, full)
+    problems = gate.judge(["dockerd(1)"], {"/api/0", "/health"}, full, "18080", ["18080"])
     assert any("缺了本仓库契约里的 6 条端点" in p for p in problems), (
         f"端口上站着别的服务而判据说不出：{problems}")
 
@@ -61,7 +66,7 @@ def test_a_non_openapi_body_is_no_reading(gate):
 def test_extra_endpoints_on_the_serving_side_do_not_fire_this_gate(gate):
     """This gate answers "is this our station", not "has the contract drifted" -- that is the contract test's job."""
     full = gate.contract_paths(CONTRACT)
-    assert gate.judge(["dockerd(1)"], full | {"/gateway-health"}, full) == []
+    assert gate.judge(["dockerd(1)"], full | {"/gateway-health"}, full, "18080", ["18080"]) == []
 
 
 def test_claimants_are_deduplicated_per_process_not_per_socket(gate):
@@ -69,6 +74,23 @@ def test_claimants_are_deduplicated_per_process_not_per_socket(gate):
                "docker  1   u  1u IPv4  0xa   0t0  TCP 127.0.0.1:18080 (LISTEN)\n"
                "docker  1   u  2u IPv6  0xb   0t0  TCP [::1]:18080 (LISTEN)\n")
     assert gate.listener_claims(listing) == ["docker(1)"], gate.listener_claims(listing)
+
+
+def test_a_port_the_project_does_not_publish_is_refused(gate):
+    """Answering our contract is not yet being our station: a clone of the same image answers identically.
+
+    The third axis is what the two-claimant and contract readings cannot see -- it asks the repository's own
+    compose invocation which host port it published for gateway:80, and refuses anything else. A failed
+    reading of that answer is a refusal too, never a pass.
+    """
+    full = gate.contract_paths(CONTRACT)
+    foreign = gate.judge(["dockerd(1)"], full, full, "8080", ["18080"])
+    assert any("不在本仓库 compose 项目" in p for p in foreign), (
+        f"8080 不是本项目发布的端口却被放行：{foreign}")
+    unreadable = gate.judge(["dockerd(1)"], full, full, "18080", None)
+    assert any("归本仓库所有" in p for p in unreadable), (
+        f"读不到本项目发布的端口被当成了清白：{unreadable}")
+    assert gate.judge(["dockerd(1)"], full, full, "18080", ["18080"]) == []
 
 
 def test_the_contract_denominator_is_the_tracked_file(gate):

@@ -10,12 +10,14 @@
 compose 给的，不等于流量真的到了它。
 
 浏览器腿对同一件事早有对策：`scripts/browser_a11y.py` 的 `check_origins` 把首屏字节交回仓库里的
-index.html 比对。本文件是它的容量侧同形物，两条判据合起来才叫「这个端口回答的就是本仓库」：
+index.html 比对。本文件是它的容量侧同形物，三条判据合起来才叫「这个端口回答的就是本仓库」：
 
 1. 该端口只有一个监听者（`lsof -nP -iTCP:<port> -sTCP:LISTEN`，去重到「命令+PID」）。
 2. 它 `/openapi.json` 的路径表覆盖 `shared/contracts/openapi-v13.json` 声明的 90 条端点。
+3. 它确实在本仓库自己的 compose 项目发布的 `gateway:80` 端口上（`docker compose port`）——回答本站的
+   接口不等于就是本站：同一份镜像再起一个网关，前两条都会通过。
 
-两条都是「读不到就判不通过」：看不见不等于清白。用法（宿主侧压测之前跑一次，非零退码就别开压）：
+三条都是「读不到就判不通过」：看不见不等于清白。用法（宿主侧压测之前跑一次，非零退码就别开压）：
 
     published=$(docker compose -f docker-compose.yml -f docker-compose.capacity500.yml port gateway 80 | cut -d: -f2)
     python3 scripts/gateway_identity.py --base-url "http://127.0.0.1:$published" --port "$published"
@@ -64,7 +66,25 @@ def served_paths(body: str) -> set[str] | None:
     return set(doc.get("paths") or {})
 
 
-def judge(claims: list[str] | None, served: set[str] | None, contract: set[str]) -> list[str]:
+def published_ports(compose_files: list[str]) -> list[str] | None:
+    """The host ports THIS repository's compose project publishes for gateway:80, or None when unreadable.
+
+    Answering our contract is not yet proof of being *our* station: a second gateway built from the same
+    image answers identically. The tie an accidental clone cannot copy is the one the project itself
+    reports -- which port it published -- so the tested port has to be that one.
+    """
+    cmd = ["docker", "compose"]
+    for f in compose_files:
+        cmd += ["-f", f]
+    cmd += ["port", "gateway", "80"]
+    done = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT))
+    if done.returncode != 0:
+        return None
+    return sorted({line.rsplit(":", 1)[-1].strip() for line in done.stdout.splitlines() if line.strip()})
+
+
+def judge(claims: list[str] | None, served: set[str] | None, contract: set[str],
+          port: str | None = None, published: list[str] | None = None) -> list[str]:
     """Every way this port fails to be the measured gateway, as sentences.
 
     `claims=None` means the listener reading could not be taken at all (no lsof, or it errored): that is a
@@ -77,6 +97,12 @@ def judge(claims: list[str] | None, served: set[str] | None, contract: set[str])
     elif len(claims) != 1:
         problems.append(f"端口上有 {len(claims)} 个监听者（{', '.join(claims) or '一个都没有'}），"
                         "压测流量不保证到达被测网关，读数不可归因")
+    if published is None:
+        problems.append("读不到本项目为 gateway:80 发布的端口（docker compose port 失败），无法确认这个端口"
+                        "归本仓库所有，身份门不放行")
+    elif port is not None and str(port) not in published:
+        problems.append(f"被压的端口 :{port} 不在本仓库 compose 项目为 gateway:80 发布的端口里"
+                        f"（发布的是 {', '.join(published)}），那可能是同一份镜像起的另一个网关在回答本站接口")
     if served is None:
         problems.append("这个端口没有回答出一份 OpenAPI 路径表，无法与本仓库的契约比对，身份门不放行")
     else:
@@ -110,23 +136,31 @@ def self_test() -> int:
     contract = {"paths": {f"/api/{i}": {} for i in range(6)}}
     full = contract_paths(contract)
     arms = []
-    arms.append(("a clean port answering this contract passes",
-                 judge(["docker(1)"], full, full) == []))
+    arms.append(("a clean port answering this contract, on a port this project publishes, passes",
+                 judge(["docker(1)"], full, full, "18080", ["18080"]) == []))
     arms.append(("two claimants on one port are named and refused",
-                 any("2 个监听者" in p for p in judge(["docker(1)", "ssh(9)"], full, full))))
+                 any("2 个监听者" in p for p in judge(["docker(1)", "ssh(9)"], full, full,
+                                                     "18080", ["18080"]))))
     arms.append(("no listener at all is refused too",
-                 any("一个都没有" in p for p in judge([], full, full))))
+                 any("一个都没有" in p for p in judge([], full, full, "18080", ["18080"]))))
     arms.append(("a listener reading that could not be taken is refused, not passed",
                  any("看不见不等于清白" in p for p in judge(None, full, full))))
     arms.append(("a foreign service is caught by its own endpoint set",
-                 any("缺了本仓库契约里的" in p for p in judge(["docker(1)"], {"/health"}, full))))
+                 any("缺了本仓库契约里的" in p
+                     for p in judge(["docker(1)"], {"/health"}, full, "18080", ["18080"]))))
     arms.append(("extra endpoints on the serving side do not fire this gate",
-                 judge(["docker(1)"], full | {"/gateway-only"}, full) == []))
+                 judge(["docker(1)"], full | {"/gateway-only"}, full, "18080", ["18080"]) == []))
     arms.append(("a body that is not an OpenAPI document is refused as no reading",
                  any("没有回答出一份 OpenAPI 路径表" in p
                      for p in judge(["docker(1)"], served_paths("<html>nope</html>"), full))))
     arms.append(("the real contract is read from the tracked file, not typed in",
                  len(contract_paths()) == 90 and "/api/workspace/invitations" in contract_paths()))
+    arms.append(("a port this project does not publish is refused even when it answers our contract",
+                 any("不在本仓库 compose 项目" in p for p in
+                     judge(["docker(1)"], full, full, port="8080", published=["18080"]))))
+    arms.append(("the project's own published port satisfies the third axis, and no reading refuses",
+                 judge(["docker(1)"], full, full, port="18080", published=["18080"]) == []
+                 and bool(judge(["docker(1)"], full, full, port="18080", published=None))))
     bad = 0
     width = max(len(name) for name, _ in arms)
     for name, ok in arms:
@@ -140,6 +174,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", help="the origin the client will actually hit, e.g. http://127.0.0.1:18080")
     ap.add_argument("--port", type=int, help="the published host port whose listeners must be unique")
+    ap.add_argument("--compose-files", default="docker-compose.yml",
+                    help="comma-separated -f list used to ask THIS project which port it published")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
@@ -151,10 +187,12 @@ def main() -> int:
     if not args.port:
         print("# --port was not given, so the listener axis has no reading; the gate refuses on that axis",
               file=sys.stderr)
-    problems = judge(claims, served, contract_paths())
+    published = published_ports([f.strip() for f in args.compose_files.split(",") if f.strip()])
+    problems = judge(claims, served, contract_paths(), str(args.port) if args.port else None, published)
     print(f"identity check: {args.base_url} port={args.port if args.port else '?'} "
           f"claimants={claims if claims is not None else 'NO-READING'} "
-          f"endpoints={len(served) if served is not None else 'NO-DOCUMENT'}")
+          f"endpoints={len(served) if served is not None else 'NO-DOCUMENT'} "
+          f"published-by-this-project={','.join(published) if published else 'NO-READING'}")
     for problem in problems:
         print(f"::error title=gateway-identity::{problem}", file=sys.stderr)
     return 1 if problems else 0
