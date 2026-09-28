@@ -9,9 +9,9 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `c9e3cbd`, 2026-09-28T17:34:56Z → 2026-09-28T17:57:01Z, evidence in `release-evidence/acceptance-20260928T173456Z/`, started under `host_load="24.70 39.63 36.48"` on a Docker VM 4 vCPU with `disk_free_kb=10329264` recorded beside it, with 25 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `aa3605b`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818`, `ef88d14`, `3dbd175`, `1dbf99e`, `fb6ff39`, `a841628`, `d98e650` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23 rows with `FAIL=0` in every `SUMMARY.txt`), and 25 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 5).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `c007b21`, 2026-09-28T18:47:30Z → 2026-09-28T19:04:20Z, evidence in `release-evidence/acceptance-20260928T184730Z/`, started under `host_load="7.43 7.61 9.53"` on a Docker VM 4 vCPU with `disk_free_kb=10333140` recorded beside it, with 26 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `aa3605b`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818`, `ef88d14`, `3dbd175`, `1dbf99e`, `fb6ff39`, `a841628`, `d98e650`, `c9e3cbd` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23 rows with `FAIL=0` in every `SUMMARY.txt`), and 25 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 5).
 `414752d` was this file's authority until the round before last, and the reason the sentence is now machine-checked rather than maintained: the paragraph below it carried a count, a commit list, a row list and a red total that nothing compared against the archive, so the header could describe a run that was no longer the newest one for two full rounds before anyone noticed.
-The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260928T175139Z/report.json`, stamped with the same commit `c9e3cbd`: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes. Both halves of that sentence are stamped cells now, and the pairing they rest on was repaired this round: the reader used to take whatever `browser-a11y-*/report.json` was newest *on the same calendar day*, which on 2026-09-28 -- the day carried several a11y legs, each belonging to a
+The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260928T185947Z/report.json`, stamped with the same commit `c007b21`: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes. Both halves of that sentence are stamped cells now, and the pairing they rest on was repaired this round: the reader used to take whatever `browser-a11y-*/report.json` was newest *on the same calendar day*, which on 2026-09-28 -- the day carried several a11y legs, each belonging to a
 different run -- six by the close of that day (`070328Z`→`065139Z`, `083139Z`→`081806Z`, `085606Z`→`084412Z`, `100927Z`→`095607Z`, `105051Z`→`103425Z`, `113020Z`→`111210Z`; each pairing is a measured row of
 `browser_pair` over the tracked archive) -- paired a certified run with another run's report and quietly moved
 the hidden-element census by one. It now requires both keys -- the report's `git_commit` equals the one the SUMMARY records, and its `generated_at` falls inside that run's own `browser-a11y` row window -- and when nothing satisfies both, the answer is "no report" and the round refuses rather than quoting the closest file. The commit-equality is enforced in `derive()` for the same reason: the sentence claims "the same commit", so a run whose a11y leg tested a different tree cannot be stamped at all.
@@ -1458,3 +1458,46 @@ Full write-up: `docs/RELEASE_CHECKLIST.md`「本轮附带发现」第 36 条.
 census, a citation scan of the seven reference docs outside the faces, eight pinned `file:line` pointers, and
 constructed-boundary fire controls), and `pytest -q tests/unit` on this tree reads 453 passed -- a dated
 reading, not a cell, since the stamped `unit_passed` belongs to the run above.
+
+## 2026-09-28 the chain survives a step that states nothing, and the record stops hand-copying
+
+Authoritative run `acceptance-20260928T184730Z` (commit `c007b21`, `fresh_database=1` in the same header, 2026-09-28T18:47:30Z → 19:04:20Z, 23 rows: 22 PASS and `capacity-gate-500` skipped by switch, host load "7.43 7.61 9.53" on a 4-cpu Docker VM with `disk_free_kb=10333140` beside it), browser record `release-evidence/browser-a11y-20260928T185947Z/report.json`, cross-check `release-evidence/browser-a11y-20260928T185947Z/server-refusals.txt`.
+
+**This is the run 附带发现第 37 条 asked for.** The previous attempt died after row 2 because a step that
+states no readings made `grep '^metric '` return 1, and `set -euo pipefail` turned that into the step's own
+exit. Here all 23 rows are written, `finished_at` is present, and row 1 carries BOTH readings the step
+emitted -- `metrics static-verify refusal_census_selftest_arms=11` and `metrics static-verify
+unit_passed=456` -- which is the multi-line copy rule working in production rather than in a fixture, and the
+stray `metrics static-verify a=1` (a self-test's own sample) is gone because the arm builds its producer line
+from `PRODUCER_PREFIX` instead of calling the printing function. Thirteen `metrics` rows in total.
+
+**The two observers now sit on one axis.** The api answered 49 4xx over 8 endpoints (401 x30, 403 x19, 500
+x0) inside 505 request lines, all 505 parsed, while the gate recorded 51 events over 9 endpoints: the same 49
+plus the two `moderation` 500s it fulfils itself. Before the label fix those two numbers read 52 vs 54 and
+were not comparable at all. The leg held 118 view records / 92 axe scans with
+`critical / serious / moderate 三档全零` -- that sentence is now a stamp over `violations_by_impact`, not a
+transcription -- 1286 hidden elements scanned and 0 still rendering, and 24 console lines.
+
+**What the faces are allowed to say.** 92 cells across the six faces, all resolved against this run. The
+drill counts on `docs/TEST_REPORT.md` (member 98/98, report 50/50, erasure 53/53) and both regression lines
+(`100/100 completed, error rate 0.0%` at p50 4.1s / p95 5.56s, `25/25 completed, error rate 0.0%, settled 250
+credits` at p50 4.16s / p95 5.2s) now take their step ordinals and job counts from the SUMMARY too, as does
+the G9 gate's "实跑 100 个任务". `test_every_published_reading_is_quoted_or_accounted_for` requires every
+key the reader publishes to be either interpolated by a cell or classified with a reason, so a reading can no
+longer be published into silence; `refusal_census_selftest_arms` is the one key that stays classified rather
+than quoted until a sentence wants it.
+
+**Ownership outside the faces.** `tests/unit/test_reference_doc_figures.py` grew to 12 cases and now
+recomputes `docs/CODE_WALKTHROUGH.md`'s seven `（N 行）` claims (six were wrong: the API entry was listed at
+465 lines against 1295, the worker at 408 against 504) and compares the runbook's host-port table against
+compose with `${VAR:-default}` resolved -- 11 = 11, after a first pass of that rule misread two of the
+eleven because the interpolation contains a colon. Whole-tree counts (`git ls-files` 347, `scripts/` 42,
+`db/migrations` 22) are date-labelled instead of gated, because gating them would redden every commit that
+adds a file and that tax would end with the rule being deleted.
+
+**Ladder.** 456 collected and passing at `c007b21` -- 445 at the previous authority. After this section was
+written the suite was re-run on the tree it describes: `pytest -q tests/unit` reads 462 passed (the six new
+cases being four in `tests/unit/test_reference_doc_figures.py` -- line counts, the port table, and their two
+fire controls -- and two in `test_release_record_consistency.py` for the verdict marker), and
+`scripts/static-verify.sh` exits 0. The stamped `unit_passed` stays 456 because that is what the certified
+run measured; 462 is the reading of the tree, quoted here with the command that produced it.

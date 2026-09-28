@@ -31,6 +31,18 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 STEP_ROW = re.compile(r"^([a-z0-9-]+) \| (\w+)", re.MULTILINE)
 COMMIT = re.compile(r"^git_commit=(\w{7})", re.MULTILINE)
 SHORT = re.compile(r"`(\w{7})`")
+FINISHED = re.compile(r"finished_at=(\S+)")
+
+
+def ended_of(text):
+    """When the chain said it was done -- or None when it never said it at all.
+
+    A record with no FAIL row is not automatically a green run: `acceptance-20260928T184002Z` is the shape a
+    chain leaves behind when it dies mid-flight (two rows, no failure, no `finished_at=`), and reading that
+    as "all green" is how a half-run would become the authority the whole record quotes.
+    """
+    found = FINISHED.search(text)
+    return found.group(1) if found else None
 
 
 def archived_runs():
@@ -48,7 +60,7 @@ def archived_runs():
             "stamp": pathlib.Path(relative).parent.name.replace("acceptance-", ""),
             "commit": commit.group(1) if commit else "?",
             "started": (re.search(r"started_at=(\S+)", text) or [None, None])[1],
-            "ended": (re.search(r"finished_at=(\S+)", text) or [None, None])[1],
+            "ended": ended_of(text),
             "rows": len(rows),
             "fails": sum(1 for _, result in rows if result == "FAIL"),
             "host_load": host.group(1) if host else None,
@@ -445,6 +457,29 @@ def test_the_status_file_quotes_each_round_its_own_host_readings():
     assert paired, "no line in the status file pairs a run with its host readings"
     assert any(stamp == newest["stamp"] for stamp, _, _ in paired), \
         f"the certified run {newest['stamp']} is not paired with its readings: {paired}"
+
+
+def test_every_tracked_summary_is_a_verdict_the_chain_finished():
+    """No record may enter the archive without the line that says the pipeline ran to its end.
+
+    `fails == 0` is not "green": a chain killed between rows leaves a SUMMARY whose rows all passed and whose
+    last step simply does not exist. That record would be newer than the real authority, and the faces select
+    the authority by stamp, so the whole release record would start quoting a two-row half-run.
+    """
+    aborted = [r["stamp"] for r in archived_runs() if not r["ended"]]
+    assert not aborted, (f"{aborted} have no `finished_at=` line, so nothing proves the chain reached its end; "
+                         "either re-run to completion or keep the record off the tracked archive")
+
+
+def test_the_verdict_rule_sees_a_record_whose_last_line_was_never_written():
+    """Constructive control: strip one real record's `finished_at` line and the rule must call it aborted."""
+    sample = max(archived_runs(), key=lambda r: r["stamp"])
+    path = ROOT / "release-evidence" / f"acceptance-{sample['stamp']}" / "SUMMARY.txt"
+    text = path.read_text(encoding="utf-8", errors="replace")
+    assert ended_of(text) == sample["ended"], "the seam this guard reads is not the one archived_runs uses"
+    stripped = "\n".join(line for line in text.splitlines() if not line.startswith("finished_at="))
+    assert ended_of(stripped) is None
+    assert STEP_ROW.findall(stripped), "the stripped record lost its rows too, so the control proves nothing"
 
 
 def test_the_status_check_fires_on_a_load_average_borrowed_from_another_round():

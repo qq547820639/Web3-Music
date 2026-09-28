@@ -51,9 +51,11 @@ METRIC_FIGURES = {
     ("provider-regression-100", "p50_s"): "regression_p50_s",
     ("provider-regression-100", "p95_s"): "regression_p95_s",
     ("provider-regression-100", "credits"): "regression_credits",
+    ("provider-regression-100", "jobs"): "regression_jobs",
     ("generic-rest-roundtrip", "p50_s"): "generic_p50_s",
     ("generic-rest-roundtrip", "p95_s"): "generic_p95_s",
     ("generic-rest-roundtrip", "credits"): "generic_credits",
+    ("generic-rest-roundtrip", "jobs"): "generic_jobs",
     ("lease-contention", "jobs"): "lease_jobs",
     ("lease-contention", "workers"): "lease_workers",
     ("lease-contention", "credits_settled"): "lease_credits_settled",
@@ -273,6 +275,7 @@ def figures(run: dict) -> dict:
             got[name] = m.group(1) if m and m.lastindex == 1 else (m.groups() if m else "NOT-FOUND")
     for name, step in (("mfa_step", "mfa-drill"), ("media_scan_step", "media-scan-drill"),
                        ("hold_step", "hold-drill"), ("browser_step", "browser-a11y"),
+                       ("member_step", "member-drill"), ("report_step", "report-drill"),
                        ("regression_step", "provider-regression-100"),
                        ("generic_step", "generic-rest-roundtrip")):
         got[name] = got["rows_by_name"].get(step, "NOT-FOUND")

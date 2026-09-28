@@ -109,6 +109,10 @@ CELLS = [
      "403 有 {server_403_events} 次（{server_403_endpoints}）"),
     ("docs/RELEASE_CHECKLIST.md", "本轮窗口", r"而 500 \*\*(\d+) 次\*\*",
      "而 500 **{server_500_events} 次**"),
+    # The G9 gate says the regression leg "实跑 100 个任务"; the step states its own job count since c9e3cbd,
+    # so the gate line takes it from the run instead of from the requirement it is quoting.
+    ("docs/RELEASE_CHECKLIST.md", "provider_regression.py` 实跑", r"实跑 (\d+) 个任务全链路",
+     "实跑 {regression_jobs} 个任务全链路"),
 
     # Two more run readings lived on this face and in the report with no owner: the lease-contention
     # settlement line and the restore-fidelity line. Both are printed by their step and parsed by the
@@ -134,8 +138,10 @@ CELLS = [
     # Three more drill bullets on this face state a current `N/N` in the same shape as the two that were
     # made cells (mfa, media scan) and were left as prose: the reading is produced by the step, published by
     # the reader, and quoted by nobody, which means the sentence would keep its number after the drill grew.
-    ("docs/TEST_REPORT.md", "成员与角色演练", r"\*\*(\d+/\d+)\*\*（流水线第", "**{member}**（流水线第"),
-    ("docs/TEST_REPORT.md", "对外侵权通知收件演练", r"\*\*(\d+/\d+)\*\*（流水线新第", "**{report}**（流水线新第"),
+    ("docs/TEST_REPORT.md", "成员与角色演练", r"\*\*(\d+/\d+)\*\*（流水线第 (\d+) 步",
+     "**{member}**（流水线第 {member_step} 步"),
+    ("docs/TEST_REPORT.md", "对外侵权通知收件演练", r"\*\*(\d+/\d+)\*\*（流水线新第 (\d+) 步",
+     "**{report}**（流水线新第 {report_step} 步"),
     ("docs/TEST_REPORT.md", "数据主体访问与删除演练", r"权威运行读数 (\d+/\d+)；", "权威运行读数 {erasure}；"),
     # The two regression lines' own completion strings were prose too: "100/100 completed, error rate 0.0%" is
     # a reading the step states, so the sentence that repeats it takes it from the stamp, and the credits

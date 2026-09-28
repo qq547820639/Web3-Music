@@ -299,6 +299,7 @@ DUPLICATE_FIGURES = {
     "media_scan_checks_passed": "media_scan", "media_scan_checks_total": "media_scan",
     "report_checks_passed": "report", "report_checks_total": "report",
     "regression_ms": "regression_p50_s", "generic_ms": "generic_p50_s",
+    "generic_jobs": "generic",
     "run_unit_passed": "unit_passed",
     "fidelity_assets": "restore", "fidelity_workspaces": "restore",
     "lease_jobs": "lease", "lease_workers": "lease", "lease_credits_settled": "lease",

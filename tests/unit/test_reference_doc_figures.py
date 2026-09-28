@@ -9,10 +9,10 @@ described. Each of those numbers is produced elsewhere and copied into prose, so
 keep them honest is a reader that recomputes them from the same objects the product reads.
 
 Scope, stated so the gate is not mistaken for a census: it covers the figures and the unambiguous
-`path/to/file.py:NNN` citations of the seven docs listed in `AUDITED`. Bare-name citations (`main.py:1018`)
-and migration shorthands (`001:461-468`) are outside the general scanner because a basename can resolve to
-several files in this tree; the pointers this round corrected among them are pinned by name in
-`POINTER_ROSTER` instead.
+`path/to/file.py:NNN` citations of the seven docs listed in `AUDITED`, and the `path`（N 行）length claims of
+the docs listed in `LINE_SCANNED`. Bare-name citations (`main.py:1018`) and migration shorthands
+(`001:461-468`) are outside the general scanner because a basename can resolve to several files in this tree;
+the pointers this round corrected among them are pinned by name in `POINTER_ROSTER` instead.
 """
 import json
 import pathlib
@@ -31,6 +31,14 @@ COMPOSE = "docker-compose.yml"
 CI = ".github/workflows/ci.yml"
 CONTRACT = "shared/contracts/openapi-v13.json"
 METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
+
+# Files whose prose states a source file's length. Each claim was hand-counted once and never re-counted:
+# six of the seven in `docs/CODE_WALKTHROUGH.md` were wrong today (465 against 1295 lines for the API entry,
+# 55 against 142 for settings, 408 against 504 for the worker), and two of the short names it used resolve to
+# different files than the prose meant (`quality.py` lives under `app/domain/`, `provider.py` under
+# `services/worker/`). Both the number and the path are recomputed here.
+LINE_SCANNED = ("docs/CODE_WALKTHROUGH.md",)
+LINE_CLAIM = re.compile(r"`([^`]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z]{2,5})`（(\d+) 行）")
 
 # Unambiguous citations: the path is real, so the line number is a claim about that file's content.
 # Bare names (`main.py:1018`) are skipped on purpose -- this tree has several `main.py` files, and picking
@@ -147,6 +155,103 @@ def roster_problems(root, roster):
 
 def test_the_roster_pointers_land_where_the_docs_say():
     assert not roster_problems(ROOT, POINTER_ROSTER)
+
+
+def line_count_problems(root, doc, text):
+    """Every `path`（N 行） claim: the file must be in the tree and the count must be today's count."""
+    problems = []
+    for found in LINE_CLAIM.finditer(text):
+        target = root / found.group(1)
+        if not target.exists():
+            problems.append(f"{doc} counts {found.group(1)}, which is not in the tree")
+            continue
+        real = len(target.read_text(encoding="utf-8", errors="replace").splitlines())
+        if real != int(found.group(2)):
+            problems.append(f"{doc} says {found.group(1)} is {found.group(2)} lines; `wc -l` reads {real}")
+    return problems
+
+
+def test_the_walkthroughs_line_counts_are_todays_counts():
+    problems = []
+    for doc in LINE_SCANNED:
+        text = (ROOT / doc).read_text(encoding="utf-8")
+        found = LINE_CLAIM.findall(text)
+        problems += line_count_problems(ROOT, doc, text)
+        assert len(found) >= 7, f"{doc} states {len(found)} line counts; the census below assumed seven"
+    assert not problems, "\n".join(problems)
+
+
+def test_the_line_count_rule_fires_on_a_stale_number(tmp_path):
+    (tmp_path / "x").mkdir()
+    (tmp_path / "x" / "a.py").write_text("one\ntwo\nthree\n", encoding="utf-8")
+    assert line_count_problems(tmp_path, "d.md", "`x/a.py`（3 行）") == []
+    off = line_count_problems(tmp_path, "d.md", "`x/a.py`（408 行）")
+    assert len(off) == 1 and "wc -l` reads 3" in off[0], off
+    gone = line_count_problems(tmp_path, "d.md", "`x/gone.py`（1 行）")
+    assert len(gone) == 1 and "not in the tree" in gone[0], gone
+    # A short name is not a path: the prose must say which file it means.
+    assert LINE_CLAIM.findall("`worker.py`（408 行）") == []
+
+
+RUNBOOK_PORTS = "docs/E2E_ACCEPTANCE_RUNBOOK.md"
+RUNBOOK_PORT_LINE = re.compile(r"^\s*((?:\d{2,5})(?:/\d{2,5})*)\s+\S.*$", re.M)
+INTERPOLATED = re.compile(r"\$\{[A-Z_]+:-([^}]*)\}")
+
+
+def claimed_ports(text):
+    """The host ports the runbook's table states, including the `9000/9001` one-line pair."""
+    out = set()
+    for found in RUNBOOK_PORT_LINE.finditer(text):
+        out |= set(found.group(1).split("/"))
+    return out
+
+
+def composed_host_ports(root=ROOT):
+    """Every host port `docker compose` publishes, with `${VAR:-default}` resolved before the split.
+
+    Resolution order is the whole point: the mapping `${GATEWAY_PORT:-8080}:80` contains a colon inside the
+    braces, so splitting on ":" first yields `${GATEWAY_PORT` and the gateway and Prometheus -- two of the
+    eleven published ports -- read as publishing nothing. That is how a first pass of this check accused the
+    runbook of inventing 8080 and 9090.
+    """
+    services = yaml.safe_load((root / COMPOSE).read_text(encoding="utf-8"))["services"]
+    out = set()
+    for service in services.values():
+        for mapping in (service.get("ports") or []):
+            host = INTERPOLATED.sub(r"\1", str(mapping)).split(":")[0]
+            if host.isdigit():
+                out.add(host)
+    return out
+
+
+def port_table_problems(claimed, published):
+    if not claimed:
+        return ["the runbook port table is gone, so the comparison proves nothing"]
+    return [f"the runbook lists host port {p}, which compose does not publish"
+            for p in sorted(claimed - published, key=int)] + \
+           [f"compose publishes host port {p}, which the runbook table does not list"
+            for p in sorted(published - claimed, key=int)]
+
+
+def test_the_runbooks_port_table_is_composes_port_table():
+    problems = port_table_problems(claimed_ports((ROOT / RUNBOOK_PORTS).read_text(encoding="utf-8")),
+                                   composed_host_ports())
+    assert not problems, "\n".join(problems)
+    # Floor: the default compose ships eleven host ports. A scanner reading fewer is reporting its own
+    # blindness -- which is exactly the failure mode the interpolation bug above produced (9 of 11).
+    assert len(composed_host_ports()) == 11, sorted(composed_host_ports())
+
+
+def test_the_port_rule_fires_on_a_port_compose_does_not_publish():
+    published = {"8080", "8000", "4173"}
+    compliant = "  8080  gateway\n  8000  api\n  4173  web\n"
+    assert port_table_problems(claimed_ports(compliant), published) == []
+    invented = port_table_problems(claimed_ports(compliant + "  9999  ghost\n"), published)
+    assert len(invented) == 1 and "9999" in invented[0], invented
+    vanished = port_table_problems(claimed_ports("no table here"), published)
+    assert vanished == ["the runbook port table is gone, so the comparison proves nothing"], vanished
+    dropped = port_table_problems(claimed_ports("  8080  gateway\n  8000  api\n"), published)
+    assert len(dropped) == 1 and "4173" in dropped[0], dropped
 
 
 def test_the_gate_can_fire(tmp_path):

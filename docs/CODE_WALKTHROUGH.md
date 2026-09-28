@@ -1,6 +1,6 @@
 # Resonance（AI 音乐资产平台）代码走读与架构评审报告
 
-> 评审对象：`/Volumes/Extra/CodeProj/web3_music`（162 文件，Python/FastAPI + 原生 JS + PostgreSQL + Redis + MinIO + Docker Compose + Prometheus + K8s）
+> 评审对象：`/Volumes/Extra/CodeProj/web3_music`（入库内容以 `git ls-files` 为准，写下这句的 2026-09-28 数到 347 个——这是时点读数，不随仓库增长自动更新，Python/FastAPI + 原生 JS + PostgreSQL + Redis + MinIO + Docker Compose + Prometheus + K8s）
 > 评审方式：逐目录层级源码走读（只读，未改动任何业务代码）
 > 评审结论一句话：**后端领域能力基本完整，但「代码层面全部实现」不成立 —— 前端是功能骨架级（压缩单文件 JS + `prompt()` 交互 + 无加载/空/错误态），且真实跨容器 E2E 从未在本交付环境执行过，只有 28 个静态/单元级测试的日志作为"证据"。**
 
@@ -59,9 +59,9 @@ flowchart LR
 | 异步执行层 | `services/worker` | PostgreSQL Lease Worker（领取/心跳/重试/死信）、Provider Adapter、媒体入库、结算 |
 | 仿真/测试层 | `services/provider-emulator`、`services/payment-emulator`、`services/acceptance`、`services/loadtest` | 故障实验室、支付模拟、端到端验收、容量压测 |
 | 契约层 | `shared/contracts` | `authority-matrix.json`（100 条路由 / 54 条写操作的权限派生件，其中 5 条写路由另带「当场再交出凭据」这一列，与 `docs/AUTHORITY_MATRIX.md` 成对）+ OpenAPI v13（90 paths，含 `/api/account/export`、`/api/account/erasure`、五个 `/api/auth/mfa/*`、三条 `/api/workspace/members*` 与 5 条 `/api/workspace/invitations*` / `/api/account/invitations*`）+ JSON Schema |
-| 数据层 | `db/migrations`（19 个）、`db/bootstrap` | 领域表、RLS、约束/触发器/索引、种子数据、角色 |
+| 数据层 | `db/migrations`（2026-09-28 现数 22 份）、`db/bootstrap` | 领域表、RLS、约束/触发器/索引、种子数据、角色 |
 | 基础设施层 | `infrastructure/prometheus`、`infrastructure/kubernetes` | 指标抓取、生产参考部署 |
-| 运维层 | `scripts/`（33 个） | 启动/验证/Chaos/备份恢复/发布证据/容量 Gate/四条常驻演练 |
+| 运维层 | `scripts/`（同日现数 42 份，与本文「运维层」之外那条 scripts 清单同一个数） | 启动/验证/Chaos/备份恢复/发布证据/容量 Gate/四条常驻演练 |
 
 ### 1.3 关键信任边界（与文档声明核对）
 
@@ -89,16 +89,16 @@ flowchart LR
 
 ### 2.1 `services/api`（FastAPI 后端，核心）
 
-**入口 `app/main.py`（465 行）**：
+**入口 `services/api/app/main.py`（1295 行）**：
 - 路由装配：`main.py` 内联了旧式路由（auth/projects/jobs/candidates/media/master/assets/ledger/provider-webhook/admin 总闸），末尾 `include_router` 四个模块化 router（creation/assets/market/admin_v12）。
 - 中间件 `request_context`：注入 `X-Request-Id`、全局 CSRF 校验、安全头、Prometheus 计时。
 - 关键端点：`login/refresh/logout/me`、`bootstrap`、`projects` 全 CRUD、`chat`（AI Patch）、`quality`、`quotes`、`jobs`（幂等提交）、`media-token/stream_media`、`master`、`assets/export`、`ledger`、`provider-webhooks`、`admin/*`。
 
-**`app/settings.py`（55 行）**：`@dataclass(frozen=True)` + `os.getenv`（导入期读取，不可热重载）；无 secrets 变更校验（文档已声明演示值）。
+**`services/api/app/settings.py`（142 行）**：`@dataclass(frozen=True)` + `os.getenv`（导入期读取，不可热重载）；无 secrets 变更校验（文档已声明演示值）。
 
-**`app/db.py`（127 行）**：自研 `ThreadedConnectionPool` + `BoundedSemaphore` 背压；`transaction()`/`fetch_one()`/`fetch_all()` 每次 `set_config('app.workspace_id', ..., true)` 设置租户上下文驱动 RLS。**注意**：`fetch_one/fetch_all` 每次新建连接，一个请求多次查询 = 多次取连接（无请求级连接复用）。
+**`services/api/app/db.py`（133 行）**：自研 `ThreadedConnectionPool` + `BoundedSemaphore` 背压；`transaction()`/`fetch_one()`/`fetch_all()` 每次 `set_config('app.workspace_id', ..., true)` 设置租户上下文驱动 RLS。**注意**：`fetch_one/fetch_all` 每次新建连接，一个请求多次查询 = 多次取连接（无请求级连接复用）。
 
-**`app/auth.py`（227 行）**：PBKDF2-SHA256 验密；JWT（HS256，aud/iss/jti/nbf/exp）；`create_browser_session`（refresh_token_hash/csrf_token_hash 服务端哈希存储）；`validate_browser_csrf`（双提交 Cookie + 服务端哈希比对）；`get_actor`（每次请求解析 membership + role）；`require_roles/require_platform_admin`。**认证链严谨**。
+**`services/api/app/auth.py`（291 行）**：PBKDF2-SHA256 验密；JWT（HS256，aud/iss/jti/nbf/exp）；`create_browser_session`（refresh_token_hash/csrf_token_hash 服务端哈希存储）；`validate_browser_csrf`（双提交 Cookie + 服务端哈希比对）；`get_actor`（每次请求解析 membership + role）；`require_roles/require_platform_admin`。**认证链严谨**。
 
 **`app/domain/`（领域纯逻辑）**：
 | 模块 | 职责 | 质量 |
@@ -106,7 +106,7 @@ flowchart LR
 | `ledger.py` | 双分录 `post()`（operation_key 幂等 + 平衡校验 + `FOR UPDATE`）、`create_hold/close_hold/refund` | 好；`balances()` 返回 **float**（§4 P2-7） |
 | `rights.py` | `build_manifest`（9 项能力分项 allowed/blocked/manual_review/unknown）、`allowed()` | 好 |
 | `commerce.py` | `issue_credits/revoke_credits/assert_offer_rights/order_number` | `issue/revoke` 用普通 SELECT 无 `FOR UPDATE`（§4 P2-6） |
-| `quality.py`（399 行） | 28 维确定性质量引擎（PAC/TSMI/NSRQ/C3AC + TEE 数学逐字实现） | 好，确定性可复现，单测覆盖 |
+| `services/api/app/domain/quality.py`（399 行） | 28 维确定性质量引擎（PAC/TSMI/NSRQ/C3AC + TEE 数学逐字实现） | 好，确定性可复现，单测覆盖 |
 | `moderation.py` | 确定性 Policy Preflight（阻断声音克隆/冒充；艺人风格/第三方素材转人工） | 好，但刻意窄 |
 | `patches.py` | JSON Patch（add/replace/remove + 锁定父/子路径） | 数组越界未捕获 → 潜在 500（§4 P2-5） |
 | `deepseek.py` | DeepSeek 结构化 Patch 提案 + 本地确定性回退；共享 AsyncClient | 好 |
@@ -123,9 +123,9 @@ HTTP → gateway → request_context(CSRF/安全头) → get_user(鉴权) → ge
 
 ### 2.2 `services/worker`（异步执行层）
 
-- `worker.py`（408 行）：`claim_job`（`FOR UPDATE SKIP LOCKED` 原子领取 + 状态机）、`heartbeat`（租约续期）、`process`（提交→轮询→入库→结算）、`publish_outbox`（至少一次投递 Redis Stream）、`consume_inbox`（处理 Provider/Payment webhook 状态提示）、`sample_queue_metrics`。
+- `services/worker/worker.py`（504 行）：`claim_job`（`FOR UPDATE SKIP LOCKED` 原子领取 + 状态机）、`heartbeat`（租约续期）、`process`（提交→轮询→入库→结算）、`publish_outbox`（至少一次投递 Redis Stream）、`consume_inbox`（处理 Provider/Payment webhook 状态提示）、`sample_queue_metrics`。
 - 任务状态机：`queued → leased → submitting → provider_queued → processing → ingesting → completed/partial/failed`，`cancel_requested → cancelled`，异常走 `retry_wait`（指数退避）或 `dead_letter`（释放 Hold）。
-- `provider.py`（353 行）：`ProviderAdapter` 抽象 + `EmulatorAdapter` + `GenericRESTAdapter`（contract-first）+ `SunoCommunityAdapter`（仅开发）。`create_adapter` 用 `@lru_cache`。
+- `services/worker/provider.py`（358 行）：`ProviderAdapter` 抽象 + `EmulatorAdapter` + `GenericRESTAdapter`（contract-first）+ `SunoCommunityAdapter`（仅开发）。`create_adapter` 用 `@lru_cache`。
 - `ledger.py`：**与 `app/domain/ledger.py` 重复实现**（§4 P2-8）。
 - `metrics.py`：依赖零的 Prometheus 端点。
 
@@ -133,7 +133,7 @@ HTTP → gateway → request_context(CSRF/安全头) → get_user(鉴权) → ge
 
 ### 2.3 `services/web` 与 `services/admin`（前端，体验重点）
 
-**文件体量**（印证"体验偏薄"）：
+**文件体量**（印证"体验偏薄"；下表是本次静态审查当时的快照，四份前端文件此后先被还原成多行源码、又加过功能，今天的字节数与行数见本文末"前端体量"那条，两者不是同一个量）：
 | 文件 | 字节 | 行数（压缩后） |
 |---|---|---|
 | `web/app.js` | 32,294 B | 117 行（单行压缩） |
@@ -177,8 +177,8 @@ HTTP → gateway → request_context(CSRF/安全头) → get_user(鉴权) → ge
 
 - `prometheus.yml`：抓 `api:8000/metrics` + `worker:9101/metrics`（无认证，已声明仅本地）。
 - `kubernetes/`：`resonance-apps.yaml`（Deployment×5 + Service）+ `resonance-capacity-500.yaml`（HPA api/worker min2 max10 + PDB + rollingUpdate maxUnavailable 0），占位镜像 `registry.example.com`，需外置 Secret controller。
-- `scripts/`（36 个，含 `requirements-browser.txt`、`requirements-load.txt` 两份测试侧依赖清单）：`up/test/smoke/reset`、`static-verify`、`architecture-audit`（**基于字符串包含的“契约审计”**，非真实架构校验）、`contract-test`、`chaos-worker-recovery` + `chaos_worker_recovery.py`（Kill-9 恢复 + 额度泄漏校验，质量高）、`lease-contention` + `lease_contention.py`、`backup/restore/verify-backup`、`restore_fidelity.py`（绝对指纹：逐账户账本余额 + 每个资产 master 音频 sha256）、`capacity-gate-500`、`load-test-500.py`、`release-evidence`、`source-manifest.sh`、`export-openapi.sh`、`generate-secrets`（**生成 `POSTGRES_*` 密码但 compose 未消费**，§4 P2-9）；链上常驻演练 `erasure_drill.py` / `mfa_drill.py` / `member_drill.py` / `media_scan_drill.py` / `report_drill.py` 五支（各自以 `N/N checks passed` 结尾，跑在宿主 Python 里、连真栈真库），另有浏览器门禁 `browser_a11y.py`（`BROWSER=1` 才在本地跑，CI 每次跑）；批量与对账 `provider_regression.py`、`reconcile_market.py`、`reservation_race.py`；以及 `authority_matrix.py`（从路由装饰器派生权限矩阵，`--check` 接进 `static-verify.sh`）与 `e2e_client.py`——它的 `totp_code()` 是从 RFC 6238 现写的 stdlib 实现，与被测服务端用的 pyotp 不同源，否则「演练绿」只说明两侧犯了同一个错。
-- `tests/unit`（本轮实测 44 个文件、`pytest -q tests/unit --collect-only -q` 读出 445 个收集实例，含参数化展开）：定位为**无栈的静态与纯函数判据**——`test_v13_final.py` 仍用 `psycopg2` stub 规避 DB 依赖；只有两个 emulator 测试用了 `TestClient`。本文件原先那句「**无任何 FastAPI 主应用 + 真实 PostgreSQL 的测试**」已被现实推翻，按现在的形状改写：真应用 + 真库那一层由链上五支演练承担（`erasure/mfa/member/media_scan/report`，各自用 httpx 打 `127.0.0.1:8000`、用 psql 打同一个 compose 里的库），静态侧补的是那些演练所依赖的接线（`test_db_refusal.py` 拿真 `psycopg2.Error` 去调用那个映射函数，`test_report_surface.py` 比对 Python 词表与 021 的 CHECK 名单）。两侧不是重叠：演练量行为，静态量「判据赖以成立的形状还在不在」。
+- `scripts/`（2026-09-28 现数 42 份文件，含 `requirements-browser.txt`、`requirements-load.txt` 两份测试侧依赖清单）：`up/test/smoke/reset`、`static-verify`、`architecture-audit`（**基于字符串包含的“契约审计”**，非真实架构校验）、`contract-test`、`chaos-worker-recovery` + `chaos_worker_recovery.py`（Kill-9 恢复 + 额度泄漏校验，质量高）、`lease-contention` + `lease_contention.py`、`backup/restore/verify-backup`、`restore_fidelity.py`（绝对指纹：逐账户账本余额 + 每个资产 master 音频 sha256）、`capacity-gate-500`、`load-test-500.py`、`release-evidence`、`source-manifest.sh`、`export-openapi.sh`、`generate-secrets`（**生成 `POSTGRES_*` 密码但 compose 未消费**，§4 P2-9）；链上常驻演练 `erasure_drill.py` / `mfa_drill.py` / `member_drill.py` / `media_scan_drill.py` / `report_drill.py` 五支（各自以 `N/N checks passed` 结尾，跑在宿主 Python 里、连真栈真库），另有浏览器门禁 `browser_a11y.py`（`BROWSER=1` 才在本地跑，CI 每次跑）；批量与对账 `provider_regression.py`、`reconcile_market.py`、`reservation_race.py`；以及 `authority_matrix.py`（从路由装饰器派生权限矩阵，`--check` 接进 `static-verify.sh`）与 `e2e_client.py`——它的 `totp_code()` 是从 RFC 6238 现写的 stdlib 实现，与被测服务端用的 pyotp 不同源，否则「演练绿」只说明两侧犯了同一个错。
+- `tests/unit`（本轮实测 44 个文件、`pytest -q tests/unit --collect-only -q` 读出 456 个收集实例，含参数化展开）：定位为**无栈的静态与纯函数判据**——`test_v13_final.py` 仍用 `psycopg2` stub 规避 DB 依赖；只有两个 emulator 测试用了 `TestClient`。本文件原先那句「**无任何 FastAPI 主应用 + 真实 PostgreSQL 的测试**」已被现实推翻，按现在的形状改写：真应用 + 真库那一层由链上五支演练承担（`erasure/mfa/member/media_scan/report`，各自用 httpx 打 `127.0.0.1:8000`、用 psql 打同一个 compose 里的库），静态侧补的是那些演练所依赖的接线（`test_db_refusal.py` 拿真 `psycopg2.Error` 去调用那个映射函数，`test_report_surface.py` 比对 Python 词表与 021 的 CHECK 名单）。两侧不是重叠：演练量行为，静态量「判据赖以成立的形状还在不在」。
 - `.github/workflows/ci.yml`：三 job —— `static-and-unit`、`compose-acceptance`（真实起 Docker + acceptance + contract + chaos + backup/restore）、`commercial-flow`。**CI 已编码完整 E2E，但本仓库无 CI 通过证据**（`git_commit=unavailable`，release-evidence 仅静态 log）。
 
 ---
@@ -371,7 +371,7 @@ graph TD
 
 ### 附：关键证据索引
 
-- 前端体量：`wc -c services/web/app.js` = 87764；`services/admin/admin.js` = 18990；`services/web/index.html` = 17153；`services/web/styles.css` = 25270（压缩单文件；数字随界面增量变动，命令一并写出以便复核）。
+- 前端体量（2026-09-28 现读）：`wc -c services/web/app.js` = 113954；`services/admin/admin.js` = 23854；`services/web/index.html` = 19801；`services/web/styles.css` = 27444（压缩单文件；数字随界面增量变动，命令一并写出以便复核）。
 - UX 信号：`app.js` 中 `prompt(` 16 次、`confirm(` 4 次、`loading`/`spinner` 0 次、`aria-` 0 次、`tabindex` 0 次。
 - 验证证据：`release-evidence/20260810T000459Z/static-verify.log` = `28 passed in 3.62s`；`environment.txt` = `git_commit=unavailable`。
 - 测试形态：`tests/unit/test_v13_final.py:7-16` 用 psycopg2 stub 规避 DB；`test_capacity_package.py` 为字符串包含断言。
