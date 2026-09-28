@@ -204,6 +204,29 @@ step_stack_up() {
   build_images_in_order
   docker compose up -d
   docker compose ps
+  # 时钟前提：认证令牌是在 api 进程里签发的，`exp`/`nbf` 用的都是容器时钟。宿主睡过一觉之后
+  # Docker VM 的时钟会落到宿主后面（本轮实测过 6 分 06 秒的差：`GET /api/account/export` 打出的
+  # `exported_at` 是 2026-09-27 22:59，而同一时刻 `date -u` 已是 2026-09-28 05:05），而 VM 会在
+  # 运行途中被校正——一次前跳就把刚铸出来的令牌当场变成过期件。第 11 那次就是这样红的：
+  # 同一个令牌一秒前还能过 `get_user`，一秒后只能得到 401，而报出来的是一句
+  # "invalid or expired access token"，读起来像认证出了缺陷。宁可在这里判红并带上读数。
+  host_now=$(date -u +%s)
+  for probe in api postgres; do
+    ctr=$(docker compose ps -q "$probe" | head -1)
+    [ -z "$ctr" ] && continue
+    if ! ctr_now=$(docker exec "$ctr" date -u +%s 2>/dev/null); then
+      echo "!! $probe 的时钟读不出来（容器里没有 date？），无法核对认证前提" >&2
+      exit 1
+    fi
+    skew=$(( ctr_now - host_now ))
+    [ "$skew" -lt 0 ] && skew=$(( -skew ))
+    echo "clock skew vs host: $probe ${skew}s"
+    if [ "$skew" -gt 120 ]; then
+      echo "!! $probe 与宿主相差 ${skew}s（>120s）：Docker VM 的时钟会在运行中被校正，" \
+           "而一次跳变会把刚签发的访问令牌当场变成过期件——先重启 Docker（或 docker compose down -v 后重起）再认证" >&2
+      exit 1
+    fi
+  done
 }
 
 step_acceptance() {

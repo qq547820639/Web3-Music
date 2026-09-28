@@ -45,8 +45,14 @@ def sql(statement: str) -> str:
 
 
 def scalar(statement: str) -> str:
-    """psql -c echoes the command tag after a RETURNING value; only the first line is data."""
-    return sql(statement).splitlines()[0].strip()
+    """psql -c echoes the command tag after a RETURNING value; only the first line is data.
+
+    An empty result is a reading, not a crash: `string_agg` over zero rows answers NULL, which psql
+    prints as nothing at all, and indexing line zero turned that into an IndexError that killed the run
+    while naming neither the query nor the fact that no row matched.
+    """
+    lines = sql(statement).splitlines()
+    return lines[0].strip() if lines else "(no rows)"
 
 
 def attempt(statement: str) -> str | None:

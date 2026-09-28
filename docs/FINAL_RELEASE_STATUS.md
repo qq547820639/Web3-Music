@@ -9,7 +9,7 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **21 steps PASS and 1 recorded as skipped** across 22 rows, commit `037b818`, 2026-09-27T19:41:52Z → 2026-09-27T19:57:19Z, evidence in `release-evidence/acceptance-20260927T194152Z/`, started under `host_load="5.02 4.64 5.21"` on a Docker VM 4 vCPU with `disk_free_kb=8442608` recorded beside it, with 17 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/21/21/21 rows with `FAIL=0` in every `SUMMARY.txt`), and 19 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 4).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **21 steps PASS and 1 recorded as skipped** across 22 rows, commit `037b818`, 2026-09-27T19:41:52Z → 2026-09-27T19:57:19Z, evidence in `release-evidence/acceptance-20260927T194152Z/`, started under `host_load="5.02 4.64 5.21"` on a Docker VM 4 vCPU with `disk_free_kb=8442608` recorded beside it, with 17 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/21/21/21 rows with `FAIL=0` in every `SUMMARY.txt`), and 20 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5).
 `414752d` was this file's authority until the round before last, and the reason the sentence is now machine-checked rather than maintained: the paragraph below it carried a count, a commit list, a row list and a red total that nothing compared against the archive, so the header could describe a run that was no longer the newest one for two full rounds before anyone noticed.
 The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260927T195301Z/report.json`, stamped with the same commit: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes.
 
@@ -1066,6 +1066,20 @@ read the flag today and requires the ruler to report exactly that one line in bo
 answers **202** (a 200/201-only fixture guard reads success as refusal), and `sql_err()` took the **last**
 stderr line, which is `CONTEXT: PL/pgSQL function ... at RAISE` -- it names a function, not the platform's
 refusal, and it reddened nine checks at once before the ERROR line was used.
+
+**An environment cause, registered with its readings.** Two chain runs were spent finding this one.
+`acceptance-20260927T221550Z` died at step 2 because the gateway's pinned address sat inside the range the
+allocator fills first -- fixed, and registered above. `acceptance-20260927T224109Z` then died at step 11 with
+the erasure drill reporting `invalid or expired access token` for a token that had passed the same dependency
+one second earlier. The cause is not the auth code: the api container's clock read
+`2026-09-27 22:59:09` (`exported_at` in a response body) while the host read `2026-09-28 05:05:05` -- a
+6h06m lag, i.e. the Docker VM's clock after a host sleep -- and when such a clock is stepped forward
+mid-run, `exp` on a freshly minted token is instantly in the past. Both reds are kept.
+`step_stack_up` now asserts the precondition it exposed (host vs `api` and `postgres` wall clocks, failing
+above 120s with the seconds printed), and `erasure_drill.scalar()` returns `(no rows)` instead of raising
+`IndexError` -- the traceback had been naming neither the query nor the fact that nothing matched, which is
+how a clock artifact reached the log looking like an authentication defect. Measured after the fix, on a
+recreated stack: `clock skew vs host: api 0s`, `postgres 1s`.
 
 **Not yet certified.** No authoritative chain run includes step 19 or these 403 tests yet; the four faces
 still describe `037b818`. The next `acceptance-all.sh` run is what restamps them, and it will carry the
