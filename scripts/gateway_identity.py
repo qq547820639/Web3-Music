@@ -127,8 +127,13 @@ def fetch(url: str, timeout: float = 15.0) -> str | None:
 
 
 def read_claims(port: int) -> list[str] | None:
-    done = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
-                          capture_output=True, text=True)
+    try:
+        done = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                              capture_output=True, text=True)
+    except OSError:
+        # No lsof on this host. That is a refusal with a reason (the judge treats None as "no reading"),
+        # not a traceback an operator would otherwise read as the measurement itself crashing.
+        return None
     # lsof exits 1 when nothing matches: that is a reading (zero claimants), not a broken instrument.
     if done.returncode not in (0, 1):
         return None

@@ -99,3 +99,19 @@ def test_the_contract_denominator_is_the_tracked_file(gate):
     tracked = json.loads((ROOT / "shared/contracts/openapi-v13.json").read_text(encoding="utf-8"))
     assert paths == set(tracked["paths"]), "身份门的契约分母不是仓库里那份契约文件"
     assert len(paths) == len(tracked["paths"])
+
+def test_a_missing_lsof_is_a_clean_refusal_not_a_traceback(gate, monkeypatch):
+    """The host may not have lsof at all; the gate has to say so with a reason, not crash.
+
+    A traceback in a certification log reads as "the instrument broke mid-measurement", which is a
+    different claim from "this axis has no reading, so nothing is released" -- the second one is what the
+    judge already implements, and this pins that the reader reaches it.
+    """
+    def raiser(*args, **kwargs):
+        raise OSError("lsof: command not found")
+
+    monkeypatch.setattr(gate.subprocess, "run", raiser)
+    assert gate.read_claims(18080) is None
+    assert any("读不到" in p2 or "本项目" in p2 for p2 in
+               gate.judge(None, gate.contract_paths(CONTRACT), gate.contract_paths(CONTRACT), "18080", ["18080"])), (
+        "the refusal sentence does not name the missing reading, so a red would be unattributable")
