@@ -355,6 +355,11 @@ step_browser_a11y() {
   # The self-test arm proves the audit can fire before its verdict is trusted.
   python scripts/browser_a11y.py --self-test
   python scripts/browser_a11y.py
+  # The census cross-check is part of this step, not a follow-up chore: the report now records
+  # per-endpoint refusals, and tests/unit/test_release_record_consistency.py refuses a certified run
+  # that carries refusals without the server-side artifact to compare them against. Running it here
+  # is what keeps 'the api log said the same thing' a reading instead of a recollection.
+  python scripts/server_refusal_census.py --run "${STAMP}" --write
 }
 
 step_generic_rest_roundtrip() {

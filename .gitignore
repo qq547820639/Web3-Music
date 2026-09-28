@@ -25,6 +25,7 @@ release-evidence/acceptance-*/*
 !release-evidence/browser-a11y-*/
 release-evidence/browser-a11y-*/*
 !release-evidence/browser-a11y-*/report.json
+!release-evidence/browser-a11y-*/server-refusals.txt
 
 # Pinned third-party audit script cached by scripts/browser_a11y.py.
 .cache/

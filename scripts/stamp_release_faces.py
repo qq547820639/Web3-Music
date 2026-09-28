@@ -84,28 +84,46 @@ def last_ended(text: str, step: str | None) -> str:
     return "?"
 
 
+def summarize(text: str, directory: pathlib.Path) -> dict:
+    """One SUMMARY's own header and row table, as the faces quote it."""
+    rows = STEP_ROW.findall(text)
+    return {
+        "dir": directory,
+        "stamp": directory.name.replace("acceptance-", ""),
+        "commit": (re.search(r"git_commit=(\w+)", text) or [None, "?"])[1],
+        "rows": len(rows),
+        "pass": sum(1 for _, r in rows if r == "PASS"),
+        "skipped": sum(1 for _, r in rows if r == "SKIPPED"),
+        "fails": sum(1 for _, r in rows if r == "FAIL"),
+        "started": (re.search(r"started_at=(\S+)", text) or [None, "?"])[1],
+        "ended": last_ended(text, rows[-1][0] if rows else None),
+        "host_load": (re.search(r'host_load="([^"]*)"', text) or [None, None])[1],
+        "cpus": (re.search(r"docker_cpus=(\d+)", text) or [None, "?"])[1],
+        "disk": (re.search(r"disk_free_kb=(\d+)", text) or [None, "?"])[1],
+        "fresh": (re.search(r"fresh_database=(\d)", text) or [None, "?"])[1],
+    }
+
+
+def run_from_disk(stamp: str) -> dict:
+    """A run that exists on this host but is not committed yet -- a chain mid-flight, or one being closed out.
+
+    The tracked archive is the denominator for every census, but the census script has to be callable from
+    inside the chain that produces the evidence, before `git add` has happened. Same parser, same fields, so
+    a reading taken here cannot differ in shape from the one the faces will take after staging.
+    """
+    path = EVIDENCE / f"acceptance-{stamp}" / "SUMMARY.txt"
+    if not path.exists():
+        raise SystemExit(f"{path} does not exist on this host")
+    return summarize(path.read_text(encoding="utf-8", errors="replace"), path.parent)
+
+
 def runs():
     """Every tracked SUMMARY, oldest first, with its own verdict tally."""
     out = subprocess.run(["git", "-C", str(ROOT), "ls-files", "release-evidence/acceptance-*/SUMMARY.txt"],
                          capture_output=True, text=True, check=True).stdout.split()
     for relative in sorted(out):
-        text = (ROOT / relative).read_text(encoding="utf-8", errors="replace")
-        rows = STEP_ROW.findall(text)
-        yield {
-            "dir": pathlib.Path(relative).parent,
-            "stamp": pathlib.Path(relative).parent.name.replace("acceptance-", ""),
-            "commit": (re.search(r"git_commit=(\w+)", text) or [None, "?"])[1],
-            "rows": len(rows),
-            "pass": sum(1 for _, r in rows if r == "PASS"),
-            "skipped": sum(1 for _, r in rows if r == "SKIPPED"),
-            "fails": sum(1 for _, r in rows if r == "FAIL"),
-            "started": (re.search(r"started_at=(\S+)", text) or [None, "?"])[1],
-            "ended": last_ended(text, rows[-1][0] if rows else None),
-            "host_load": (re.search(r'host_load="([^"]*)"', text) or [None, None])[1],
-            "cpus": (re.search(r"docker_cpus=(\d+)", text) or [None, "?"])[1],
-            "disk": (re.search(r"disk_free_kb=(\d+)", text) or [None, "?"])[1],
-            "fresh": (re.search(r"fresh_database=(\d)", text) or [None, "?"])[1],
-        }
+        path = ROOT / relative
+        yield summarize(path.read_text(encoding="utf-8", errors="replace"), path.parent)
 
 
 def step_log(run_dir: pathlib.Path, step: str) -> str | None:

@@ -293,18 +293,33 @@ jobs:
           fi
       - name: Audit must be able to fail
         run: python scripts/browser_a11y.py --self-test
-      - name: Real-browser walkthrough and axe audit (with diagnostics)
+      - name: Real-browser walkthrough, axe audit, and server-side refusal census (with diagnostics)
         shell: bash
         run: |
+          # The clock is taken around the browser run itself because CI dispatches the legs one at a time
+          # and has no acceptance SUMMARY to read a row window from. The census compares the gate's own
+          # per-endpoint refusal counts against what the api container answered in that window; the
+          # injected panel failure is allowed to exist on the browser side only.
+          START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           if ! python scripts/browser_a11y.py > /tmp/a11y.log 2>&1; then
             echo "::error title=browser-a11y::$(grep -E '^  - |^FAIL' /tmp/a11y.log | tr -d '\r' | tr '\n' ' ' | head -c 3500)"
             tail -40 /tmp/a11y.log
             exit 1
           fi
           cat /tmp/a11y.log
+          END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          if ! python scripts/server_refusal_census.py --since "$START" --until "$END" --write > /tmp/census.log 2>&1; then
+            echo "::error title=refusal-census::$(grep -E '^::error' /tmp/census.log | tr -d '\r' | tr '\n' ' ' | head -c 2500)"
+            tail -25 /tmp/census.log
+            exit 1
+          fi
+          tail -25 /tmp/census.log
       - if: always()
         uses: actions/upload-artifact@v4
         with: {name: browser-a11y-report, path: release-evidence/browser-a11y-*/report.json, if-no-files-found: ignore}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: server-refusal-census, path: release-evidence/browser-a11y-*/server-refusals.txt, if-no-files-found: ignore}
       - if: always()
         run: docker compose down -v --remove-orphans
 
