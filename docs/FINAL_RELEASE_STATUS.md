@@ -1121,8 +1121,13 @@ the way the commit sequence and the red census can. They are appended by hand fr
 **HEAD vs. the certified tree, measured rather than asserted.** This paragraph has been rewritten twice, and
 each time the version it replaced had said "the current authority" in the present tense after the authority had
 already moved. The reading taken for the authority these faces now certify, `acceptance-20260928T111210Z`
-(commit `d98e650`), is `git diff --name-only d98e650..HEAD` → 0 paths: HEAD *is* the certified commit, so the
-tree under review and the tree that was tested are one tree by construction. Ranges are written between two
+(commit `d98e650`), is `git diff --name-only d98e650..0df3a00` → 14 paths, and the same command with the
+product pathspec (`services db shared docker-compose.yml docker-compose.commercial-test.yml Makefile checks`)
+→ 0 paths: what moved between the tested tree and the tree these corrections land on is six faces, three
+evidence files, the stamper, this test file and the manifest. The first draft of this sentence read
+`d98e650..HEAD` → 0 paths and justified it by "HEAD *is* the certified commit" -- the commit carrying that
+sentence refuted it inside a minute, which is the same moving-endpoint defect the sentence existed to close,
+caught by the sentence itself. Ranges are written between two
 commits from here on, never against `HEAD` -- the same command one round earlier reads `1dbf99e..a841628` → 15
 paths and `1dbf99e..d98e650` → 24, all of them faces, evidence, the stamping and census scripts, the
 release-record gates and the manifest, and a sentence naming a moving endpoint cannot tell those readings
