@@ -1,0 +1,36 @@
+Resonance AI Music Asset Platform — E2E Acceptance
+started_at=2026-09-28T16:38:01Z
+evidence_dir=release-evidence/acceptance-20260928T163801Z
+host=Mac
+host_load="7.88 8.63 8.36" host_cpus=10 docker_cpus=4
+git_commit=ceea166abb4e490d9e611ba4d6d89a4442cbfe87
+fresh_database=1
+disk_free_kb=10436880
+
+STEP | RESULT | STARTED_AT | FINISHED_AT
+static-verify | PASS | 2026-09-28T16:38:01Z | 2026-09-28T16:38:22Z
+compose-up | PASS | 2026-09-28T16:38:22Z | 2026-09-28T16:38:50Z
+acceptance | PASS | 2026-09-28T16:38:50Z | 2026-09-28T16:39:17Z
+contract-test | PASS | 2026-09-28T16:39:17Z | 2026-09-28T16:39:25Z
+chaos-worker-recovery | PASS | 2026-09-28T16:39:26Z | 2026-09-28T16:40:08Z
+lease-contention | PASS | 2026-09-28T16:40:08Z | 2026-09-28T16:40:43Z
+restore-fidelity-snapshot | PASS | 2026-09-28T16:40:43Z | 2026-09-28T16:40:45Z
+backup-restore | PASS | 2026-09-28T16:40:45Z | 2026-09-28T16:41:27Z
+restore-fidelity-compare | PASS | 2026-09-28T16:41:27Z | 2026-09-28T16:41:29Z
+acceptance-rerun | PASS | 2026-09-28T16:41:29Z | 2026-09-28T16:41:55Z
+erasure-drill | PASS | 2026-09-28T16:41:55Z | 2026-09-28T16:42:35Z
+mfa-drill | PASS | 2026-09-28T16:42:35Z | 2026-09-28T16:47:05Z
+member-drill | PASS | 2026-09-28T16:47:05Z | 2026-09-28T16:48:02Z
+media-scan-drill | PASS | 2026-09-28T16:48:02Z | 2026-09-28T16:48:07Z
+report-drill | PASS | 2026-09-28T16:48:07Z | 2026-09-28T16:48:31Z
+commercial-flow | PASS | 2026-09-28T16:48:31Z | 2026-09-28T16:49:16Z
+reservation-race | PASS | 2026-09-28T16:49:16Z | 2026-09-28T16:49:30Z
+market-reconciliation | PASS | 2026-09-28T16:49:30Z | 2026-09-28T16:49:49Z
+hold-drill | PASS | 2026-09-28T16:49:49Z | 2026-09-28T16:50:20Z
+provider-regression-100 | PASS | 2026-09-28T16:50:20Z | 2026-09-28T16:51:51Z
+generic-rest-roundtrip | PASS | 2026-09-28T16:51:51Z | 2026-09-28T16:52:46Z
+browser-a11y | FAIL | 2026-09-28T16:52:46Z | 2026-09-28T16:58:29Z
+failed_step_env: host_load="19.35 19.78 15.92" host_cpus=10 docker_cpus=4
+
+finished_at=2026-09-28T16:58:29Z
+host_load="18.20 19.54 15.86" host_cpus=10 docker_cpus=4
