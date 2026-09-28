@@ -1555,11 +1555,4 @@ Census self-test 12 → 25 arms (the last two pin the tightened exemption: the n
 context, the abort axis and the settle axis (each with the polarity that must stay silent). On the resident
 side `tests/unit/test_release_record_consistency.py` now pins that an empty unsettled list and a missing
 unsettled reading both stay red, and that a report carrying `request_counts` must have the axis written into
-its own artifact. This section's own counts are readings of the moment:
-The case count is deliberately not quoted as one number: each certified run's own reading is in its
-`metrics static-verify unit_passed=` line (465 for `acceptance-20260928T184730Z`, 476 for the authoritative
-`acceptance-20260928T220607Z`), and the cases added after them -- two for the unsettled exemption and axis
-publication, nine for the capacity origin gate, one for the teardown-note publication -- are named in the
-commit messages rather than re-counted here, because this round added cases three times while it was still
-writing itself.
-The authority figures live in the stamped cells, not here.
+its own artifact. No case count is quoted in this section, on purpose: the round added cases four times while it was still writing itself, so every such number was stale before the sentence ended. Each certified run's reading is in its own SUMMARY line `metrics static-verify unit_passed=`, the figures the record quotes are the stamped cells, and what was added after a run is named in that run's following commit messages instead.
