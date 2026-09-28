@@ -117,6 +117,32 @@ def browser_census(report: pathlib.Path) -> collections.Counter:
     return out
 
 
+def surplus_times(lines: list[str], server: collections.Counter,
+                  seen: collections.Counter) -> dict[tuple, list[str]]:
+    """For every tuple the server answered more often than the gate recorded, the server's own timestamps.
+
+    A red that says "27 vs 26" cannot be triaged: the timestamps are what tell a response delivered after
+    the page closed apart from a page whose traffic the hook never saw at all.
+    """
+    out: dict[tuple, list[str]] = {}
+    for key in server:
+        extra = server[key] - seen.get(key, 0)
+        if extra <= 0:
+            continue
+        stamps = [m.group(1) for m in (LOG_LINE.search(line) for line in lines)
+                  if m and (m.group(2), m.group(3).split("?")[0], int(m.group(4))) == key]
+        out[key] = stamps[-extra:]
+    return out
+
+
+def report_span(report: pathlib.Path) -> tuple[str, str]:
+    """First and last refusal the gate recorded, or its start/end stamps when it recorded none."""
+    data = json.loads(report.read_text(encoding="utf-8"))
+    stamps = sorted(e.get("ts", "") for e in data.get("refusal_timeline") or [])
+    return (stamps[0] if stamps else str(data.get("gate_started_at", "?")),
+            stamps[-1] if stamps else str(data.get("generated_at", "?")))
+
+
 def degraded(report: pathlib.Path) -> bool:
     return "refusal_counts" not in json.loads(report.read_text(encoding="utf-8"))
 
@@ -192,6 +218,14 @@ def self_test() -> int:
     arms.append((f"both docker line shapes parse (read {sample[1]} of 4 lines, {sum(sample[0].values())} "
                  f"refusals)", sample[1] == 3 and sample[0][("GET", "/api/auth/me", 401)] == 1
                  and sample[0][("POST", "/api/account/erasure", 403)] == 1))
+    surplus_lines = [f'api-1  | {t}Z INFO:     172.28.0.9:1 - "GET /api/auth/me HTTP/1.1" 401 Unauthorized'
+                     for t in ("2026-01-01T00:00:01", "2026-01-01T00:00:02", "2026-01-01T00:00:03")]
+    three, two = (collections.Counter({("GET", "/api/auth/me", 401): n}) for n in (3, 2))
+    arms.append(("the surplus names the timestamp the gate missed",
+                 surplus_times(surplus_lines, three, two).get(("GET", "/api/auth/me", 401))
+                 == ["2026-01-01T00:00:03"]))
+    arms.append(("an even pair produces no surplus timestamps",
+                 surplus_times(surplus_lines[:2], two, two) == {}))
     width = max(len(name) for name, _ in arms)
     bad = 0
     for name, ok in arms:
@@ -242,6 +276,12 @@ def main():
         problems.insert(0, f"{report.parent.name}/report.json has no `refusal_counts`, so the gate's side "
                            "of the comparison is empty by construction -- re-run the browser leg to get a "
                            "report that records per-endpoint counts")
+    if problems:
+        # Name the when, not just the how-many, so a red of this kind is triageable from the log alone.
+        first, last = report_span(report)
+        for key, when in sorted(surplus_times(lines, server, seen).items()):
+            print(f"# surplus server event(s) for {key[0]} {key[1]} -> {key[2]} at {', '.join(when)}; "
+                  f"the gate's own refusals run {first} .. {last}", file=sys.stderr)
     text = render(run, lo, hi, server, seen, parsed, len(lines), provenance)
     print(text, end="")
     print(f"artifact would go to: {report.parent / 'server-refusals.txt'}")

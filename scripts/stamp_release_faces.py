@@ -146,14 +146,20 @@ def rows_by_name(run_dir: pathlib.Path) -> dict:
     return out
 
 
-def step_window(run_dir: pathlib.Path, step: str) -> tuple[str, str] | None:
-    """The SUMMARY's own started/finished stamps for one row, as written in its table."""
+def step_row(run_dir: pathlib.Path, step: str) -> list[str] | None:
+    """The parsed SUMMARY table row for one step, or None when the run has no such row."""
     text = (run_dir / "SUMMARY.txt").read_text(encoding="utf-8", errors="replace")
     for line in text.splitlines():
         parts = [p.strip() for p in line.split("|")]
         if len(parts) >= 4 and parts[0] == step:
-            return parts[-2], parts[-1]
+            return parts
     return None
+
+
+def step_window(run_dir: pathlib.Path, step: str) -> tuple[str, str] | None:
+    """The SUMMARY's own started/finished stamps for one row, as written in its table."""
+    parts = step_row(run_dir, step)
+    return (parts[-2], parts[-1]) if parts else None
 
 
 def browser_pair(run: dict) -> pathlib.Path | None:
@@ -165,11 +171,17 @@ def browser_pair(run: dict) -> pathlib.Path | None:
     census shifted by one. So both keys have to agree: the `git_commit` the report carries must equal the
     one the SUMMARY records, and its `generated_at` must fall inside the `browser-a11y` row's own window.
     When nothing satisfies both, the answer is "no report", not "the closest one".
+
+    A `SKIPPED` row is refused outright. Its two stamps are the same second -- the pipeline writes the row
+    when it decides not to run the step -- so the whole match window would come from the five-minute slack,
+    and a leg produced by hand on that commit inside five minutes would be credited to a run that never
+    opened a browser. A `FAIL` row keeps pairing: the leg did run, and item 34's postmortem cites exactly
+    such a report as its evidence.
     """
-    window = step_window(EVIDENCE / f"acceptance-{run['stamp']}", "browser-a11y")
-    if not window or not run["commit"]:
+    parts = step_row(EVIDENCE / f"acceptance-{run['stamp']}", "browser-a11y")
+    if not parts or not run["commit"] or parts[1].startswith("SKIPPED"):
         return None
-    low, high = window
+    low, high = parts[-2], parts[-1]
     span = (dt.datetime.strptime(low, "%Y-%m-%dT%H:%M:%SZ"),
             dt.datetime.strptime(high, "%Y-%m-%dT%H:%M:%SZ") + dt.timedelta(minutes=5))
     candidates = []

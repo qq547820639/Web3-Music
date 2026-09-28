@@ -219,6 +219,11 @@ class Auditor:
         self.scans: list[dict] = []
         self.errors: list[str] = []
         self.refusals: list[str] = []
+        # `refusals` answers "which refusals were seen"; it cannot answer "when", and a disagreement with
+        # the api access log needs the when: 27 server-side 401s against 26 gate-side ones is a different
+        # defect depending on whether the extra falls at the run's boundary or in its middle.
+        self.refusal_timeline: list[dict] = []
+        self.started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self.crashes: list[str] = []
         self.csp_blocks: list[str] = []
         self.security_headers: dict[str, str] = {}
@@ -267,7 +272,13 @@ class Auditor:
             if response.status < 400:
                 return
             path = re.sub(r"^[a-z]+://[^/]+", "", response.url).split("?")[0]
-            self.refusals.append(f"{label}: {response.request.method} {path} -> {response.status}")
+            event = f"{label}: {response.request.method} {path} -> {response.status}"
+            self.refusals.append(event)
+            self.refusal_timeline.append({
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "label": label,
+                "event": f"{response.request.method} {path} -> {response.status}",
+            })
 
         page.on("response", on_response)
         page.on("pageerror", lambda e: self.crashes.append(f"{label}: uncaught exception: {e}"))
@@ -1673,6 +1684,11 @@ def main() -> int:
         # answer "how many times" -- which is the question the server-side census asks back.
         "refusal_counts": {tail: n for tail, n in sorted(
             collections.Counter(r.split(": ", 1)[-1] for r in auditor.refusals).items())},
+        # The timeline is what lets a disagreement with the api access log be attributed rather than argued
+        # about: `refusal_counts` says how many, this says when and from which page.
+        "refusal_timeline": sorted(auditor.refusal_timeline, key=lambda e: (e["ts"], e["label"])),
+        "gate_started_at": auditor.started_at,
+        "gate_last_refusal_at": max((e["ts"] for e in auditor.refusal_timeline), default=None),
         "scans": auditor.scans,
         "failures": failures,
     }
