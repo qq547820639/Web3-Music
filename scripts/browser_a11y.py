@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import io
 import atexit
+import collections
 import json
 import os
 import re
@@ -217,6 +218,7 @@ class Auditor:
         self.relax_csp = relax_csp
         self.scans: list[dict] = []
         self.errors: list[str] = []
+        self.refusals: list[str] = []
         self.crashes: list[str] = []
         self.csp_blocks: list[str] = []
         self.security_headers: dict[str, str] = {}
@@ -256,6 +258,18 @@ class Auditor:
                 self.crashes.append(entry)
 
         page.on("console", on_console)
+        # The request side of the same story. `console_errors` is a deduplicated set of "<label>: <text>",
+        # and the network layer's text carries only the status, so two different refusals under one label
+        # collapse into a single line -- which is how a hand-written sentence came to claim six refusals
+        # for what the server answered as eighteen. Every 4xx/5xx the page actually sees is recorded here
+        # with its method and path, and the raw event counts join the report alongside the line counts.
+        def on_response(response):
+            if response.status < 400:
+                return
+            path = re.sub(r"^[a-z]+://[^/]+", "", response.url).split("?")[0]
+            self.refusals.append(f"{label}: {response.request.method} {path} -> {response.status}")
+
+        page.on("response", on_response)
         page.on("pageerror", lambda e: self.crashes.append(f"{label}: uncaught exception: {e}"))
 
     def script_url(self, page) -> str:
@@ -684,6 +698,24 @@ def self_test(auditor: Auditor) -> int:
             f"<input id='field' class='box' value='{token}'></body></html>"
         )
         clip_probe = clip.evaluate(CLIP_JS)
+
+        # The refusal census, both polarities, on a real response rather than on a hand-built list: the
+        # 403 has to land in `refusals` with its method and path, and the 200 on the next request must
+        # not -- a census that recorded everything would let the record claim refusals it never saw.
+        before = len(auditor.refusals)
+        refuser = browser.new_page()
+        auditor.attach_console(refuser, "self-test-refusal")
+        refuser.route("**/api/probe-refused",
+                      lambda route: route.fulfill(status=403, content_type="text/plain", body="no"))
+        refuser.route("**/api/probe-allowed",
+                      lambda route: route.fulfill(status=200, content_type="text/plain", body="yes"))
+        refusal_error = ""
+        try:
+            refuser.goto("http://probe.local/api/probe-refused", wait_until="load")
+            refuser.goto("http://probe.local/api/probe-allowed", wait_until="load")
+        except Exception as exc:
+            refusal_error = str(exc)[:120]
+        refusal_probe = auditor.refusals[before:]
         browser.close()
 
     probe = auditor.scans[-1]
@@ -764,6 +796,14 @@ def self_test(auditor: Auditor) -> int:
         problems.append("clip check's blind case still fired once it was told not to require a reading")
     if not inline_blocked:
         problems.append("inline script executed despite script-src 'self', so the browser is not enforcing CSP")
+    if refusal_error:
+        problems.append(f"the refusal census could not be exercised on a real response: {refusal_error}")
+    if not any("probe-refused" in r and "403" in r and r.split(":")[1].strip().startswith("GET")
+               for r in refusal_probe):
+        problems.append(f"the refusal census missed a 403 the page really received (read {refusal_probe!r})")
+    if any("probe-allowed" in r for r in refusal_probe):
+        problems.append("the refusal census recorded a 200 as a refusal, so a count of refusals would not "
+                        "mean refusals")
     if csp_failures({"https://x": "script-src 'self'"}, ["https://x"]):
         problems.append("csp check rejected a policy that pins script-src to 'self'")
     if not csp_failures({}, ["https://x"]):
@@ -1624,7 +1664,15 @@ def main() -> int:
         "content_security_policy": auditor.security_headers,
         "csp_blocked_inline_styles": sorted(set(auditor.csp_blocks)),
         "uncaught_errors": sorted(set(auditor.crashes)),
+        "uncaught_events": len(auditor.crashes),
         "console_errors": sorted(set(auditor.errors)),
+        "console_error_events": len(auditor.errors),
+        "refusals": sorted(set(auditor.refusals)),
+        "refusal_events": len(auditor.refusals),
+        # Per-endpoint counts without the label prefix, because `refusals` is deduplicated and so cannot
+        # answer "how many times" -- which is the question the server-side census asks back.
+        "refusal_counts": {tail: n for tail, n in sorted(
+            collections.Counter(r.split(": ", 1)[-1] for r in auditor.refusals).items())},
         "scans": auditor.scans,
         "failures": failures,
     }
@@ -1643,9 +1691,13 @@ def main() -> int:
     for impact, count in sorted(auditor.summary().items()):
         print(f"  {impact}: {count} rule(s)")
     if auditor.errors:
-        print(f"  console/page errors: {len(set(auditor.errors))}")
+        print(f"  console/page errors: {len(set(auditor.errors))} line(s) out of {len(auditor.errors)} event(s)")
         for err in sorted(set(auditor.errors))[:8]:
             print(f"    - {err}")
+    print(f"  refusals seen by the pages: {len(set(auditor.refusals))} line(s) out of "
+          f"{len(auditor.refusals)} event(s)")
+    for line in sorted(set(auditor.refusals)):
+        print(f"    - {line}")
     print(f"report: {out_dir / 'report.json'}")
 
     tolerable = failures[: args.allow_blocking]

@@ -25,6 +25,7 @@ figure moved; the sentences around the numbers stay written by whoever read the 
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import pathlib
 import re
@@ -127,6 +128,44 @@ def rows_by_name(run_dir: pathlib.Path) -> dict:
     return out
 
 
+def step_window(run_dir: pathlib.Path, step: str) -> tuple[str, str] | None:
+    """The SUMMARY's own started/finished stamps for one row, as written in its table."""
+    text = (run_dir / "SUMMARY.txt").read_text(encoding="utf-8", errors="replace")
+    for line in text.splitlines():
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) >= 4 and parts[0] == step:
+            return parts[-2], parts[-1]
+    return None
+
+
+def browser_pair(run: dict) -> pathlib.Path | None:
+    """The a11y report that belongs to this acceptance run, judged by the run's own row window.
+
+    The old rule was a date glob plus `[-1]`, which handed the faces whatever browser run happened to be
+    the newest that day -- and on 2026-09-28 a second a11y leg (a later chain, a different tree) moved a
+    certified run's quoted figures onto a report stamped with another commit, while the hidden-element
+    census shifted by one. So both keys have to agree: the `git_commit` the report carries must equal the
+    one the SUMMARY records, and its `generated_at` must fall inside the `browser-a11y` row's own window.
+    When nothing satisfies both, the answer is "no report", not "the closest one".
+    """
+    window = step_window(EVIDENCE / f"acceptance-{run['stamp']}", "browser-a11y")
+    if not window or not run["commit"]:
+        return None
+    low, high = window
+    span = (dt.datetime.strptime(low, "%Y-%m-%dT%H:%M:%SZ"),
+            dt.datetime.strptime(high, "%Y-%m-%dT%H:%M:%SZ") + dt.timedelta(minutes=5))
+    candidates = []
+    for report in sorted(EVIDENCE.glob("browser-a11y-*/report.json")):
+        try:
+            data = json.loads(report.read_text(encoding="utf-8"))
+            made = dt.datetime.strptime(str(data.get("generated_at")), "%Y-%m-%dT%H:%M:%SZ")
+        except (OSError, ValueError, TypeError):
+            continue
+        if str(data.get("git_commit", "")) == run["commit"] and span[0] <= made <= span[1]:
+            candidates.append(report)
+    return candidates[-1] if candidates else None
+
+
 def figures(run: dict) -> dict:
     got = {k: run[k] for k in ("stamp", "commit", "rows", "pass", "skipped", "fails", "started",
                                "ended", "host_load", "cpus", "disk", "fresh")}
@@ -145,12 +184,18 @@ def figures(run: dict) -> dict:
                        ("regression_step", "provider-regression-100"),
                        ("generic_step", "generic-rest-roundtrip")):
         got[name] = got["rows_by_name"].get(step, "NOT-FOUND")
-    report = run_dir / "report.json"
-    if not report.exists():
-        browser = sorted((EVIDENCE).glob(f"browser-a11y-{run['stamp'][:8]}*/report.json"))
-        report = browser[-1] if browser else report
-    got["browser_report"] = str(report.relative_to(ROOT)) if report.exists() else "MISSING"
-    if report.exists():
+    report = browser_pair(run)
+    got["browser_report"] = str(report.relative_to(ROOT)) if report else "MISSING"
+    # The report-derived keys are declared up front so a run without a paired report reads NOT-FOUND rather
+    # than losing the keys entirely: the cell table's orphan check compares one fixed key set against this
+    # dict, and keys that appear and disappear with the evidence make that check answer a different question.
+    for name in ("browser_views", "browser_scans", "browser_mobile_fit", "browser_hidden",
+                 "browser_rendered_hidden", "browser_export_bytes", "browser_violations", "browser_commit",
+                 "browser_uncaught", "console_lines", "console_app_lines", "console_network_lines",
+                 "console_status_breakdown", "console_labels", "console_error_events", "refusal_lines",
+                 "refusal_events", "refusal_endpoints", "refusal_403_events", "refusal_top"):
+        got.setdefault(name, "NOT-FOUND")
+    if report:
         data = json.loads(report.read_text(encoding="utf-8"))
         # `views_scanned` is what the scanner prints; the earlier guess `views` was never on the object, so
         # this cell read NOT-FOUND for a round while the faces kept quoting a view count copied by hand.
@@ -166,6 +211,47 @@ def figures(run: dict) -> dict:
         got["browser_violations"] = data.get("violations_by_impact", "NOT-FOUND")
         got["browser_commit"] = data.get("git_commit", "NOT-FOUND")
         got["browser_uncaught"] = data.get("uncaught_errors", "NOT-FOUND")
+        # The console lines are `sorted(set(...))` of `"<label>: <text>"`, so they are *lines*, not events:
+        # two refusals under one label collapse. The count of raw events is not in the artifact at all.
+        # Everything the record says about them has to be read off this shape, which is why the split is
+        # reported by status, by label, and by whether the text is the network layer's own sentence.
+        lines = data.get("console_errors", [])
+        got["console_lines"] = len(lines)
+        seen: dict[str, int] = {}
+        labels: dict[str, set] = {}
+        app_side = 0
+        for line in lines:
+            label, _, text = line.partition(":")
+            # The label carries the viewport as its first field (`desktop-axe-studio`), and the prose
+            # multiplies the remaining shape count by the two viewports. Counting the full label would
+            # just reproduce the line count and hide whether a shape fired twice.
+            shape = label.split("-", 1)[1] if "-" in label else label
+            status = re.search(r"status of (\d{3})", text)
+            if status:
+                seen[status.group(1)] = seen.get(status.group(1), 0) + 1
+                labels.setdefault(status.group(1), set()).add(shape)
+            else:
+                app_side += 1
+        got["console_app_lines"] = app_side
+        got["console_network_lines"] = len(lines) - app_side
+        got["console_status_breakdown"] = " / ".join(f"{k} 记 {v} 行" for k, v in sorted(seen.items())) \
+            or "NOT-FOUND"
+        got["console_labels"] = "/".join(f"{k}×{len(v)}" for k, v in sorted(labels.items())) or "NOT-FOUND"
+        # The request-side census the gate now records next to the console lines. Always emitted, even for
+        # a report written before the field existed, so a cell that quotes it can refuse rather than invent.
+        got["console_error_events"] = data.get("console_error_events", "NOT-FOUND")
+        refusals = data.get("refusals")
+        got["refusal_lines"] = len(refusals) if refusals is not None else "NOT-FOUND"
+        got["refusal_events"] = data.get("refusal_events", "NOT-FOUND")
+        # Per-endpoint counts come from `refusal_counts`; the deduplicated lines can only ever say "once".
+        counts = data.get("refusal_counts")
+        got["refusal_endpoints"] = len(counts) if counts else "NOT-FOUND"
+        got["refusal_403_events"] = sum(n for tail, n in (counts or {}).items() if tail.endswith("-> 403"))
+        if counts:
+            top, hits = max(counts.items(), key=lambda kv: (kv[1], kv[0]))
+            got["refusal_top"] = f"{top} 共 {hits} 次"
+        else:
+            got["refusal_top"] = "NOT-FOUND"
     return got
 
 

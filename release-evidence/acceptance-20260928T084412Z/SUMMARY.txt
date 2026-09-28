@@ -1,0 +1,36 @@
+Resonance AI Music Asset Platform — E2E Acceptance
+started_at=2026-09-28T08:44:12Z
+evidence_dir=release-evidence/acceptance-20260928T084412Z
+host=Mac
+host_load="3.64 4.99 6.26" host_cpus=10 docker_cpus=4
+git_commit=1dbf99e880aef24f6a921e988c7dbbb965a0375b
+fresh_database=1
+disk_free_kb=5410160
+
+STEP | RESULT | STARTED_AT | FINISHED_AT
+static-verify | PASS | 2026-09-28T08:44:12Z | 2026-09-28T08:44:27Z
+compose-up | PASS | 2026-09-28T08:44:27Z | 2026-09-28T08:44:53Z
+acceptance | PASS | 2026-09-28T08:44:53Z | 2026-09-28T08:45:18Z
+contract-test | PASS | 2026-09-28T08:45:18Z | 2026-09-28T08:45:25Z
+chaos-worker-recovery | PASS | 2026-09-28T08:45:25Z | 2026-09-28T08:46:07Z
+lease-contention | PASS | 2026-09-28T08:46:07Z | 2026-09-28T08:46:37Z
+restore-fidelity-snapshot | PASS | 2026-09-28T08:46:37Z | 2026-09-28T08:46:38Z
+backup-restore | PASS | 2026-09-28T08:46:38Z | 2026-09-28T08:47:17Z
+restore-fidelity-compare | PASS | 2026-09-28T08:47:17Z | 2026-09-28T08:47:18Z
+acceptance-rerun | PASS | 2026-09-28T08:47:18Z | 2026-09-28T08:47:43Z
+erasure-drill | PASS | 2026-09-28T08:47:43Z | 2026-09-28T08:48:32Z
+mfa-drill | PASS | 2026-09-28T08:48:32Z | 2026-09-28T08:52:23Z
+member-drill | PASS | 2026-09-28T08:52:23Z | 2026-09-28T08:52:43Z
+media-scan-drill | PASS | 2026-09-28T08:52:43Z | 2026-09-28T08:52:45Z
+report-drill | PASS | 2026-09-28T08:52:45Z | 2026-09-28T08:52:52Z
+commercial-flow | PASS | 2026-09-28T08:52:52Z | 2026-09-28T08:53:29Z
+reservation-race | PASS | 2026-09-28T08:53:29Z | 2026-09-28T08:53:41Z
+market-reconciliation | PASS | 2026-09-28T08:53:41Z | 2026-09-28T08:53:57Z
+hold-drill | PASS | 2026-09-28T08:53:57Z | 2026-09-28T08:54:17Z
+provider-regression-100 | PASS | 2026-09-28T08:54:17Z | 2026-09-28T08:55:12Z
+generic-rest-roundtrip | PASS | 2026-09-28T08:55:12Z | 2026-09-28T08:56:01Z
+browser-a11y | PASS | 2026-09-28T08:56:01Z | 2026-09-28T09:00:20Z
+capacity-gate-500 | SKIPPED (CAPACITY=1 才执行) | 2026-09-28T09:00:20Z | 2026-09-28T09:00:20Z
+
+finished_at=2026-09-28T09:00:20Z
+host_load="4.74 5.18 5.49" host_cpus=10 docker_cpus=4

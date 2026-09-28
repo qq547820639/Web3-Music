@@ -9,9 +9,9 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `3dbd175`, 2026-09-28T08:18:06Z → 2026-09-28T08:35:46Z, evidence in `release-evidence/acceptance-20260928T081806Z/`, started under `host_load="6.04 5.17 4.75"` on a Docker VM 4 vCPU with `disk_free_kb=5680956` recorded beside it, with 20 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `aa3605b`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818`, `ef88d14` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23 rows with `FAIL=0` in every `SUMMARY.txt`), and 22 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 2).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `1dbf99e`, 2026-09-28T08:44:12Z → 2026-09-28T09:00:20Z, evidence in `release-evidence/acceptance-20260928T084412Z/`, started under `host_load="3.64 4.99 6.26"` on a Docker VM 4 vCPU with `disk_free_kb=5410160` recorded beside it, with 21 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `aa3605b`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818`, `ef88d14`, `3dbd175` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23 rows with `FAIL=0` in every `SUMMARY.txt`), and 22 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 2).
 `414752d` was this file's authority until the round before last, and the reason the sentence is now machine-checked rather than maintained: the paragraph below it carried a count, a commit list, a row list and a red total that nothing compared against the archive, so the header could describe a run that was no longer the newest one for two full rounds before anyone noticed.
-The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260927T195301Z/report.json`, stamped with the same commit: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes.
+The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260928T085606Z/report.json`, stamped with the same commit `1dbf99e`: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes. Both halves of that sentence are stamped cells now, and the pairing they rest on was repaired this round: the reader used to take whatever `browser-a11y-*/report.json` was newest *on the same calendar day*, which on 2026-09-28 (four chains, three a11y legs) paired a certified run with another run's report and quietly moved the hidden-element census by one. It now requires both keys -- the report's `git_commit` equals the one the SUMMARY records, and its `generated_at` falls inside that run's own `browser-a11y` row window -- and when nothing satisfies both, the answer is "no report" and the round refuses rather than quoting the closest file. The commit-equality is enforced in `derive()` for the same reason: the sentence claims "the same commit", so a run whose a11y leg tested a different tree cannot be stamped at all.
 
 What is version-controlled from that directory is only `SUMMARY.txt` (per-step verdicts and timestamps) and the
 browser run's `report.json`; the per-step logs and the two compose log files stay on the host that ran the pipeline.
@@ -1241,3 +1241,46 @@ application tier, and step 12's login-through-the-gateway check passed inside th
 4-cpu VM), the real-provider contract evidence, and the two owner decisions in `待属主定值` (3: whether one
 browser may hold both surfaces, now measured; 6: whose hold counts, plus the operator-only
 `media_assets` delete guard).
+
+## 2026-09-28 the certification that puts the browser leg's console figures under the stamper
+
+Authoritative run `acceptance-20260928T084412Z` (commit `1dbf99e`, `fresh_database=1` in the same header, 2026-09-28T08:44:12Z → 09:00:20Z, 23 rows: 22 PASS and `capacity-gate-500` skipped by switch, host load "3.64 4.99 6.26" on a 4-cpu Docker VM with `disk_free_kb=5410160` beside it), browser record `release-evidence/browser-a11y-20260928T085606Z/report.json`.
+
+Nothing in the tree moved between this run and the previous authority, so this section exists for one
+reason: it is the run whose `report.json` the six new browser cells read. Step 1 recorded 428 unit tests,
+the manifest again covered 247 tracked sources at 100 routes / 54 writes, and the legs repeated
+`mfa drill: 79/79`, `member drill: 98/98`, `erasure drill: 53/53`, `report drill: 50/50`,
+`hold drill: 48/48`, `media scan drill: 14/14`, `market reconciliation: 15/15`,
+`restore fidelity: 2 workspaces, 2 assets byte-identical, ledgers unchanged`,
+`8 jobs, 2 workers, 160.0 credits settled once`; the two latency series came in at 100/100 with
+p50 4.09s / p95 5.22s (fifteenth green) and 25/25 with p50 4.13s / p95 4.15s (sixteenth), and the
+accessibility leg at 118 view records / 92 axe scans with an empty `violations_by_impact`, 1286 hidden
+elements scanned and 0 still rendering.
+
+Two things surfaced while wiring those cells, and both are defects in the record rather than in the product.
+
+1. **The reader paired a certified run with the wrong browser report.** It globbed
+   `browser-a11y-<the run's date>*/report.json` and took the last one, which is whatever a11y leg happened
+   to be newest that day. 2026-09-28 held four chains and three a11y legs, so the faces could -- and did --
+   read a hidden-element census and a `git_commit` off a report the certified run never produced. The rule
+   is now two keys at once: the report's `git_commit` must equal the one the SUMMARY records, and its
+   `generated_at` must fall inside that run's own `browser-a11y` row window. Nothing satisfying both reads
+   as "no report" and the stamping round refuses; `test_the_browser_report_is_paired_by_commit_and_window`
+   plants a same-day newer report on another tree and requires the pair to ignore it.
+2. **The sentence about console lines was counting one axis and naming another.** It read the report's
+   `sorted(set(...))` of `"<label>: <text>"` as a count of refusals and attributed the six 403 lines to
+   three walks, one of which never sent a request. The server-side census for this run's own window
+   (`scripts/server_refusal_census.py`, reading `docker compose logs api` over the row's stamps) answers
+   48 4xx events over 8 endpoints -- 28 of them `GET /api/auth/me` -- so six console lines stand for
+   eighteen refused requests, and `DELETE /api/workspace/members/…` appears exactly twice, both of them the
+   correct-email removals: the mismatched-email confirm is refused in the page, not by the API. The line
+   counts, the status split, and the per-status label-shape counts are cells now; the refusal counts are
+   cited prose until a chain whose report carries `refusal_counts` becomes the authority, because a cell
+   reading a field that report does not have would stop the whole round.
+
+The gate that compares the two observers is `scripts/server_refusal_census.py --self-test` (7 arms: the
+honest pair, a refusal the gate missed, one event short, an injected route that actually reached the api, unparsable
+lines, an empty window, and both docker line shapes), and the browser leg grew the same shape of arm in its
+own `--self-test`: a planted 403 must appear in `refusals` and a 200 on the next request must not, proved
+by removing the listener and watching the arm go red (rc=1, message named) before restoring the file
+byte-identically.

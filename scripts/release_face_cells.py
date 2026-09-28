@@ -109,6 +109,22 @@ CELLS = [
      r"浏览器结果为 `release-evidence/browser-a11y-[0-9TZ]+/report\.json`",
      "浏览器结果为 `{browser_report}`"),
     ("docs/TEST_REPORT.md", "真实浏览器验收", r"（第 \d+ 步）", "（第 {browser_step} 步）"),
+    # The console sentence was hand-written for several rounds, and it had drifted: it counted the report's
+    # deduplicated lines as if they were events, and attributed a refusal to the wrong page. Its four
+    # figures are now cells, so the sentence can only be stamped from what `report.json` actually holds.
+    ("docs/TEST_REPORT.md", "真实浏览器验收", r"console 留痕 (\d+) 行", "console 留痕 {console_lines} 行"),
+    ("docs/TEST_REPORT.md", "真实浏览器验收", r"网络层自己记的 (\d+) 行、应用侧自己打的 (\d+) 行",
+     "网络层自己记的 {console_network_lines} 行、应用侧自己打的 {console_app_lines} 行"),
+    ("docs/TEST_REPORT.md", "真实浏览器验收", r"按状态分 `([^`]+)`", "按状态分 `{console_status_breakdown}`"),
+    ("docs/TEST_REPORT.md", "真实浏览器验收", r"每个状态各有几个标签 `([^`]+)`",
+     "每个状态各有几个标签 `{console_labels}`"),
+    # Lines and events are different axes, and conflating them is what made the old sentence claim six
+    # refusals for what the server answered as eighteen. The request-side figures (`refusal_events`,
+    # `refusal_lines`, `refusal_endpoints`, `refusal_top`) are read by the reader but are deliberately NOT
+    # cells yet: `report.json` only started carrying `refusal_counts` with this round's harness change, so
+    # the newest certified report cannot fill them and a cell would refuse the whole stamping round. They
+    # stay cited prose off `scripts/server_refusal_census.py` until a chain that recorded them becomes the
+    # authority -- then this is a table-only swap.
     ("docs/TEST_REPORT.md", "真实浏览器验收", r"共 (\d+) 个视图记录 / (\d+) 次 axe 扫描",
      "共 {browser_views} 个视图记录 / {browser_scans} 次 axe 扫描"),
     ("docs/TEST_REPORT.md", "真实浏览器验收", r"(\d+) 个 hidden 元素、(\d+) 个仍在渲染",
@@ -142,6 +158,13 @@ CELLS = [
      "and {red_count} judged-red SUMMARYs kept as findings ({red_days_en})"),
     ("docs/FINAL_RELEASE_STATUS.md", "The pipeline is",
      r"The pipeline is (\d+) rows wide now", "The pipeline is {rows} rows wide now"),
+    # This sentence named a browser report that no cell owned, so it kept a 2026-09-27 stamp while the
+    # figures around it came from the current authority -- and it asserted "the same commit" without any
+    # machinery ever comparing the two git_commit fields. Both halves are cells now.
+    ("docs/FINAL_RELEASE_STATUS.md", "machine-readable record for the certified run",
+     r"is at `release-evidence/browser-a11y-[0-9TZ]+/report\.json`", "is at `{browser_report}`"),
+    ("docs/FINAL_RELEASE_STATUS.md", "machine-readable record for the certified run",
+     r"stamped with the same commit `([0-9a-f]{7})`", "stamped with the same commit `{browser_commit_short}`"),
     # ---------------------------------------------------------------- docs/CHANGELOG_COST500.md
     ("docs/CHANGELOG_COST500.md", "权威运行 `release-evidence/",
      r"acceptance-(\d{8}T\d{6}Z)/", "acceptance-{stamp}/"),
@@ -171,7 +194,7 @@ CELLS = [
 
 DERIVED = ("short", "green_count", "green_list_cn", "green_list_arrow", "green_list_en", "green_rows",
            "narrowest_rows", "widest_rows", "repeat_width", "repeat_times", "red_count", "red_days_cn",
-           "red_days_en", "run_date", "unit_files", "mfa_step", "media_scan_step")
+           "red_days_en", "run_date", "unit_files", "mfa_step", "media_scan_step", "browser_commit_short")
 
 # What the reader prints when a step's log carries no such figure. An absent reading is not a zero reading,
 # so these never become prose: main() refuses the round on any consumed one, and resolve() re-checks the
@@ -270,8 +293,20 @@ def derive(root: pathlib.Path, figures: dict) -> dict:
             raise SystemExit(f"derive: {name!r} is no longer dispatched by run_step in acceptance-all.sh")
         steps[name] = order.index(name) + 1
     unit_files = len(list((root / "tests/unit").glob("test_*.py")))
+    # The head of the status file claims the browser record carries "the same commit" as the certified run.
+    # That claim is only worth stamping if it is true, so the equality is checked here rather than written
+    # into a sentence: when the a11y leg ran on a different tree than the one SUMMARY records, the round
+    # refuses and the sentence keeps last round's reading instead of becoming a fabrication.
+    browser_commit = figures.get("browser_commit")
+    if browser_commit in (None, "NOT-FOUND", "MISSING"):
+        raise SystemExit(f"derive: the certified run {certified} has no tracked browser report to point at "
+                         "-- the faces quote a machine-readable a11y record, so `git add -f` its report.json")
+    if browser_commit[:7] != figures["commit"][:7]:
+        raise SystemExit(f"derive: the browser record is stamped {browser_commit[:7]} but the certified run "
+                         f"records {figures['commit'][:7]} -- the a11y leg did not test this tree")
     out = {
         "short": figures["commit"][:7],
+        "browser_commit_short": browser_commit[:7],
         "green_count": len(greens),
         "green_list_cn": ", ".join(f"`{g['commit']}`" for g in greens),
         "green_list_arrow": "→".join(f"`{g['commit']}`" for g in greens),

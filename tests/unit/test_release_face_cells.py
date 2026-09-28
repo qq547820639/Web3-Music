@@ -19,6 +19,7 @@ because the module's own rule is that a half-stamped round is worse than a refus
 """
 import contextlib
 import importlib.util
+import json
 import pathlib
 import re
 import tempfile
@@ -80,6 +81,21 @@ SHAPE = {
     "red_days_en": "26-09-25 = 7, 26-09-26 = 8",
     "mfa": "56/56",
     "mfa_step": "12",
+    # Shapes for the browser leg's line/event axes, taken off `report.json` as it is written today. The
+    # line counts are deduplicated, the event counts are not, and the whole point of splitting them into
+    # cells is that the prose can no longer use one as the other.
+    "console_lines": "24",
+    "console_network_lines": "24",
+    "console_app_lines": "0",
+    "console_status_breakdown": "401 记 16 行 / 403 记 6 行 / 500 记 2 行",
+    "console_labels": "401×8/403×3/500×1",
+    "console_error_events": "48",
+    "refusal_events": "50",
+    "refusal_lines": "26",
+    "refusal_endpoints": "9",
+    "refusal_403_events": "18",
+    "refusal_top": "GET /api/auth/me -> 401 共 28 次",
+    "browser_commit_short": "0123456",
     "media_scan": "14/14",
     "media_scan_step": "14",
 }
@@ -303,3 +319,98 @@ def test_the_derived_agrees_with_the_gate():
     per_day = [int(count) for count in re.findall(r"= (\d+)", derived["red_days_en"])]
     assert sum(per_day) == len(gate_reds), (f"the per-day split {per_day} adds up to {sum(per_day)} judged "
                                             f"reds, the gate counts {len(gate_reds)}")
+
+
+def write_report(root, stamp, commit, generated_at, **extra):
+    """One `browser-a11y-<stamp>/report.json` inside a throwaway evidence tree."""
+    directory = root / f"browser-a11y-{stamp}"
+    directory.mkdir(parents=True, exist_ok=True)
+    body = {"generated_at": generated_at, "git_commit": commit, "views_scanned": 118, "axe_scans": 92}
+    body.update(extra)
+    (directory / "report.json").write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    return directory / "report.json"
+
+
+def build_pairing_tree(root):
+    """A certified run plus three a11y legs: the pair, a same-day newer one on another tree, a late one.
+
+    `20260928` really did hold four chains and three a11y legs, which is what made the old
+    "newest report of the day" rule mis-pair; the fixture keeps that shape so the arm tests the rule and
+    not a toy case.
+    """
+    run_dir = root / "release-evidence" / "acceptance-20260928T084412Z"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "SUMMARY.txt").write_text(
+        "started_at=2026-09-28T08:44:12Z\ngit_commit=" + ("a" * 40) + "\n"
+        "STEP | RESULT | STARTED_AT | FINISHED_AT\n"
+        "erasure-drill | PASS | 2026-09-28T08:52:00Z | 2026-09-28T08:54:00Z\n"
+        "browser-a11y | PASS | 2026-09-28T08:56:01Z | 2026-09-28T09:00:20Z\n"
+        "capacity-gate-500 | SKIPPED (CAPACITY=1 才执行) | 2026-09-28T09:00:20Z | 2026-09-28T09:00:20Z\n",
+        encoding="utf-8")
+    evidence = root / "release-evidence"
+    own = write_report(evidence, "20260928T085606Z", "a" * 40, "2026-09-28T09:00:19Z")
+    write_report(evidence, "20260928T093000Z", "b" * 40, "2026-09-28T09:44:00Z")
+    write_report(evidence, "20260928T074500Z", "a" * 40, "2026-09-28T07:52:00Z")
+    run = {"stamp": "20260928T084412Z", "commit": "a" * 40}
+    return run, own, evidence
+
+
+def test_the_browser_report_is_paired_by_commit_and_window(capsys):
+    """The reader must find the a11y leg that belongs to the certified run, not the newest one that day.
+
+    Directly reproduced from the defect this round fixed: with four chains on 2026-09-28 the date glob
+    handed a certified run another run's report, so the faces quoted a hidden-element census and a
+    `git_commit` from a tree the run never tested. The must-fire half is the pair being deleted: with only
+    a newer same-day report left, the answer has to be "no report", not "the closest one".
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        run, own, evidence = build_pairing_tree(root)
+        original = READER.EVIDENCE
+        READER.EVIDENCE = evidence
+        try:
+            chosen = READER.browser_pair(run)
+            assert chosen == own, (f"the pairing did not pick the leg inside the run's own window and on its "
+                                   f"own commit -- it read {chosen}, which is how a certified run ends up "
+                                   f"quoting another tree's figures")
+            own.unlink()
+            assert READER.browser_pair(run) is None, ("a same-day report from a different commit was paired "
+                                                     "to a run that never produced it")
+            figures = READER.figures({**run, "rows": 3, "pass": 2, "skipped": 1, "fails": 0,
+                                      "started": "2026-09-28T08:44:12Z", "ended": "2026-09-28T09:00:20Z",
+                                      "host_load": "1.0 1.0 1.0", "cpus": "4", "disk": "1", "fresh": "1",
+                                      "dir": run["stamp"]})
+        finally:
+            READER.EVIDENCE = original
+        assert figures["browser_report"] == "MISSING", figures["browser_report"]
+        assert figures["console_lines"] == "NOT-FOUND", (f"an unpaired run must read NOT-FOUND, got "
+                                                         f"{figures['console_lines']!r}")
+        capsys.readouterr()
+
+
+def test_a_run_whose_a11y_leg_tested_another_tree_cannot_be_stamped():
+    """`derive` refuses rather than stamping 'the same commit' onto a run that is not the same commit.
+
+    The status file's sentence makes that claim, so the claim is a premise of the stamping round. Without
+    the refusal the faces would carry a sentence that is false exactly where it matters -- which tree the
+    browser leg actually exercised.
+    """
+    tracked = list(READER.runs())
+    greens = [run for run in tracked if run["fails"] == 0]
+    if not greens:
+        pytest.skip("the tracked archive holds no all-green run to falsify against")
+    chosen = max(greens, key=lambda run: run["stamp"])
+    figures = READER.figures(chosen)
+    if figures.get("browser_commit") in (None, "NOT-FOUND", "MISSING"):
+        pytest.skip(f"{chosen['stamp']} has no paired browser report, so there is no commit claim to test")
+    assert figures["browser_commit"] == chosen["commit"], (
+        f"the certified run {chosen['stamp']} records commit {chosen['commit'][:7]} while its paired a11y "
+        f"leg ({figures['browser_report']}) carries {figures['browser_commit'][:7]}: the faces would state "
+        "'the same commit' about two different trees")
+    tampered = dict(figures)
+    tampered["browser_commit"] = "f" * 40
+    with pytest.raises(SystemExit) as caught:
+        RFC.derive(ROOT, tampered)
+    message = " ".join(str(arg) for arg in caught.value.args)
+    assert "fffffff" in message and chosen["commit"][:7] in message, (
+        f"the refusal did not name both commits so a reader could not act on it: {message!r}")
