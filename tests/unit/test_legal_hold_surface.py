@@ -124,8 +124,11 @@ BASELINE_APP_TOUCHES = frozenset({
 # a new tool, which is a different conversation from a new application reader.
 BASELINE_SCRIPT_TOUCHES = frozenset({
     ("scripts/architecture-audit.py", 60),
-    ("scripts/reconcile_market.py", 86),
-    ("scripts/report_drill.py", 272),
+    # 87 / 273 rather than 86 / 272: `import metric_line as metrics` went in above each hit when the
+    # operator tools started emitting their own readings, which is a shift of the same needle, not a new
+    # reader. A new *reader* would belong to the application bucket and need a drill assertion.
+    ("scripts/reconcile_market.py", 87),
+    ("scripts/report_drill.py", 273),
     ("scripts/reservation_race.py", 110),
 })
 

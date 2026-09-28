@@ -34,6 +34,7 @@ import uuid
 
 import e2e_client
 import httpx
+import metric_line as metrics
 
 BASE = "http://127.0.0.1:8000/api"
 DEFAULT_JOBS = 100
@@ -162,6 +163,7 @@ def main(jobs: int, concurrency: int, expect_provider: str | None = None):
     print(f"provider regression: {len(completed)}/{jobs} completed, "
           f"error rate {error_rate}%, p50 {p50}s, p95 {p95}s, "
           f"settled {total_settled} credits across {len(finished)} finished jobs", flush=True)
+    metrics.emit(completed=len(completed), jobs=jobs, error_rate=error_rate, p50_s=p50, p95_s=p95, credits=total_settled)
     print(f"  provider: {provider_name} (approval {approval})  -- this batch measures the adapter "
           "in front of whatever endpoint the stack points at; a non-emulator name here is still "
           "not a signed provider contract", flush=True)

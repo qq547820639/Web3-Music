@@ -48,6 +48,7 @@ import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e_client  # noqa: E402  -- the chain's own credit precondition lives here, not in a copy
+import metric_line as metrics  # noqa: E402
 
 BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000") + "/api"
 STAMP = time.strftime("%m%dT%H%M%SZ", time.gmtime())
@@ -508,6 +509,7 @@ def main():
 
     passed = sum(1 for _, ok, _ in checks if ok)
     print(f"\nlegal hold drill: {passed}/{len(checks)} checks passed")
+    metrics.emit(checks_passed=passed, checks_total=len(checks))
     for name, ok, detail in checks:
         if not ok:
             print(f"  FAILED: {name} — {detail}")

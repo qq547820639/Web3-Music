@@ -21,6 +21,7 @@ from pathlib import Path
 
 import e2e_client
 import httpx
+import metric_line as metrics
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
@@ -147,6 +148,7 @@ def verify(timeout: int):
 
     STATE.unlink(missing_ok=True)
     print(f"lease contention passed: {len(details)} jobs, {len(owners)} workers, {total_settled} credits settled once", flush=True)
+    metrics.emit(jobs=len(details), workers=len(owners), credits_settled=total_settled)
 
 
 if __name__ == "__main__":

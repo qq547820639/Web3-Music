@@ -30,6 +30,7 @@ import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e_client  # noqa: E402
+import metric_line as metrics  # noqa: E402
 
 ORIGIN = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 BASE = ORIGIN + "/api"
@@ -144,6 +145,7 @@ def finish() -> int:
         if not ok:
             print(f"  FAIL {name} :: {detail}")
     print(f"media scan drill: {passed}/{len(checks)} checks passed")
+    metrics.emit(checks_passed=passed, checks_total=len(checks))
     return 0 if passed == len(checks) else 1
 
 

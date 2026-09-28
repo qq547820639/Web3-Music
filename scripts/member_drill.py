@@ -38,6 +38,7 @@ import time
 import uuid
 
 import httpx
+import metric_line as metrics
 
 BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000") + "/api"
 STAMP = time.strftime("%H%M%S", time.gmtime()) + uuid.uuid4().hex[:6]
@@ -795,6 +796,7 @@ def main() -> int:
 
     failed = [name for name, passed, _ in checks if not passed]
     print(f"\nmember drill: {len(checks) - len(failed)}/{len(checks)} checks passed")
+    metrics.emit(checks_passed=len(checks) - len(failed), checks_total=len(checks))
     for name in failed:
         print(f"  - {name}")
     return 1 if failed else 0

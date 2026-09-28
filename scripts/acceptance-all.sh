@@ -128,6 +128,14 @@ run_step() {
   fi
   t1=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   printf '%s | %s | %s | %s\n' "$name" "$result" "$t0" "$t1" >> "$RESULTS_FILE"
+  # 把这一步自己写下的机器读数抄进在册件。前缀是故意分开的：`metric k=v` 只活在逐步日志里
+  # （那个目录被 .gitignore 挡在树外），`metrics <步骤名> k=v` 才进 SUMMARY.txt，所以盖章器
+  # 从此能引用延迟与各演练的 `N/N`，而不是抄上一次有人手敲进文书的那一份。没有这一行的步骤
+  # 读数是"缺席"，不是 0 —— 这条由盖章侧的哨兵守，脚本这里不替它编值。
+  producer_metric=$(grep '^metric ' "$log" | tail -1 || true)
+  if [ -n "$producer_metric" ]; then
+    printf 'metrics %s %s\n' "$name" "${producer_metric#metric }" >> "$RESULTS_FILE"
+  fi
   echo ""
   echo "---- ${name} 输出（完整日志：${log}） ----"
   cat "$log"

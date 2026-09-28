@@ -41,4 +41,20 @@ for p in (root/'infrastructure/kubernetes').glob('*.yaml'):
 print('Compose, Kubernetes YAML, JSON, JSON Schema and OpenAPI contracts valid')
 PY
 python scripts/architecture-audit.py
-pytest -q tests/unit
+# 读数格式自己的对照：解析与渲染必须能互相还原，否则下面这些 `metric` 行会一路静默到盖章那天。
+python scripts/metric_line.py --self-test
+# 阶梯的条数也写成机器读数。文书里"权威运行第 1 步读出 N 条"这一格此前只能手抄：数在逐步日志里，
+# 而逐步日志被 .gitignore 挡在树外。`metric` 前缀由 run_step 抄进 SUMMARY.txt（见 scripts/metric_line.py）。
+# 退码必须逐字保留，所以这里显式接管管道：pytest 失败要仍然把整步判红。
+ladder_log=$(mktemp)
+set +e
+pytest -q tests/unit > "$ladder_log" 2>&1
+ladder_rc=$?
+set -e
+cat "$ladder_log"
+ladder_count=$(grep -o '[0-9][0-9]* passed' "$ladder_log" | tail -1 | awk '{print $1}')
+rm -f "$ladder_log"
+if [ -n "$ladder_count" ]; then
+  printf 'metric unit_passed=%s\n' "$ladder_count"
+fi
+exit $ladder_rc

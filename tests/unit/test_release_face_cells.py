@@ -428,3 +428,34 @@ def test_a_run_whose_a11y_leg_tested_another_tree_cannot_be_stamped():
     message = " ".join(str(arg) for arg in caught.value.args)
     assert "fffffff" in message and chosen["commit"][:7] in message, (
         f"the refusal did not name both commits so a reader could not act on it: {message!r}")
+
+
+def test_a_step_reading_round_trips_from_producer_to_reader(tmp_path):
+    """The three-party handoff of `metric k=v`: producer prints it, the chain prefixes it, reader parses it.
+
+    This is where the format could quietly break -- the producer's line carries no step name (the chain adds
+    one), so a parser written against the log shape would find nothing in SUMMARY, and vice versa. Both
+    halves are exercised through the real functions, and a run whose steps emitted nothing must read as
+    absent rather than as a zero the faces could stamp.
+    """
+    metrics = load_module("metric_line_under_test", ROOT / "scripts/metric_line.py")
+    line = metrics.emit(p50_s="4.095", p95_s="6.43", note="2 workspaces, 2 assets")
+    assert line.startswith("metric ") and not line.startswith("metrics "), line
+    summary = tmp_path / "SUMMARY.txt"
+    summary.write_text("STEP | RESULT | STARTED_AT | FINISHED_AT\n"
+                       "provider-regression-100 | PASS | 2026-01-01T00:00:00Z | 2026-01-01T00:01:00Z\n"
+                       f"metrics provider-regression-100 {line[len('metric '):]}\n", encoding="utf-8")
+    table = READER.step_metrics(tmp_path)
+    assert table == {"provider-regression-100": {"note": "2 workspaces, 2 assets",
+                                                 "p50_s": "4.095", "p95_s": "6.43"}}, table
+    empty = tmp_path / "older-run"
+    empty.mkdir()
+    (empty / "SUMMARY.txt").write_text("STEP | RESULT | STARTED_AT | FINISHED_AT\n"
+                                       "provider-regression-100 | PASS | a | b\n", encoding="utf-8")
+    assert READER.step_metrics(empty) == {}, "a run without readings produced something anyway"
+    # The mapping's step names must be steps the pipeline really writes, spelled exactly -- a typo here
+    # would read NOT-FOUND forever and the cells that consume it would refuse every round for a wrong reason.
+    newest = max((r for r in READER.runs() if r["fails"] == 0), key=lambda r: r["stamp"])
+    written = set(READER.rows_by_name(ROOT / "release-evidence" / f"acceptance-{newest['stamp']}"))
+    unknown = sorted({step for step, _key in READER.METRIC_FIGURES} - written)
+    assert not unknown, f"METRIC_FIGURES names steps the certified run never wrote: {unknown}"

@@ -20,6 +20,7 @@ from decimal import Decimal
 
 import e2e_client
 import httpx
+import metric_line as metrics
 
 BASE = "http://127.0.0.1:8000/api"
 SELLER = ("owner@example.local", "demo-owner")
@@ -251,6 +252,7 @@ def main():
 def _report():
     bad = [name for name, ok, _ in CHECKS if not ok]
     print(f"market reconciliation: {len(CHECKS) - len(bad)}/{len(CHECKS)} checks passed", flush=True)
+    metrics.emit(checks_passed=len(CHECKS) - len(bad), checks_total=len(CHECKS))
     if bad:
         raise SystemExit(1)
 

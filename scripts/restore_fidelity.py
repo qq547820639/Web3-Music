@@ -21,6 +21,7 @@ from pathlib import Path
 
 import e2e_client
 import httpx
+import metric_line as metrics
 
 ROOT = "http://127.0.0.1:8000"
 BASE = ROOT + "/api"
@@ -134,6 +135,7 @@ def compare():
             print(f"RESTORE FIDELITY FAIL: {line}", flush=True)
         raise SystemExit(1)
     print(f"restore fidelity passed: {len(before)} workspaces, {checked} assets byte-identical, ledgers unchanged", flush=True)
+    metrics.emit(workspaces=len(before), assets=checked)
 
 
 if __name__ == "__main__":

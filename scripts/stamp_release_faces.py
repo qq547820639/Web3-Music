@@ -34,7 +34,33 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "release-evidence"
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import metric_line as metrics  # noqa: E402  -- the line format lives with its writer, so reader and chain cannot diverge
 STEP_ROW = re.compile(r"^\s*(?:\d+\s*\|\s*)?([a-z0-9-]+)\s*\|\s*(PASS|FAIL|SKIPPED)\b", re.M)
+
+# Which `metrics <step> k=v` reading each face key comes from. These are the figures that could not be
+# stamped from the archive before: the per-step logs carry them, and `.gitignore` keeps those logs off the
+# tree, so a fresh clone -- or CI, or the next reviewer -- had nothing to recompute them from and the faces
+# carried whatever was last typed in. A step that emitted no line reads NOT-FOUND, never 0.
+METRIC_FIGURES = {
+    ("static-verify", "unit_passed"): "run_unit_passed",
+    ("provider-regression-100", "p50_s"): "regression_p50_s",
+    ("provider-regression-100", "p95_s"): "regression_p95_s",
+    ("provider-regression-100", "credits"): "regression_credits",
+    ("generic-rest-roundtrip", "p50_s"): "generic_p50_s",
+    ("generic-rest-roundtrip", "p95_s"): "generic_p95_s",
+    ("generic-rest-roundtrip", "credits"): "generic_credits",
+    ("lease-contention", "jobs"): "lease_jobs",
+    ("lease-contention", "workers"): "lease_workers",
+    ("lease-contention", "credits_settled"): "lease_credits_settled",
+    ("restore-fidelity-compare", "workspaces"): "fidelity_workspaces",
+    ("restore-fidelity-compare", "assets"): "fidelity_assets",
+}
+for _step, _prefix in (("mfa-drill", "mfa"), ("member-drill", "member"), ("erasure-drill", "erasure"),
+                       ("media-scan-drill", "media_scan"), ("report-drill", "report"),
+                       ("hold-drill", "hold"), ("market-reconciliation", "reconcile")):
+    METRIC_FIGURES[(_step, "checks_passed")] = f"{_prefix}_checks_passed"
+    METRIC_FIGURES[(_step, "checks_total")] = f"{_prefix}_checks_total"
 
 # The cells the faces quote, keyed by the step whose log carries them. A missing log is reported, not
 # guessed at -- an absent reading and a zero reading are different facts.
@@ -162,6 +188,20 @@ def step_window(run_dir: pathlib.Path, step: str) -> tuple[str, str] | None:
     return (parts[-2], parts[-1]) if parts else None
 
 
+def step_metrics(run_dir: pathlib.Path) -> dict:
+    """The `metrics <step> k=v` lines the pipeline copied into SUMMARY, keyed by step name."""
+    out = {}
+    try:
+        text = (run_dir / "SUMMARY.txt").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        step, readings = metrics.parse(line)
+        if step:
+            out[step] = readings
+    return out
+
+
 def browser_pair(run: dict) -> pathlib.Path | None:
     """The a11y report that belongs to this acceptance run, judged by the run's own row window.
 
@@ -214,6 +254,10 @@ def figures(run: dict) -> dict:
                        ("regression_step", "provider-regression-100"),
                        ("generic_step", "generic-rest-roundtrip")):
         got[name] = got["rows_by_name"].get(step, "NOT-FOUND")
+    # The tracked readings, from the lines the chain copied out of each step's log (see `step_metrics`).
+    table = step_metrics(run_dir)
+    for (step, key), name in METRIC_FIGURES.items():
+        got[name] = table.get(step, {}).get(key, "NOT-FOUND")
     # How many assets the restore-fidelity leg actually compared. The count moves with the demo database,
     # so a face that quotes it has to be stamped rather than remembered: one round's "4 个资产字节一致"
     # was still on the checklist while the archive read 2.

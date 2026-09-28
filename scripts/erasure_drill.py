@@ -27,6 +27,7 @@ import httpx
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 import e2e_client  # noqa: E402
+import metric_line as metrics  # noqa: E402
 
 BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000") + "/api"
 STAMP = time.strftime("%H%M%S", time.gmtime()) + uuid.uuid4().hex[:4]
@@ -389,6 +390,7 @@ def main() -> int:
 
     failed = [name for name, passed, _ in checks if not passed]
     print(f"\nerasure drill: {len(checks) - len(failed)}/{len(checks)} checks passed")
+    metrics.emit(checks_passed=len(checks) - len(failed), checks_total=len(checks))
     for name in failed:
         print(f"  - {name}")
     return 1 if failed else 0
