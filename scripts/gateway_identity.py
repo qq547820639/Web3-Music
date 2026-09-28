@@ -72,10 +72,13 @@ def served_paths(body: str) -> set[str] | None:
 def published_ports(compose_files: list[str]) -> list[str] | None:
     """The host ports THIS repository's compose project publishes for gateway:80, or None when unreadable.
 
-    Answering our contract is not yet proof of being *our* station: a second gateway built from the same
-    image answers identically. The tie an accidental clone cannot copy is the one the project itself
-    reports -- which port it published -- so the tested port has to be that one.
-    """
+    Answering our contract is not yet proof of being *our* station: measured 2026-09-28 23:06, a second
+    container started from this project's own gateway image on its own network, published on host :19085,
+    served /openapi.json with all 90 paths and had a single `lsof` claimant -- axes 1 and 2 both let it
+    through. The tie an accidental clone cannot copy is the one the project itself reports: which port it
+    published. So the tested port has to be that one, and axis 3 is what refuses the clone (rc=1, message
+    naming the port it was looking for).
+    """"""
     cmd = ["docker", "compose"]
     for f in compose_files:
         cmd += ["-f", f]

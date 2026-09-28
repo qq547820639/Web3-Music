@@ -122,7 +122,7 @@ KEEP_CAPACITY_STACK=1 \
 ②`netstat -anv -p tcp`——功能匹配不成立：本机输出里没有任何认领者列，按 18080/8080 筛一行不剩，给不出 pid。→ 淘汰（测量在案）。
 ③`fuser -n tcp <port>` 与 `ss`——功能匹配不成立：macOS 的 `fuser` 不认 `-n`（用法回显只有 `-cfu`/mount point 语义），`ss` 在本机 `command -v` 找不到。它们是 Linux 工具；CI 上的 ubuntu 能用而本机不可复核，判据必须两边都会跑，不能只在一侧成立。→ 淘汰。
 ④`psutil.net_connections()`——跨平台且纯 Python，但本机未安装（`importlib.util.find_spec('psutil')` 为 False），引入等于给容量腿加一条第三方依赖；macOS 非 root 能否拿到 pid 未验证。→ 不引：为一条 79 ms 的系统调用加依赖不划算，且成熟方案（系统自带 lsof）可用时不自研、不引包。
-第 3 轴问的不是「谁守着」而是「这端口是不是本项目发布的」，那一问只有一个可查答案：本项目自己的 `docker compose port gateway 80`。所以两条并用——lsof 数认领者、compose 报端口，任一读不到即判不通过；lsof 缺失走 `OSError` 分支（`tests/unit/test_gateway_identity.py` 里钉了这条：给出带原因的拒绝，不是 traceback）。
+第 3 轴问的不是「谁守着」而是「这端口是不是本项目发布的」，那一问只有一个可查答案：本项目自己的 `docker compose port gateway 80`。所以两条并用——lsof 数认领者、compose 报端口，任一读不到即判不通过；这一条不是纸面推理：23:06 用本项目自己的网关镜像另起一个容器接到同一网络、发布在宿主 19085 上，它对 `/openapi.json` 回了 90 条路径、`lsof` 也只有一个认领者（前两轴都放行），而门给出 rc=1 与「被压的端口 :19085 不在本仓库 compose 项目为 gateway:80 发布的端口里（发布的是 18080）」——同镜像克隆这一类正是被第 3 轴拦住的；原计划的「再加一条容器 project label 检查」经这一测确认不增加覆盖面（label 能答的，端口归属已经答了），因此不做。lsof 缺失走 `OSError` 分支（`tests/unit/test_gateway_identity.py` 里钉了这条：给出带原因的拒绝，不是 traceback）。
 
 **放行之后又跑了一支完整的宿主侧腿（22:35:58Z → 22:36:40Z，`CAPACITY_FROM_HOST=1`，日志 `capacity-results/20260928T223558Z.log`，身份门那一行也 tee 进了同一份日志）。**
 身份门先放行（同一形状：唯一认领者 `ssh(12031)`、90 条端点齐、端口出自本项目 `docker compose port`），随后 500 用户 × 2 共 1000 个请求
