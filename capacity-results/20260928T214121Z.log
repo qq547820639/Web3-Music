@@ -1,0 +1,7 @@
+Resonance 500-user capacity result
+target=GET http://gateway/api/projects
+users=500 requests_per_user=2 total=1000
+elapsed=11.311s throughput=88.4 req/s
+latency_ms p50=3144.6 p95=8357.5 p99=9074.5 mean=3708.7
+statuses={200: 1000} error_rate=0.000%
+gate=FAIL max_error_rate=1.0% max_p95_ms=800.0
