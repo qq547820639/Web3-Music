@@ -17,7 +17,10 @@ index.html 比对。本文件是它的容量侧同形物，三条判据合起来
 3. 它确实在本仓库自己的 compose 项目发布的 `gateway:80` 端口上（`docker compose port`）——回答本站的
    接口不等于就是本站：同一份镜像再起一个网关，前两条都会通过。
 
-三条都是「读不到就判不通过」：看不见不等于清白。用法（宿主侧压测之前跑一次，非零退码就别开压）：
+三条都是「读不到就判不通过」：看不见不等于清白。
+两道已知下限（写在这里而不是藏在代码里）：①`lsof` 是以本用户身份读的，别人用户下的监听者可能根本不出现在清单里，
+所以「一个认领者」是必要条件而非充分条件；②本站的 `requestfinished` 若因浏览器内部原因没落地，`outstanding`
+会留一个正数——那会让一次本不该降级的 shortfall 被降级，因此第 3 轴与契约覆盖都必须在场，单靠 unsettled 一条不够。用法（宿主侧压测之前跑一次，非零退码就别开压）：
 
     published=$(docker compose -f docker-compose.yml -f docker-compose.capacity500.yml port gateway 80 | cut -d: -f2)
     python3 scripts/gateway_identity.py --base-url "http://127.0.0.1:$published" --port "$published"

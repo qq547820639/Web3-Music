@@ -169,8 +169,19 @@ def outstanding_keys(unsettled: list) -> set[str]:
 
 
 def aborted_events(report: pathlib.Path) -> list[str]:
-    return [f"{e.get('label', '?')}: {e.get('event', '?')}" for e in
-            (json.loads(report.read_text(encoding="utf-8")).get("abort_timeline") or [])]
+    """The gate's no-answer requests, each with the document that issued it.
+
+    The document is carried because it is the field that settled the 2026-09-28 label question (port 4174
+    was the Control Plane's page, not a studio popup), and it is the only attribution the gate can print
+    without arguing about clocks -- the two observers' stamps disagree by more than a hundred milliseconds
+    within a single run.
+    """
+    out = []
+    for e in (json.loads(report.read_text(encoding="utf-8")).get("abort_timeline") or []):
+        document = e.get("document")
+        out.append(f"{e.get('label', '?')}: {e.get('event', '?')}"
+                   + (f" [document={document}]" if document else ""))
+    return out
 
 
 def request_axis(server: collections.Counter, server_all: collections.Counter,
