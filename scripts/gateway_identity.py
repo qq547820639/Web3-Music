@@ -78,7 +78,7 @@ def published_ports(compose_files: list[str]) -> list[str] | None:
     through. The tie an accidental clone cannot copy is the one the project itself reports: which port it
     published. So the tested port has to be that one, and axis 3 is what refuses the clone (rc=1, message
     naming the port it was looking for).
-    """"""
+    """
     cmd = ["docker", "compose"]
     for f in compose_files:
         cmd += ["-f", f]
