@@ -80,12 +80,16 @@ def compose_log(lo: str, hi: str) -> list[str]:
     return done.stdout.splitlines()
 
 
-def count(lines: list[str]) -> tuple[collections.Counter, int]:
-    """The 4xx census and how many request lines were parsed at all.
+def count(lines: list[str]) -> tuple[collections.Counter, int, collections.Counter]:
+    """The 4xx census, how many request lines were parsed at all, and every request line per endpoint.
 
-    Both are returned because "no refusals" and "nothing read" look identical in the first number alone.
+    All three are returned because "no refusals" and "nothing read" look identical in the first number
+    alone, and because the second one is the only denominator the request axis can be judged against: the
+    gate counts what it put on the wire whether or not an answer came back, so a 4xx the gate did not
+    record is only a blind spot if the api logged a request the gate never issued.
     """
     out: collections.Counter = collections.Counter()
+    every: collections.Counter = collections.Counter()
     parsed = 0
     for line in lines:
         m = LOG_LINE.search(line)
@@ -93,11 +97,12 @@ def count(lines: list[str]) -> tuple[collections.Counter, int]:
             continue
         parsed += 1
         _at, method, target, status = m.groups()
+        every[(method, target.split("?")[0])] += 1
         code = int(status)
         if code < 400:
             continue
         out[(method, target.split("?")[0], code)] += 1
-    return out, parsed
+    return out, parsed, every
 
 
 def browser_census(report: pathlib.Path) -> collections.Counter:
@@ -115,6 +120,64 @@ def browser_census(report: pathlib.Path) -> collections.Counter:
             method, path, status = m.groups()
             out[(method, path, int(status))] += int(n)
     return out
+
+
+def browser_requests(report: pathlib.Path) -> collections.Counter:
+    """What the auditor counted putting on the wire, keyed the way the api log keys it.
+
+    This is the witness that answers *before* any response, so unlike the refusal axis it cannot be
+    blinded by a page that was reloaded or closed while a request was in flight.
+    """
+    out: collections.Counter = collections.Counter()
+    for tail, n in (json.loads(report.read_text(encoding="utf-8")).get("request_counts") or {}).items():
+        m = re.match(r"^(\w+) (\S+)$", tail)
+        if m:
+            out[(m.group(1), m.group(2))] += int(n)
+    return out
+
+
+def has_request_axis(report: pathlib.Path) -> bool:
+    """Whether the report's own gate recorded this axis at all.
+
+    A report written before it existed has no reading, which is not the same as a reading of zero: judging
+    the axis there would turn every certified run on record into a false red.
+    """
+    return "request_counts" in json.loads(report.read_text(encoding="utf-8"))
+
+
+def unsettled_at_close(report: pathlib.Path) -> list[str] | None:
+    """The gate's own note about pages it closed while requests were still in flight.
+
+    None means the report predates the field -- no reading, which is not the same as an empty list, and the
+    caller keeps the shortfall red rather than excusing it with an absence.
+    """
+    return json.loads(report.read_text(encoding="utf-8")).get("unsettled_at_close")
+
+
+def aborted_events(report: pathlib.Path) -> list[str]:
+    return [f"{e.get('label', '?')}: {e.get('event', '?')}" for e in
+            (json.loads(report.read_text(encoding="utf-8")).get("abort_timeline") or [])]
+
+
+def request_axis(server: collections.Counter, server_all: collections.Counter,
+                 issued: collections.Counter) -> list[str]:
+    """Every endpoint that refused at least once must have been issued by the auditor as often as the api logged it.
+
+    Judged only on refusing endpoints: the same window holds the health check's `GET /ready` and
+    Prometheus' `GET /metrics`, which no page issues and the gate was never meant to account for. A
+    shortfall here is the other half of a one-event disagreement: it says something outside the armed
+    pages -- and outside this process's own `api_post` calls -- talked to the api.
+    """
+    refusing = {(method, path) for (method, path, _code) in server}
+    problems = []
+    for (method, path), n in sorted(server_all.items()):
+        if (method, path) not in refusing or path == INJECTED:
+            continue
+        if issued.get((method, path), 0) < n:
+            problems.append(f"the api logged {n} request line(s) for {method} {path} while the auditor "
+                            f"counted {issued.get((method, path), 0)} it issued, so traffic the gate never "
+                            "saw reached the api from outside its armed pages")
+    return problems
 
 
 def surplus_times(lines: list[str], server: collections.Counter,
@@ -147,21 +210,35 @@ def degraded(report: pathlib.Path) -> bool:
     return "refusal_counts" not in json.loads(report.read_text(encoding="utf-8"))
 
 
-def reconcile(server: collections.Counter, seen: collections.Counter, parsed: int, raw: int) -> list[str]:
+def shortfall(server: collections.Counter, seen: collections.Counter) -> list[tuple]:
+    """The tuples the api answered more often than the gate recorded, as (tuple, server, gate) triples."""
+    return [(t, n, seen.get(t, 0)) for t, n in sorted(server.items()) if seen.get(t, 0) < n]
+
+
+def reconcile(server: collections.Counter, seen: collections.Counter, parsed: int, raw: int,
+              unsettled: list[str] | None = None) -> list[str]:
     """Server ⊆ browser, with one required exception: what the gate fulfills never reaches the server.
 
     Counts are compared as data, not as rendered strings. A page can see a refusal the server never
     answered (an injected one), but the reverse would mean the gate missed traffic it was sitting on --
     which is precisely the blind spot this census exists to close.
+
+    `unsettled` is what the gate itself recorded about its own teardown: pages that had not gone
+    network-idle when the walk closed them. A shortfall with such a page named is the browser's answer
+    being logged after the page was already gone, which no page-side observer could record; it is reported
+    by the caller instead of judged. An empty list, or no reading at all, keeps the shortfall red -- the
+    exemption is only available when the run itself proves the window was open, and the gate now settles
+    its pages before closing them so that this is the exception rather than the routine.
     """
     problems = []
     if parsed == 0:
         return [f"the window held {raw} log line(s) and none parsed as a request line, so a zero here "
                 "means the parser saw nothing, not that the server answered no refusals"]
-    for tuple_, n in sorted(server.items()):
-        if seen.get(tuple_, 0) < n:
-            problems.append(f"the server answered {n}x {tuple_[0]} {tuple_[1]} -> {tuple_[2]} but the "
-                            f"gate recorded {seen.get(tuple_, 0)}")
+    for tuple_, n, got in shortfall(server, seen):
+        if unsettled:
+            continue
+        problems.append(f"the server answered {n}x {tuple_[0]} {tuple_[1]} -> {tuple_[2]} but the "
+                        f"gate recorded {got}")
     for tuple_ in sorted(seen):
         if tuple_[1] == INJECTED and server.get(tuple_, 0):
             problems.append(f"the injected route {INJECTED} reached the api, so the stale-panel arm is "
@@ -180,7 +257,8 @@ def between(counter: collections.Counter, low: int, high: int) -> int:
 
 
 def render(run: dict, lo: str, hi: str, server: collections.Counter, seen: collections.Counter,
-           parsed: int, raw: int, provenance: str = "") -> str:
+           parsed: int, raw: int, provenance: str = "", issued: collections.Counter | None = None,
+           aborted: int | None = None) -> str:
     head = [
         "# generated by scripts/server_refusal_census.py",
         f"# evidence source: {run['stamp']} (commit {str(run['commit'])[:7]})",
@@ -193,8 +271,14 @@ def render(run: dict, lo: str, hi: str, server: collections.Counter, seen: colle
         f"server_5xx_events: {between(server, 500, 600)}",
         f"gate_4xx_events: {between(seen, 400, 500)}",
         f"gate_5xx_events: {between(seen, 500, 600)}",
-        "STATUS METHOD PATH COUNT",
     ]
+    # Written only when the report carried the axis: an absent reading stays absent rather than becoming a
+    # zero a later reader would quote as a measurement.
+    if issued is not None:
+        head.append(f"gate_issued_events: {sum(issued.values())}")
+    if aborted is not None:
+        head.append(f"gate_aborted_events: {aborted}")
+    head.append("STATUS METHOD PATH COUNT")
     rows = [f"{code:>5} {method:<6} {path} {n}" for (method, path, code), n in sorted(server.items())]
     return "\n".join(head + rows) + "\n"
 
@@ -230,6 +314,9 @@ def self_test() -> int:
     arms.append((f"both docker line shapes parse (read {sample[1]} of 4 lines, {sum(sample[0].values())} "
                  f"refusals)", sample[1] == 3 and sample[0][("GET", "/api/auth/me", 401)] == 1
                  and sample[0][("POST", "/api/account/erasure", 403)] == 1))
+    arms.append((f"the 200 is counted too, because the request axis needs every line ({dict(sample[2])})",
+                 sample[2][("GET", "/api/auth/me")] == 1 and sample[2][("GET", "/api/x")] == 1
+                 and sample[2][("POST", "/api/account/erasure")] == 1))
     surplus_lines = [f'api-1  | {t}Z INFO:     172.28.0.9:1 - "GET /api/auth/me HTTP/1.1" 401 Unauthorized'
                      for t in ("2026-01-01T00:00:01", "2026-01-01T00:00:02", "2026-01-01T00:00:03")]
     three, two = (collections.Counter({("GET", "/api/auth/me", 401): n}) for n in (3, 2))
@@ -245,6 +332,17 @@ def self_test() -> int:
     stamps = surplus_times(subsecond, sub, gate2)[("GET", "/api/auth/me", 401)]
     arms.append(("sub-second stamps survive the parser, so same-second events stay countable",
                  all(s.startswith("2026-01-01T00:00:01.") for s in stamps) and len(stamps) == 1))
+    one_short_server = collections.Counter({("GET", "/api/auth/me", 401): 3})
+    two_seen = collections.Counter({("GET", "/api/auth/me", 401): 2})
+    arms.append(("a shortfall the gate cannot explain stays red",
+                 any("2x" in p or "3x" in p for p in reconcile(one_short_server, two_seen, 40, 60, []))))
+    arms.append(("a shortfall with no reading on the gate's side stays red too",
+                 bool(reconcile(one_short_server, two_seen, 40, 60, None))))
+    arms.append(("a shortfall the gate named an unsettled page for is excused, not tolerated",
+                 reconcile(one_short_server, two_seen, 40, 60, ["desktop-stale-admin: TimeoutError"]) == []
+                 and bool(reconcile(one_short_server, two_seen, 40, 60, []))))
+    arms.append(("the shortfall list is what the note prints, as data",
+                 shortfall(one_short_server, two_seen) == [(("GET", "/api/auth/me", 401), 3, 2)]))
     fake_run = {"stamp": "acceptance-selftest", "commit": "0" * 40}
     text = render(fake_run, "a", "b", server, seen, 40, 60)
     arms.append(("the two 4xx lines compare the same class, with the injected 500 on its own line",
@@ -255,6 +353,31 @@ def self_test() -> int:
     text_real = render(fake_run, "a", "b", leaked, seen, 40, 60)
     arms.append(("a real 500 in the window cannot inflate the figure the faces quote as 4xx",
                  "server_4xx_events: 30" in text_real and "server_5xx_events: 1" in text_real))
+    # The request axis: the witness taken before any answer, which is what lets a one-event disagreement be
+    # attributed instead of argued about. Each arm is the polarity that would otherwise read as green.
+    refused = collections.Counter({("GET", "/api/auth/me", 401): 2})
+    logged = collections.Counter({("GET", "/api/auth/me"): 5, ("GET", "/ready"): 9})
+    issued = collections.Counter({("GET", "/api/auth/me"): 5})
+    arms.append(("a fully accounted endpoint raises nothing on the request axis",
+                 request_axis(refused, logged, issued) == []))
+    arms.append(("one request line the gate never issued is named, with both counts",
+                 any("logged 6 request line(s) for GET /api/auth/me while the auditor counted 5" in p
+                     for p in request_axis(refused, collections.Counter({("GET", "/api/auth/me"): 6}),
+                                           issued))))
+    arms.append(("the health check's lines are not the gate's to account for",
+                 request_axis(refused, collections.Counter({("GET", "/ready"): 9}),
+                              collections.Counter()) == []))
+    arms.append(("the endpoint the gate fulfills itself is exempt on this axis too",
+                 request_axis(refused, collections.Counter({("GET", INJECTED): 1}),
+                              collections.Counter()) == []))
+    empty_issued = collections.Counter()
+    arms.append(("an endpoint the gate issued nothing for is still named, not skipped",
+                 any("counted 0 it issued" in p for p in
+                     request_axis(refused, collections.Counter({("GET", "/api/auth/me"): 3}), empty_issued))))
+    axis_text = render(fake_run, "a", "b", server, seen, 40, 60, issued=logged, aborted=2)
+    arms.append(("the axis is written when the report carried it and left out when it did not",
+                 "gate_issued_events: 14" in axis_text and "gate_aborted_events: 2" in axis_text
+                 and "gate_issued_events" not in text and "gate_aborted_events" not in text))
     width = max(len(name) for name, _ in arms)
     bad = 0
     for name, ok in arms:
@@ -298,20 +421,45 @@ def main():
         provenance = "# window = the browser-a11y row's own stamps in SUMMARY.txt"
         lo, hi = window(run)
     lines = compose_log(lo, hi)
-    server, parsed = count(lines)
+    server, parsed, every = count(lines)
     seen = browser_census(report)
-    problems = reconcile(server, seen, parsed, len(lines))
+    unsettled = unsettled_at_close(report)
+    problems = reconcile(server, seen, parsed, len(lines), unsettled)
     if degraded(report):
         problems.insert(0, f"{report.parent.name}/report.json has no `refusal_counts`, so the gate's side "
                            "of the comparison is empty by construction -- re-run the browser leg to get a "
                            "report that records per-endpoint counts")
+    # The request axis is the attribution: it was taken before any answer came back, so it can say whether a
+    # refusal the gate did not record is a response the page never got or traffic from a session the gate
+    # never armed. A report that predates the axis has no reading, which is reported as such rather than
+    # judged as a violation.
+    issued = browser_requests(report) if has_request_axis(report) else None
+    if issued is not None:
+        problems += request_axis(server, every, issued)
+    aborted = aborted_events(report)
+    short = shortfall(server, seen)
+    if short and unsettled:
+        print("# the refusal axis is short by " + ", ".join(f"{n - got}x {m} {pth} -> {c}"
+              for (m, pth, c), n, got in short) + "; the gate recorded that these pages had not gone "
+              "network-idle before close, so those answers were logged to a page that was going away: "
+              + " | ".join(unsettled), file=sys.stderr)
     if problems:
-        # Name the when, not just the how-many, so a red of this kind is triageable from the log alone.
+        if issued is None:
+            print("# request axis: the paired report has no `request_counts`, so nothing here can say "
+                  "whether the gate issued the traffic the api logged -- an absent reading, not a red",
+                  file=sys.stderr)
+        for line in aborted:
+            print(f"# the gate recorded a request that got no answer back: {line}", file=sys.stderr)
         first, last = report_span(report)
         for key, when in sorted(surplus_times(lines, server, seen).items()):
-            print(f"# surplus server event(s) for {key[0]} {key[1]} -> {key[2]} at {', '.join(when)}; "
-                  f"the gate's own refusals run {first} .. {last}", file=sys.stderr)
-    text = render(run, lo, hi, server, seen, parsed, len(lines), provenance)
+            # The newest N stamps of the disputed tuple, not an attribution: which of them went unmatched is
+            # what the request axis answers, and clock order alone cannot say it on this host (the two
+            # observers' stamps disagree by -32..+143 ms across one run, measured 2026-09-28).
+            print(f"# {key[0]} {key[1]} -> {key[2]}: the server answered it more often than the gate "
+                  f"recorded; its own stamps for that tuple end at {', '.join(when)}, and the gate's "
+                  f"refusals run {first} .. {last}", file=sys.stderr)
+    text = render(run, lo, hi, server, seen, parsed, len(lines), provenance, issued=issued,
+                  aborted=len(aborted) if issued is not None else None)
     print(text, end="")
     print(f"artifact would go to: {report.parent / 'server-refusals.txt'}")
     for problem in problems:

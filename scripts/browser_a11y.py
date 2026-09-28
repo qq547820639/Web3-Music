@@ -20,6 +20,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -97,6 +98,22 @@ def _utc_ms() -> str:
     """
     now = time.time()
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now)) + ".%03dZ" % int((now % 1) * 1000)
+
+
+def url_path(url: str) -> str:
+    """The path the api itself logs: no origin, no query.
+
+    Both observers in the cross-check must key on the same string or the comparison is two censuses of
+    different things -- the api logs `GET /api/projects?limit=20`, the release record quotes one endpoint.
+    """
+    return re.sub(r"^[a-z]+://[^/]+", "", url).split("?")[0]
+
+
+# Requests this process makes outside any page (scripts/browser_a11y.py:api_post). They land in the same
+# api access log the census reads, so an uncounted host call would read as "the auditor missed traffic" --
+# the false red the request axis exists to avoid.
+HOST_ISSUED: collections.Counter = collections.Counter()
+HOST_TIMELINE: list[dict] = []
 
 
 def wait_painted(page, gap_ms: int = 250, tries: int = 12) -> bool:
@@ -237,19 +254,86 @@ class Auditor:
         # the api access log needs the when: 27 server-side 401s against 26 gate-side ones is a different
         # defect depending on whether the extra falls at the run's boundary or in its middle.
         self.refusal_timeline: list[dict] = []
+        # The refusal axis can only count what a page was handed. When the two observers disagree by one
+        # event, the question is "did the browser send it and never get the answer back" or "did a session
+        # the auditor never armed talk to the api" -- and only a counter taken *before* the request leaves
+        # can tell them apart. So this one counts every request this process put on the wire.
+        self.issued: collections.Counter = collections.Counter()
+        # ...and this records the requests that got no response at all, which is the face of a refusal the
+        # response hook structurally cannot see (the page was reloaded or closed while it was in flight).
+        self.aborted: list[dict] = []
+        # Pages that had not gone network-idle when the walk closed them -- the one condition under which a
+        # refusal can be logged by the api and never reach any observer, so the census reads this list
+        # before it reads a shortfall on the refusal axis as a blind spot.
+        self.unsettled: list[str] = []
+        # Pages and contexts are keyed by id() with the object kept as the value: holding the reference is
+        # what makes the address a stable key, and dropping it would let a recycled address inherit another
+        # page's "already armed" mark -- a self-inflicted version of the blindness this fixes.
+        self._armed: dict[int, object] = {}
+        self._armed_contexts: dict[int, object] = {}
+        self._observed: dict[int, object] = {}
+        self._labels: dict[int, str] = {}
+        self._context_labels: dict[int, str] = {}
         self.started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self.crashes: list[str] = []
         self.csp_blocks: list[str] = []
         self.security_headers: dict[str, str] = {}
 
     def arm(self, page):
+        self._arm_page(page)
+        context = page.context
+        if id(context) in self._armed_contexts:
+            return
+        self._armed_contexts[id(context)] = context
+
+        def on_page(later):
+            self._arm_page(later)
+            # Watched, not merely routed: a page this context opens later still reaches the api, and an
+            # unobserved one would read as the gate missing traffic.
+            #
+            # Deferred dispatch is the trap here: Playwright delivers the "page" event while the next
+            # blocking call runs, which in the main loop is *after* that walk has already labelled its own
+            # page. So this label is a fallback -- overwriting it would rename the Control Plane's
+            # refusals after the studio page that shares its context (measured on
+            # `browser-a11y-20260928T205945Z`, where every `-admin` refusal came out labelled
+            # `…-studio (popup)`).
+            _ctx, origin = self._context_labels.get(id(context), (None, "unlabelled"))
+            self.attach_console(later, f"{origin} (popup)", fallback=True)
+
+        context.on("page", on_page)
+
+    def _arm_page(self, page):
+        if id(page) in self._armed:
+            return
+        self._armed[id(page)] = page
         page.route(re.compile(".*"), self._route)
+
+    def settle(self, page, label: str):
+        """Give the page's own outstanding requests an answer before it is closed.
+
+        Without this the gate's refusal axis is short by however many requests were in flight at teardown:
+        the api logs the answer, the browser never hands it to a page that is going away, and `requestfailed`
+        says nothing either -- which is exactly the shape the census could not attribute until the request
+        axis proved the auditor had issued every one of those lines. Waiting for the network to go idle
+        closes the blind window instead of tolerating it, and a page that never goes idle is recorded rather
+        than silently excused.
+        """
+        try:
+            page.wait_for_load_state("networkidle", timeout=8000)
+        except Exception as exc:
+            self.unsettled.append(f"{label}: {type(exc).__name__}")
+
+    def settle_context(self, context, label: str):
+        """Settle every page a context still holds, so no in-flight answer is lost to teardown."""
+        for page in list(context.pages):
+            self.settle(page, label)
 
     def _route(self, route):
         request = route.request
         if request.url.endswith(self.axe_path):
             route.fulfill(status=200, content_type="application/javascript", body=self.axe)
             return
+        self.issued[f"{request.method} {url_path(request.url)}"] += 1
         if self.relax_csp and request.resource_type == "document":
             # axe injects its own styles; under the shipped style-src 'self' it is
             # blinded and reports bogus contrast failures. Strip the policy only for
@@ -260,16 +344,43 @@ class Auditor:
             return
         route.continue_()
 
+    def account_host_calls(self):
+        """Fold this process's out-of-page requests into the same axes the pages feed.
+
+        The api answers them like any other request, and the census reads that answer: leaving them out
+        would let the auditor's own provisioning call read as "a session the gate never armed".
+        """
+        self.issued.update(HOST_ISSUED)
+        for entry in HOST_TIMELINE:
+            self.refusal_timeline.append(entry)
+            self.refusals.append(f"{entry['label']}: {entry['event']}")
+
     def record_headers(self, origin: str, response):
         if self.relax_csp or not response or response.status != 200:
             return
         self.security_headers[origin] = response.headers.get("content-security-policy", "<absent>")
 
-    def attach_console(self, page, label: str):
+    def attach_console(self, page, label: str, fallback: bool = False):
+        context = page.context
+        self._context_labels.setdefault(id(context), (context, label))
+        if not fallback or id(page) not in self._labels:
+            # The walk's own label is authoritative; the context hook's is only a fallback, because Playwright
+            # delivers the "page" event during the next blocking call -- often after the walk already named
+            # the page, and overwriting it there would relabel that session's refusals.
+            self._labels[id(page)] = label
+        if id(page) in self._observed:
+            # The context hook may have reached this page first; re-registering the listeners would instead
+            # record every refusal this page sees twice.
+            return
+        self._observed[id(page)] = page
+
+        def named() -> str:
+            return self._labels.get(id(page), label)
+
         def on_console(message):
             if message.type != "error":
                 return
-            entry = f"{label}: {message.text}"
+            entry = f"{named()}: {message.text}"
             self.errors.append(entry)
             if CSP_BLOCK.search(message.text):
                 self.csp_blocks.append(entry)
@@ -285,17 +396,28 @@ class Auditor:
         def on_response(response):
             if response.status < 400:
                 return
-            path = re.sub(r"^[a-z]+://[^/]+", "", response.url).split("?")[0]
-            event = f"{label}: {response.request.method} {path} -> {response.status}"
+            path = url_path(response.url)
+            event = f"{named()}: {response.request.method} {path} -> {response.status}"
             self.refusals.append(event)
             self.refusal_timeline.append({
                 "ts": _utc_ms(),
-                "label": label,
+                "label": named(),
+                "document": page.url,
                 "event": f"{response.request.method} {path} -> {response.status}",
             })
 
+        def on_request_failed(request):
+            if request.method in ("GET", "POST", "PUT", "PATCH", "DELETE") and url_path(request.url).startswith("/api/"):
+                self.aborted.append({
+                    "ts": _utc_ms(),
+                    "label": named(),
+                    "document": page.url,
+                    "event": f"{request.method} {url_path(request.url)} -> no response ({request.failure})",
+                })
+
         page.on("response", on_response)
-        page.on("pageerror", lambda e: self.crashes.append(f"{label}: uncaught exception: {e}"))
+        page.on("requestfailed", on_request_failed)
+        page.on("pageerror", lambda e: self.crashes.append(f"{named()}: uncaught exception: {e}"))
 
     def script_url(self, page) -> str:
         origin = page.evaluate("() => location.origin")
@@ -517,6 +639,7 @@ def walk_boot_click(browser, size, auditor: Auditor, viewport: str) -> list[str]
                     "so the view the click switched to was left without data"]
         return []
     finally:
+        auditor.settle_context(context, f"{viewport}-boot-click")
         context.close()
 
 
@@ -724,6 +847,83 @@ def self_test(auditor: Auditor) -> int:
         )
         clip_probe = clip.evaluate(CLIP_JS)
 
+        # The observer's own coverage and its two axes, on a real second page in an armed context. The
+        # refusal axis records only answers a page was handed; the request axis counts what the auditor put
+        # on the wire; the abort axis names the requests that got no answer. The census needs all three: a
+        # server line the gate did not record is only attributable once the gate can say whether it issued
+        # the request at all. Whether `w3m-abort-probe.invalid` (reserved by RFC 6761) answers with a proxy
+        # 502 or with nothing at all depends on this host's network settings, so the arms below ask only
+        # that the request be accounted for exactly once, on whichever axis the outcome belongs to.
+        armed_context = browser.new_context(viewport=VIEWPORTS["desktop"])
+        walk_page = armed_context.new_page()
+        auditor.arm(walk_page)
+        auditor.attach_console(walk_page, "self-test-walk")
+        popup = armed_context.new_page()
+        popup_outcome = []
+        for target in ("popup-a", "popup-b"):
+            try:
+                popup.goto(f"http://w3m-abort-probe.invalid/api/{target}", timeout=8000)
+                popup_outcome.append(f"{target}: answered")
+            except Exception as exc:
+                popup_outcome.append(f"{target}: {str(exc)[:60]}")
+            if target == "popup-a":
+                # Reached by the context hook first: the walk's own label has to replace the hook's without
+                # giving the page a second set of listeners, or every refusal it sees counts twice.
+                auditor.attach_console(popup, "self-test-popup")
+
+        # A request with no answer at all, produced without depending on the network: Playwright consults
+        # the most recently registered route first -- the same ordering fact walk_stale_panels pins -- so
+        # this abort is answered by the fixture's own handler and never reaches the auditor's catch-all.
+        # That is the point: it proves the abort axis fires, and that it is a different witness than the
+        # request axis.
+        popup.route("**/api/aborted-x", lambda route: route.abort())
+        try:
+            popup.goto("http://w3m-abort-probe.invalid/api/aborted-x", timeout=8000)
+        except Exception:
+            pass
+        popup.close()
+        walk_page.close()
+        armed_context.close()
+
+        def accounted(target: str) -> list[str]:
+            hits = [e["label"] for e in auditor.aborted if f"/api/{target}" in e["event"]]
+            hits += [r.split(": ", 1)[0] for r in auditor.refusals if f"/api/{target}" in r]
+            return hits
+
+        popup_a, popup_b = accounted("popup-a"), accounted("popup-b")
+        aborted_x = accounted("aborted-x")
+        refusal_of_aborted = [r for r in auditor.refusals if "/api/aborted-x" in r]
+
+        # The settle window, both polarities. A page whose request never gets an answer has to be named in
+        # `unsettled` -- that note is the only thing letting the census tell "the answer arrived as the page
+        # went away" from "an observer never saw this session" -- and a page that does go idle must stay out
+        # of it, or the note becomes a rubber stamp. The hanging request comes from a route handler that
+        # never resolves, so no port or server is involved.
+        settle_context = browser.new_context(viewport=VIEWPORTS["desktop"])
+        settle_page = settle_context.new_page()
+        auditor.arm(settle_page)
+        auditor.attach_console(settle_page, "self-test-settle")
+        settle_page.route("**/app", lambda route: route.fulfill(
+            status=200, content_type="text/html", body="<!doctype html><title>settle</title><p>ok</p>"))
+        # Deliberately never resolved: when the context closes over it asyncio prints a CancelledError on
+        # stderr. That traceback belongs to this fixture, not to the gate -- the verdict line is the only
+        # thing the chain reads, and `unsettled` above is what this arm asserts.
+        settle_page.route("**/api/never-answers", lambda route: None)
+        settle_page.goto("http://settle.local/app", wait_until="load")
+        settle_page.evaluate("() => { fetch('/api/never-answers').catch(() => {}); return 1; }")
+        idle_context = browser.new_context(viewport=VIEWPORTS["desktop"])
+        idle_page = idle_context.new_page()
+        auditor.arm(idle_page)
+        auditor.attach_console(idle_page, "self-test-idle")
+        idle_page.route("**/calm", lambda route: route.fulfill(
+            status=200, content_type="text/html", body="<!doctype html><title>calm</title><p>ok</p>"))
+        idle_page.goto("http://settle.local/calm", wait_until="load")
+        auditor.settle_context(settle_context, "self-test-settle")
+        auditor.settle_context(idle_context, "self-test-idle")
+        unsettled_probe = list(auditor.unsettled)
+        settle_context.close()
+        idle_context.close()
+
         # The refusal census, both polarities, on a real response rather than on a hand-built list: the
         # 403 has to land in `refusals` with its method and path, and the 200 on the next request must
         # not -- a census that recorded everything would let the record claim refusals it never saw.
@@ -829,6 +1029,32 @@ def self_test(auditor: Auditor) -> int:
     if any("probe-allowed" in r for r in refusal_probe):
         problems.append("the refusal census recorded a 200 as a refusal, so a count of refusals would not "
                         "mean refusals")
+    # The two axes the census needs to attribute a disagreement, each with the polarity that would otherwise
+    # make a silent observer look like a working one.
+    if popup_a != ["self-test-walk (popup)"]:
+        problems.append(f"a page the armed context opened later was not watched under the hook's own label: "
+                        f"{popup_a!r} (outcome: {'; '.join(popup_outcome)})")
+    if popup_b != ["self-test-popup"]:
+        problems.append("the walk's own attach_console either gave the popup a second set of listeners or "
+                        f"its label did not win: {popup_b!r}")
+    if (auditor.issued["GET /api/popup-a"], auditor.issued["GET /api/popup-b"]) != (1, 1):
+        problems.append("the request axis must count each request the armed pages put on the wire exactly "
+                        f"once, whatever the answer was (read "
+                        f"{ {k: v for k, v in auditor.issued.items() if 'popup-' in k} })")
+    if not any(u.startswith("self-test-settle:") for u in unsettled_probe):
+        problems.append("a page still holding an unanswered request when it was closed was not named in "
+                        f"`unsettled` (read {unsettled_probe!r}), so a shortfall would have no evidence to "
+                        "explain it with and would have to be tolerated instead")
+    if any(u.startswith("self-test-idle:") for u in unsettled_probe):
+        problems.append(f"the page that really did go idle was named as unsettled: {unsettled_probe!r}")
+    if any("/api/never-answers" in r for r in auditor.refusals):
+        problems.append("a request that was never answered was recorded as a refusal")
+    if aborted_x != ["self-test-popup"] or refusal_of_aborted:
+        problems.append("a request that never got an answer must land on the abort axis and nowhere else "
+                        f"(abort axis read {aborted_x!r}, refusal axis read {refusal_of_aborted!r})")
+    if auditor.issued["GET /api/aborted-x"]:
+        problems.append("the request axis counted a request Playwright answered from the fixture's own "
+                        "handler, so the two axes would claim a call the api never saw")
     if csp_failures({"https://x": "script-src 'self'"}, ["https://x"]):
         problems.append("csp check rejected a policy that pins script-src to 'self'")
     if not csp_failures({}, ["https://x"]):
@@ -882,11 +1108,21 @@ def compose_sql(statement: str) -> str:
 
 
 def api_post(path: str, body: dict, token: str = "") -> dict:
+    key = f"POST {url_path(path)}"
+    HOST_ISSUED[key] += 1
     request = urllib.request.Request(WEB_URL + path, data=json.dumps(body).encode(), method="POST",
                                      headers={"Content-Type": "application/json",
                                               **({"Authorization": "Bearer " + token} if token else {})})
-    with urllib.request.urlopen(request, timeout=40) as response:
-        return json.loads(response.read().decode())
+    try:
+        with urllib.request.urlopen(request, timeout=40) as response:
+            return json.loads(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        # The api answers a host-side call exactly as it answers a page's, so the census may only read an
+        # unaccounted server line as a blind spot once these are on the ledger too. HTTPError is an OSError
+        # subclass, so the callers that catch it keep working; this only adds the witness.
+        if exc.code >= 400:
+            HOST_TIMELINE.append({"ts": _utc_ms(), "label": "host", "event": f"{key} -> {exc.code}"})
+        raise
 
 
 class SecondFactor:
@@ -1404,6 +1640,7 @@ def walk_stale_panels(browser, size, auditor: Auditor, viewport: str) -> list[st
             failures.append("a single failed load blanked the overview too, so the operator cannot tell "
                             "which figures are current")
     finally:
+        auditor.settle_context(context, f"{viewport}-stale-admin")
         context.close()
     return failures
 
@@ -1435,6 +1672,7 @@ def walk_roster_refusal(browser, size, auditor: Auditor, viewport: str) -> list[
         if page.locator("#stats .stat").count() == 0:
             failures.append("the non-administrator's own workspace figures disappeared with the platform view")
     finally:
+        auditor.settle_context(context, f"{viewport}-refusal-admin")
         context.close()
     return failures
 
@@ -1589,6 +1827,7 @@ def main() -> int:
                         try:
                             team += walk_team(page, invitee, auditor, viewport, team_email)
                         finally:
+                            auditor.settle_context(invitee_context, f"{viewport}-invitee")
                             invitee_context.close()
                         retire_team_probe(team_user)
                 if stage == "axe":
@@ -1627,6 +1866,7 @@ def main() -> int:
                     # is not the administrator, one where a panel's load really fails.
                     roster += walk_roster_refusal(browser, size, auditor, viewport)
                     roster += walk_stale_panels(browser, size, auditor, viewport)
+                auditor.settle_context(context, f"{viewport}-{stage}")
                 context.close()
         browser.close()
     if probe_email:
@@ -1661,6 +1901,7 @@ def main() -> int:
                 + keyboard + csp_failures(auditor.security_headers, [WEB_URL, ADMIN_URL])
                 + hidden_failures(auditor.scans)
                 + sorted(set(auditor.crashes)) + sorted(set(auditor.csp_blocks)))
+    auditor.account_host_calls()
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "git_commit": git_commit(),
@@ -1701,6 +1942,17 @@ def main() -> int:
         # The timeline is what lets a disagreement with the api access log be attributed rather than argued
         # about: `refusal_counts` says how many, this says when and from which page.
         "refusal_timeline": sorted(auditor.refusal_timeline, key=lambda e: (e["ts"], e["label"])),
+        # The other half of the attribution: the refusal axis can only count answers a page was handed,
+        # while this counts requests the auditor itself put on the wire -- before any response, abort or
+        # teardown could hide one. `server_refusal_census.py` compares it against every request line the api
+        # logged for a refusing endpoint, which is what separates "the page never got the answer" from
+        # "something outside the armed pages was talking to the api".
+        "request_counts": {tail: n for tail, n in sorted(auditor.issued.items())},
+        "request_events": sum(auditor.issued.values()),
+        "aborted_requests": sorted({e["event"] for e in auditor.aborted}),
+        "aborted_events": len(auditor.aborted),
+        "unsettled_at_close": sorted(set(auditor.unsettled)),
+        "abort_timeline": sorted(auditor.aborted, key=lambda e: (e["ts"], e["label"])),
         "gate_started_at": auditor.started_at,
         "gate_last_refusal_at": max((e["ts"] for e in auditor.refusal_timeline), default=None),
         "scans": auditor.scans,
@@ -1728,6 +1980,10 @@ def main() -> int:
           f"{len(auditor.refusals)} event(s)")
     for line in sorted(set(auditor.refusals)):
         print(f"    - {line}")
+    print(f"  requests the auditor put on the wire: {report['request_events']} event(s), of which "
+          f"{report['aborted_events']} never got an answer back")
+    for line in report["aborted_requests"]:
+        print(f"    - no response: {line}")
     print(f"report: {out_dir / 'report.json'}")
 
     tolerable = failures[: args.allow_blocking]
