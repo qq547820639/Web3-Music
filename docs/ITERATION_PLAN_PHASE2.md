@@ -6,7 +6,7 @@
 ## 背景与边界
 
 - 本机**无 Docker / 无浏览器**：本轮前端改动只能做 `node --check` + 结构走查，无法浏览器点验；E2E 仍是环境阻塞项，不在本轮范围。
-- 数据已就绪：`generation_steps`（worker 写入 / `main.py:343` 返回）、`ab_choice`/`candidate_played` 事件通道（`creation.py:214`）、28 维质量数据（`quality.py` 返回 `PAC/TSMI/NSRQ/C3AC` + 28 维 + `CriticalPenalty`）。
+- 数据已就绪：`generation_steps`（worker 写入 / `main.py:1018` 返回）、`ab_choice`/`candidate_played` 事件通道（`creation.py:214`）、28 维质量数据（`quality.py` 返回 `PAC/TSMI/NSRQ/C3AC` + 28 维 + `CriticalPenalty`）。
 - 原则：**最小变更、纯前端为主、零第三方依赖（雷达图用原生 SVG）**；SSE 因同步 psycopg2 代码库存在事件循环阻塞风险，降为 P1 可选，优先用优化后的轮询渲染时间线。
 
 ## 任务分解（按优先级）

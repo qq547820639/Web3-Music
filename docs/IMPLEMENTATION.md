@@ -113,10 +113,12 @@ RESTORE_CONFIRM=YES ./scripts/restore.sh backups/<name>
 
 ## 10. CI/CD
 
-GitHub Actions 分三条链：
+GitHub Actions 分五条链：
 
 1. Static/Unit：Python、JavaScript、Shell、Compose、JSON/Schema/OpenAPI、架构审计与单元测试；
 2. Default Compose：完整验收、Provider/Payment Contract、Worker Kill-9 恢复、备份恢复后重验；
-3. Commercial Flow：显式合成商业 Provider 覆盖层，验证 Offer、Reservation、Payment、License、Delivery、Payout 与 Refund Reversal。
+3. Commercial Flow：显式合成商业 Provider 覆盖层，验证 Offer、Reservation、Payment、License、Delivery、Payout 与 Refund Reversal；
+4. Browser A11y：真实浏览器（Playwright Chromium）走查 Studio 与控制台（`scripts/browser_a11y.py`），用 axe-core 4.13.0（下载后校验 SHA-256）在桌面 1440×900 与移动 390×844 双档逐屏审计，先用 `--self-test` 证明这套审计能失败，再用 `scripts/server_refusal_census.py` 按同一时间窗把门禁自己的逐端点拒绝计数与 api 容器实际应答对账，report.json 与 server-refusals.txt 作为 artifact 上传；
+5. Capacity 500：`scripts/capacity-gate-500.sh` 用容量覆盖层整套起栈（逐个镜像 build 后再 up），以 500 用户、每人 2 次请求打真实流量，判据为 p95 ≤ 800ms 且错误率 ≤ 1%，压完再跑一遍完整验收确认业务正确性，compose 日志作为 artifact 上传。
 
 生产流水线还应增加 SAST、DAST、依赖漏洞扫描、SBOM、镜像签名、Migration Dry Run、Load Test 和 Staging Gate。

@@ -84,10 +84,12 @@ python scripts/architecture-audit.py                              # architecture
 | **合计** | **1 (1)** | **42 (27)** | **0 (0)** | **10 (6)** |
 
 > 结论：`aria-` 出现次数 **1 → 42**、`role=` **0 → 10**，明显上升。
+>
+> 本表是 C2 那一轮的改前/改后快照。**2026-09-28 用同一口径复读这四份文件**（`grep -o 'aria-[a-z-]*' | wc -l`、`grep -o 'role="[a-z]*"' | wc -l`）：`aria-` **59**、`role=` **21**（index.html 24/16、app.js 18/4、admin/index.html 11/1、admin.js 6/0）。往后的轮次继续加标注，不要把上表的 42/10 当作今天的读数。
 
 ## 遗留 / 风险
 
 1. **Docker E2E 未在本机执行**：本机无 Docker，`acceptance-all.sh` 仅 `sh -n`+mock 演练；真实 E2E 需在部署主机跑（Runbook 已覆盖）。`test.sh` 依赖 `docker compose run` 按依赖自动拉起 api/worker/web/admin（Compose v2 行为），若旧版 Compose 需先 `up`。
-2. **admin 无 `<dialog>`**：admin 使用原生 `confirm()/prompt()`（浏览器自带焦点/键盘可用），故 C2-2 的 dialog 焦点管理与 `aria-busy` 不适用，已注明。
+2. **admin 无 `<dialog>`**（**本条已被后续轮次推翻，2026-09-28 读码更正**）：当时 admin 用原生 `confirm()/prompt()`，故 C2-2 的 dialog 焦点管理与 `aria-busy` 不适用。今天的 `services/admin/admin.js` 已经是 `<dialog>` 实现——`askDialog()`（`:48`）与 `confirmDialog()`（`:134`）各自 `dialog.showModal()`（`:129`、`:166`），`:46` 还补了"关闭后焦点还原到触发按钮"，而 `prompt(`/`confirm(` 在该文件出现 **0** 次（`grep -c "prompt(\|confirm(" services/admin/admin.js` → 0）。C2-2 对 admin 已不再是"不适用"，而是已实现。
 3. **容量 Gate 端口释放**：脚本在 capacity 前 `down` 商业/主栈，属编排层判断；若 `KEEP_CAPACITY_STACK=1` 需留意容量栈持续占用端口。
 4. **雷达点焦点提示**：键盘 `focus` 触发的悬浮提示按元素 `getBoundingClientRect` 定位，视觉上不如鼠标 hover 精准，但已有可见「维度列表」兜底保证信息可达。

@@ -169,6 +169,16 @@ def reconcile(server: collections.Counter, seen: collections.Counter, parsed: in
     return problems
 
 
+def between(counter: collections.Counter, low: int, high: int) -> int:
+    """Sum of one observer's events whose status falls in [low, high).
+
+    The two summary lines are named for the class they compare, so a 5xx on either side cannot inflate a
+    figure the release record quotes as "次 4xx" -- which matters most for the gate side, where the injected
+    stale-panel route is a 500 by design and never reaches the api at all.
+    """
+    return sum(n for (method, path, code), n in counter.items() if low <= code < high)
+
+
 def render(run: dict, lo: str, hi: str, server: collections.Counter, seen: collections.Counter,
            parsed: int, raw: int, provenance: str = "") -> str:
     head = [
@@ -179,8 +189,10 @@ def render(run: dict, lo: str, hi: str, server: collections.Counter, seen: colle
         f"command: docker compose logs api --timestamps --since={lo} --until={hi}",
         f"log_lines_read: {raw}",
         f"request_lines_parsed: {parsed}",
-        f"server_4xx_events: {sum(server.values())}",
-        f"gate_4xx_events: {sum(seen.values())}",
+        f"server_4xx_events: {between(server, 400, 500)}",
+        f"server_5xx_events: {between(server, 500, 600)}",
+        f"gate_4xx_events: {between(seen, 400, 500)}",
+        f"gate_5xx_events: {between(seen, 500, 600)}",
         "STATUS METHOD PATH COUNT",
     ]
     rows = [f"{code:>5} {method:<6} {path} {n}" for (method, path, code), n in sorted(server.items())]
@@ -226,6 +238,16 @@ def self_test() -> int:
                  == ["2026-01-01T00:00:03"]))
     arms.append(("an even pair produces no surplus timestamps",
                  surplus_times(surplus_lines[:2], two, two) == {}))
+    fake_run = {"stamp": "acceptance-selftest", "commit": "0" * 40}
+    text = render(fake_run, "a", "b", server, seen, 40, 60)
+    arms.append(("the two 4xx lines compare the same class, with the injected 500 on its own line",
+                 "server_4xx_events: 30" in text and "gate_4xx_events: 30" in text
+                 and "server_5xx_events: 0" in text and "gate_5xx_events: 2" in text))
+    leaked = collections.Counter(server)
+    leaked[("GET", INJECTED, 500)] = 1
+    text_real = render(fake_run, "a", "b", leaked, seen, 40, 60)
+    arms.append(("a real 500 in the window cannot inflate the figure the faces quote as 4xx",
+                 "server_4xx_events: 30" in text_real and "server_5xx_events: 1" in text_real))
     width = max(len(name) for name, _ in arms)
     bad = 0
     for name, ok in arms:

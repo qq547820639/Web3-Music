@@ -121,4 +121,4 @@ PostgreSQL 是任务、账本、资产、权利、订单和审计的事实源；
 
 ## 10. 运行形态
 
-本地最终参考产品为 12 个 Compose 服务：PostgreSQL、Redis、MinIO、Migration、Music Emulator、Payment Emulator、API、Worker、Prometheus、Web、Admin、Acceptance。生产部署应替换为托管高可用基础设施，并保持相同领域合同和发布门禁。
+本地最终参考产品共 **15** 个 Compose 服务，`docker compose up` 默认起 **12** 个：PostgreSQL、Redis、MinIO、Migration、Music Emulator（`provider-emulator`）、Payment Emulator、Gateway、API、Worker、Prometheus、Web、Admin；另 3 个只在指定 profile 时起——Acceptance（`--profile test`）、ClamAV（`--profile scan`）、Worker B（`--profile contention`）。这句的三个数都由 `tests/unit/test_reference_doc_figures.py` 从 `docker-compose.yml` 现算核对，改服务要同时改这句。生产部署应替换为托管高可用基础设施，并保持相同领域合同和发布门禁。

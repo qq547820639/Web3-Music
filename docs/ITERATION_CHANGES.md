@@ -26,7 +26,7 @@ find services -name '*.js' -print0 | xargs -0 -n1 /Users/panhao/.workbuddy/binar
 | A5 | P2-10 | `services/api/app/settings.py` | `DB_POOL_MAX` 默认值 `12` → `16`，与 `.env.example` 对齐。 |
 | A6 | P2-12 | `services/api/app/main.py` | 废弃的 `@app.on_event("startup"/"shutdown")` 改为 FastAPI `lifespan`（`@asynccontextmanager`），startup/shutdown 逻辑不变。 |
 | A7 | P2-13 | `services/api/app/main.py` | 登录限流由 `rq.incr` + `rq.expire` 两条非原子命令改为单条 Lua 脚本 `INCR`+`EXPIRE`（`_login_incr`），避免两命令间崩溃导致邮箱被永久锁死。**本行已被 2026-09-28 一轮取代**：`_login_incr` 已删除，登录改用与第二因子/再认证同一条 `_mfa_incr`（只在首次 INCR 设 EXPIRE），原子性由同一条脚本继续保证，「无条件 EXPIRE 会把窗口随敲门频率延长」这一半则是那条脚本的缺陷，见《发布门禁清单》已修第 24 条。 |
-| A8 | P0-3 | `services/api/app/main.py` + `shared/contracts/openapi-v13.{json,yaml}` | 声明 `HTTPBearer`（`JWTBearer`）与 `APIKeyCookie`（`SessionCookie`，绑定 `resonance_access`）两种安全方案（`auto_error=False`，仅文档化，鉴权仍走 `get_user/get_actor`）；离线调用 `app.openapi()` 重新导出 JSON+YAML，`securitySchemes` 非空且二者一致（69 paths 不变）。 |
+| A8 | P0-3 | `services/api/app/main.py` + `shared/contracts/openapi-v13.{json,yaml}` | 声明 `HTTPBearer`（`JWTBearer`）与 `APIKeyCookie`（`SessionCookie`，绑定 `resonance_access`）两种安全方案（`auto_error=False`，仅文档化，鉴权仍走 `get_user/get_actor`）；离线调用 `app.openapi()` 重新导出 JSON+YAML，`securitySchemes` 非空且二者一致（69 paths 不变）。**2026-09-28 复读同一份合同：90 paths / 103 operations**——69 是那次导出时的读数，合同的现值由 `tests/unit/test_reference_doc_figures.py` 从 `shared/contracts/openapi-v13.json` 现算核对，不再靠本行留档。 |
 | A9 | P0-2 | `services/payment-emulator/main.py` | `processing` / `requires_action` 场景在 `PAYMENT_TIMEOUT_SECONDS`（默认 60s，可用环境变量覆盖）后回调 `payment_intent.failed`，避免订单永久卡 `payment_pending`；注释说明订单侧对账兜底口径（`market.py` 的 `payment_webhook` 以 `failed` 为释放信号）。 |
 | A10 | P1-4 | `main.py` / `routers/assets.py` / `routers/market.py` / `common.py` | 新增统一分页常量 `PAGE_LIMIT_DEFAULT=100` / `PAGE_LIMIT_MAX=200`；为主要 list 端点加 `limit`/`offset` Query 参数（`list_projects`、`list_assets`、订单/许可/交付/结算/工单/市场报价/自有报价/品牌任务投稿列表等），SQL 追加 `LIMIT %s OFFSET %s`，防止全表拉取。 |
 
@@ -38,7 +38,7 @@ find services -name '*.js' -print0 | xargs -0 -n1 /Users/panhao/.workbuddy/binar
 
 | # | 任务 | 文件 | 改动摘要 |
 |---|---|---|---|
-| B1 | 美化（beautify） | `services/web/app.js`、`services/web/styles.css`、`services/admin/admin.js`、`services/admin/styles.css` | 压缩单文件还原为多行可维护源码：app.js 118→约 1300 行、admin.js 17→270 行、styles.css 4→900+ 行、admin/styles.css 1→337 行。语义等价（Babel AST 往返；admin.js 原始/美化 AST 类型序列逐项一致）。 |
+| B1 | 美化（beautify） | `services/web/app.js`、`services/web/styles.css`、`services/admin/admin.js`、`services/admin/styles.css` | 压缩单文件还原为多行可维护源码：app.js 118→约 1300 行、admin.js 17→270 行、styles.css 4→900+ 行、admin/styles.css 1→337 行（**2026-09-28 实测 `wc -l`**：app.js 2720、admin.js 495、web/styles.css 1388、admin/styles.css 428——本行记的是美化那一轮刚落地时的行数，之后多轮继续在四份文件上加功能）。语义等价（Babel AST 往返；admin.js 原始/美化 AST 类型序列逐项一致）。 |
 | B2 | 错误人话化（P1-6） | `services/web/app.js` | `api()` 错误分支改为 `humanizeError(status, detail)` + `ERROR_MESSAGES` 错误码→中文文案映射表；未命中时回退原始 `message` 字符串、去掉裸 JSON。 |
 | B3 | 加载态 | `services/web/app.js` + `services/web/styles.css` | 新增 `setLoading()` 按钮级加载（禁用 + 防重复提交）+ 轻量 spinner（`button.loading` + `@keyframes spin`）；覆盖登录、chat/创作、保存、质量评估、生成报价、提交任务、购买/支付、退款、新建工单/偏好等关键异步提交。 |
 | B4 | 替换 prompt/confirm（T05 核心） | `services/web/app.js` | 新增 `askDialog()`（带字段、默认值、必填校验、错误提示）与 `confirmDialog()`；将 app.js 的 **16 处 `prompt()` + 4 处 `confirm()` 全部替换**为 `<dialog>` 表单/确认框（覆盖新建项目、新建分支、许可人名称、退款原因、工单主题/描述，以及评论、证据、报价、品牌任务、Master 确认、权利复核等）。替换后 app.js 内 `prompt(` / `confirm(` 出现次数为 0。 |
