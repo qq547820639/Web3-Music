@@ -128,6 +128,8 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 - `FRESH=1` 让 SUMMARY 头部写下 `fresh_database=1`，《发布检查表》第一格读的就是这个字段；
 - `BROWSER=1` 让第 22 步真的跑。文书里浏览器那一半的读数（视图数、axe 扫描数、hidden 普查、导出字节、console 行数与状态分布与标签形状、拒绝的事件数/去重条数/端点数、报告指针本身）来自那一行的 `report.json`，而配对规则要求报告的 `generated_at` 落在**该运行自己那一行**的起止时间里、且 `git_commit` 等于 SUMMARY 记的那一个。少了第 22 行的运行没有可配对的报告，`stamp_release_faces.figures()` 返回 `browser_report="MISSING"`，`release_face_cells.py --apply` 整轮拒写（这一形状由 `tests/unit/test_release_face_cells.py::test_the_browser_report_is_paired_by_commit_and_window` 常驻钉住）。
 
+- 启动前工作树还得干净：`SOURCE_MANIFEST.sha256` 的哈希覆盖每一个在册文件、**包括文书本身**，所以只改两行 doc 而没重算清单就去跑，第 1 步会在 1 秒内判红。本轮 `acceptance-20260928T110502Z` 就是这么红的：`tracked=248 listed=248 mismatched=2` → `the manifest does not describe this tree; run ./scripts/source-manifest.sh write`。这条比「别在链跑的时候改文件」更早抓住人——它不让链条开跑，而不是跑完再返工。
+
 这一坑我今天亲自踩了一次：09:34 那条链启动时忘了 `BROWSER=1`，第 22、23 行都记成 `SKIPPED (…才执行)`，21 PASS 也是"全部验收步骤通过 ✅"——退码与结论行看不出浏览器那一半没跑，只有 SUMMARY 的行能看出来。所以判断一条运行能否当权威，看的是行表里 `browser-a11y | PASS`，不是最终结论那一行。
 
 ---
@@ -157,7 +159,7 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 19 | hold-drill | `python scripts/hold_drill.py`（需要步骤 16 的商业覆层仍在跑） | 打印 `legal hold drill: N/N checks passed`；两种载体各自的拒绝措辞、放行后的同一条调用必须开火与不开火、目录里读得到该标记的对象恰好那三个、以及 `media_assets` 没有删除触发器这一条实测缺口 |
 | 20 | provider-regression-100 | `python scripts/provider_regression.py "${REGRESSION_JOBS:-100}" "${REGRESSION_CONCURRENCY:-8}"` | 打印 `provider regression: N/N completed, error rate ...` 且无 `FAIL:` 行；台账闭合、无悬挂 hold |
 | 21 | generic-rest-roundtrip | `docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up --build -d` → `python scripts/provider_regression.py "${GENERIC_REST_JOBS:-25}" 4 generic_rest` | 退出码 0；`/api/bootstrap` 报出的 provider 身份必须是 `generic_rest`，否则 `expected provider ...` 直接判红 |
-| 22 | browser-a11y | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (BROWSER=1 才执行)`；`BROWSER=1` 时 `python scripts/browser_a11y.py --self-test` → `python scripts/browser_a11y.py` | → `python scripts/server_refusal_census.py --run <本轮 STAMP> --write`（把 `docker compose logs api` 在同一行时间窗里的 4xx 数一遍，落 `server-refusals.txt` 作为第二观察者） | 退出码 0，`browser a11y + walkthrough passed`；前置为 playwright + Chromium（`scripts/requirements-browser.txt`） |
+| 22 | browser-a11y | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (BROWSER=1 才执行)`；`BROWSER=1` 时 `python scripts/browser_a11y.py --self-test` → `python scripts/browser_a11y.py` | → 取 UTC 秒两次，`python scripts/server_refusal_census.py --since "$START" --until "$END" --write`（不能用 `--run "$STAMP"`：那一行的起止时间戳是步骤返回之后才写进 SUMMARY 的）（把 `docker compose logs api` 在同一行时间窗里的 4xx 数一遍，落 `server-refusals.txt` 作为第二观察者） | 退出码 0，`browser a11y + walkthrough passed`；前置为 playwright + Chromium（`scripts/requirements-browser.txt`） |
 | 23 | capacity-gate-500 | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (CAPACITY=1 才执行)`；`CAPACITY=1` 时先 `docker compose down --remove-orphans`（商业覆层同做一次）释放端口，再 `./scripts/capacity-gate-500.sh` | 错误率 ≤ `CAPACITY_MAX_ERROR_RATE`（默认 1%）、p95 ≤ `CAPACITY_MAX_P95_MS`（默认 800ms），随后容量栈里的 acceptance 复跑通过 |
 
 **判读要点**：每步结束后控制台会打印 `STEP N RESULT: PASS/FAIL`。任一步 `FAIL` 会立即停止，并提示 `该步骤失败，日志在 …`。
