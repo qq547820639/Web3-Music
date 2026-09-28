@@ -9,7 +9,7 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `ef88d14`, 2026-09-28T06:51:39Z → 2026-09-28T07:07:49Z, evidence in `release-evidence/acceptance-20260928T065139Z/`, started under `host_load="6.34 7.69 11.67"` on a Docker VM 4 vCPU with `disk_free_kb=5634660` recorded beside it, with 19 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `aa3605b`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22 rows with `FAIL=0` in every `SUMMARY.txt`), and 22 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 2).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `3dbd175`, 2026-09-28T08:18:06Z → 2026-09-28T08:35:46Z, evidence in `release-evidence/acceptance-20260928T081806Z/`, started under `host_load="6.04 5.17 4.75"` on a Docker VM 4 vCPU with `disk_free_kb=5680956` recorded beside it, with 20 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `aa3605b`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818`, `ef88d14` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23 rows with `FAIL=0` in every `SUMMARY.txt`), and 22 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 2).
 `414752d` was this file's authority until the round before last, and the reason the sentence is now machine-checked rather than maintained: the paragraph below it carried a count, a commit list, a row list and a red total that nothing compared against the archive, so the header could describe a run that was no longer the newest one for two full rounds before anyone noticed.
 The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260927T195301Z/report.json`, stamped with the same commit: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes.
 
@@ -1051,7 +1051,7 @@ unsupported `scan_status` write, `a clean media asset must name the engine that 
 DELETE lands, then show the row is gone. The gap stays registered in §待属主定值 item 6 rather than being
 closed by a guessed guard.
 
-**Readings.** `scripts/hold_drill.py` **42/42** on the live stack with the commercial overlay; it is chain
+**Readings.** `scripts/hold_drill.py` **42/42** on the live stack with the commercial overlay -- the six freeze arms of item 31 make it 48/48, and 48/48 is what the current authority archives; it is chain
 step 19 (`hold-drill`, after `market-reconciliation`) and a step in CI's `commercial-flow` job, with
 `tests/unit/test_ci_covers_chain_payloads.py` keeping the two dispatch lists from diverging. It needed a
 precondition stated rather than assumed: three earlier runs of this drill spent the demo workspace's credits
@@ -1109,16 +1109,14 @@ per-step logs, which `.gitignore` keeps off the tree -- so they cannot be recomp
 the way the commit sequence and the red census can. They are appended by hand from the current run's log
 (`p50 4.09s / p95 5.28s` and `4.11s / 4.16s` here), and the sentences say so ("计数会跨跑传，耗时不会").
 
-**HEAD vs. the certified tree, measured rather than asserted.** Three commits sit between `ef88d14` (the tree
-the run above certified) and the record-only commits that followed it, and `git diff --name-only ef88d14..HEAD`
-returns zero paths under `services/`, `db/`, `shared/`, both compose files, `Makefile`, `checks/` and `tests/`.
-What did change is the record, the evidence archive (five browser `report.json` files and a previously
-un-staged all-green run, `acceptance-20260926T230624Z`, which raised the reproducible-set census from 18 prior
-greens to 19 and forced a re-stamp), the CI workflow, and the two stamping scripts. Because the stamping
-scripts are themselves under test, the same ladder was re-run after those edits at the current HEAD:
-`static-verify` rc=0, `tracked=246 listed=246 missing=0 stale=0 mismatched=0`, `423 passed`. So no product
-behaviour has gone un-certified -- but the next chain run remains the thing that restamps the faces, and it
-will also be the first to exercise the new CI step in GitHub's own runner rather than on this machine.
+**HEAD vs. the certified tree, measured rather than asserted.** The current authority is
+`acceptance-20260928T081806Z` (commit `3dbd175`), and `git diff --name-only 3dbd175..HEAD -- services db
+shared docker-compose.yml docker-compose.commercial-test.yml Makefile checks` returns nothing: no product
+path has moved since the run. What has moved is the record, the two evidence files the new authority cites,
+and one gate -- `tests/unit/test_release_record_consistency.py` gained the window clause described below, so
+the ladder at HEAD collects 428 where the certified step 1 reported 423. That difference is the reason the
+next chain run restamps rather than reuses: the faces quote the *run's* readings, and a test added after a
+run is not that run's number.
 
 ## 2026-09-28 two reds that were about the machine, and the port that was never ours
 
@@ -1214,3 +1212,32 @@ a single NUL-terminated `bytea` (measured through `information_schema.columns`, 
 there is no `tgargn` column, and `chr(0)` is not permitted in SQL text), so the assertion is
 `tgargs = convert_to(args,'UTF8') || '\x00'::bytea`, and a trigger that lost its argument list would fail
 the drill instead of silently refusing everything.
+
+## 2026-09-28 the certification that carries the column freeze
+
+Authoritative run `acceptance-20260928T081806Z` (commit `3dbd175`, `fresh_database=1` in the same header, 2026-09-28T08:18:06Z → 08:35:46Z, 23 rows: 22 PASS and `capacity-gate-500` skipped by switch, host load "6.04 5.17 4.75" on a 4-cpu Docker VM with `disk_free_kb=5680956` beside it), browser record `release-evidence/browser-a11y-20260928T083139Z/report.json`.
+
+It is the first chain certified against a database where `rights_evidence` content and an issued licence's
+terms are frozen per column (migration 022), and the drill that measures it archives **48/48** rather than
+the 42/42 of the previous authority. Step 1 read 423 unit tests over 42 test files, the manifest covered
+247 tracked sources, the authority matrix still agrees at 100 routes / 54 writes, and the run again recorded
+`mfa drill: 79/79`, `member drill: 98/98`, `erasure drill: 53/53`, `report drill: 50/50`,
+`media scan drill: 14/14`, `market reconciliation: 15/15`, `restore fidelity: 2 workspaces, 2 assets
+byte-identical, ledgers unchanged`, `8 jobs, 2 workers, 160.0 credits settled once`.
+
+Both latency series moved, and they move in opposite directions this round, which is the reason the record
+quotes every reading instead of a mean: `provider-regression-100` came in at 100/100 with
+p50 4.15s / p95 8.38s (fourteen green runs carrying it), while `generic-rest-roundtrip` came in at 25/25
+with p50 8.6s / p95 20.91s (fifteen) -- the slow shape of a co-tenant window, not a different error rate
+(0.0% both). The accessibility leg held: 118 view records, 92 axe scans, `violations_by_impact` empty,
+no uncaught errors, and the hidden-element census now at 1285 scanned with 0 still rendering.
+
+The gateway leg is certified by this run too: step 8's precondition reported
+`经由网关（127.0.0.1:18080）的 /health 是 200（等了 0 秒）` immediately after the restore recreated the
+application tier, and step 12's login-through-the-gateway check passed inside the 79/79 -- the check whose
+502 ended the previous attempt at this certification.
+
+**Not certified by any run here:** the 500-concurrency gate (row 23, skipped unless `CAPACITY=1`; red on a
+4-cpu VM), the real-provider contract evidence, and the two owner decisions in `待属主定值` (3: whether one
+browser may hold both surfaces, now measured; 6: whose hold counts, plus the operator-only
+`media_assets` delete guard).

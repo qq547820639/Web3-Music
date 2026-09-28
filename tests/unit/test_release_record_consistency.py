@@ -41,6 +41,8 @@ def archived_runs():
         runs.append({
             "stamp": pathlib.Path(relative).parent.name.replace("acceptance-", ""),
             "commit": commit.group(1) if commit else "?",
+            "started": (re.search(r"started_at=(\S+)", text) or [None, None])[1],
+            "ended": (re.search(r"finished_at=(\S+)", text) or [None, None])[1],
             "rows": len(rows),
             "fails": sum(1 for _, result in rows if result == "FAIL"),
             "host_load": host.group(1) if host else None,
@@ -340,6 +342,47 @@ def test_the_host_clause_refuses_a_reading_with_nothing_behind_it():
 
 STAMP_ON_LINE = re.compile(r"acceptance-(\d{8}T\d{6}Z)")
 LOAD_ON_LINE = re.compile(r'host load "([^"]*)" on a (\d+)-cpu')
+WINDOW_ON_LINE = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z) → (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)")
+
+
+def window_clause(label, line, run):
+    """One line's `started → ended` pairs against the run that line names. Pure, so the controls can fire it."""
+    stamps = STAMP_ON_LINE.findall(line)
+    if len(stamps) != 1:
+        return [], 0
+    problems = []
+    pairs = list(WINDOW_ON_LINE.findall(line))
+    for started, ended in pairs:
+        if run is None:
+            problems.append(f"{label}: line quotes {started} → {ended} for acceptance-{stamps[0]}, "
+                            f"which is not in the tracked archive")
+        elif (run.get("started"), run.get("ended")) != (started, ended):
+            problems.append(f"{label}: acceptance-{stamps[0]} quoted as {started} → {ended}, its SUMMARY "
+                            f"says {run.get('started')} → {run.get('ended')}")
+    return problems, len(pairs)
+
+
+def window_problems(runs):
+    """A line that names one run and quotes a `started → ended` window must quote that run's own.
+
+    Why this exists and host_clause does not cover it: the faces' stamped line is handled by the writer
+    (`scripts/release_face_cells.py` substitutes both fields), but every *round section* in the status file
+    opens with its own hand-written window, and nothing read those. On 2026-09-28 a section was committed
+    saying `08:18:06Z → 08:35:52Z` while its SUMMARY says `finished_at=2026-09-28T08:35:46Z` -- a
+    six-second lie, invisible to every gate until this clause. The rule is deliberately line-local and
+    conservative, like the host-reading one: a line naming two runs is skipped rather than guessed at,
+    so the coverage floor in the test below is what proves the census is still looking at anything.
+    """
+    by_stamp = {r["stamp"]: r for r in runs}
+    problems = []
+    pairs = 0
+    for path in FACES:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            found, count = window_clause(path.name, line, by_stamp.get(
+                (STAMP_ON_LINE.findall(line) or [None])[0]))
+            problems += found
+            pairs += count
+    return problems, pairs
 
 
 def paired_readings(line):
@@ -612,3 +655,54 @@ def test_the_repeat_figure_clause_fires_on_a_stale_count():
     other_count = sum(1 for r in greens if r["rows"] == other_width)
     other = mutated_line(CHECKLIST, stated.group(0), f"同样 {other_width} 行绿了 {other_count} 次")
     assert problems_for(CHECKLIST, runs, other) == [], problems_for(CHECKLIST, runs, other)
+
+
+# ------------------------------------------------------------------ the window clause ----
+
+def fake_run(stamp="20260928T081806Z", started="2026-09-28T08:18:06Z", ended="2026-09-28T08:35:46Z"):
+    return {"stamp": stamp, "started": started, "ended": ended}
+
+
+def test_the_window_clause_passes_on_the_run_it_names():
+    line = ("Authoritative run `acceptance-20260928T081806Z` (commit `3dbd175`, "
+            "2026-09-28T08:18:06Z → 2026-09-28T08:35:46Z, 23 rows)")
+    problems, pairs = window_clause("control", line, fake_run())
+    assert pairs == 1, f"the clause saw no window in a line that quotes one: {line}"
+    assert not problems, f"a window matching its run was reported: {problems}"
+
+
+def test_the_window_clause_fires_on_a_finished_at_copied_from_the_previous_round():
+    """The exact error this clause was written for: a section hand-typed six seconds off."""
+    line = ("Authoritative run `acceptance-20260928T081806Z` (commit `3dbd175`, "
+            "2026-09-28T08:18:06Z → 2026-09-28T08:35:52Z, 23 rows)")
+    problems, pairs = window_clause("control", line, fake_run())
+    assert pairs == 1, "the planted window was not seen at all, so the next assertion proves nothing"
+    assert problems and "08:35:46Z" in problems[0], (
+        f"a quoted end that is six seconds later than the SUMMARY's finished_at must be named with the "
+        f"true value so a reader can fix it without opening the archive: {problems}")
+
+
+def test_the_window_clause_fires_on_an_untracked_run():
+    line = "`acceptance-20990101T000000Z` ran 2026-09-28T08:18:06Z → 2026-09-28T08:35:46Z"
+    problems, pairs = window_clause("control", line, None)
+    assert pairs == 1 and problems and "not in the tracked archive" in problems[0], (
+        f"a window attached to a run that is not in the evidence is the same class of claim as citing an "
+        f"untracked directory: {problems}")
+
+
+def test_a_line_naming_two_runs_is_not_guessed_at():
+    """The conservative side: with two stamps on one line the clause cannot know whose window it is."""
+    line = ("like `acceptance-20260928T081806Z` and `acceptance-20260928T065139Z`, "
+            "2026-09-28T08:18:06Z → 2026-09-28T08:35:46Z")
+    problems, pairs = window_clause("control", line, fake_run())
+    assert pairs == 0 and not problems, (
+        f"an ambiguous line must be skipped, not attributed to whichever stamp the reader liked: {problems}")
+
+
+def test_every_window_in_the_record_matches_its_own_run():
+    problems, pairs = window_problems(archived_runs())
+    assert not problems, "the release record misquotes a run's window: " + " | ".join(problems)
+    # Coverage floor: the rule is line-local, so a face that stopped naming its run on the same line as its
+    # window would drop out of the census silently -- four faces open with a stamped window each.
+    assert pairs >= 4, (f"only {pairs} quoted windows were read across the four faces; the stamped lines "
+                        f"and the round sections all carry one, so the census has gone blind")
