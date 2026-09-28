@@ -1246,8 +1246,10 @@ browser may hold both surfaces, now measured; 6: whose hold counts, plus the ope
 
 Authoritative run `acceptance-20260928T084412Z` (commit `1dbf99e`, `fresh_database=1` in the same header, 2026-09-28T08:44:12Z → 09:00:20Z, 23 rows: 22 PASS and `capacity-gate-500` skipped by switch, host load "3.64 4.99 6.26" on a 4-cpu Docker VM with `disk_free_kb=5410160` beside it), browser record `release-evidence/browser-a11y-20260928T085606Z/report.json`.
 
-Nothing in the tree moved between this run and the previous authority, so this section exists for one
-reason: it is the run whose `report.json` the six new browser cells read. Step 1 recorded 428 unit tests,
+`git diff --name-only 3dbd175..1dbf99e` is eight paths and none of them is product code or a migration: four
+faces, the manifest, the previous round's two evidence files, and `tests/unit/test_release_record_consistency.py`
+(the quoted-window clause plus its four controls). So this section exists for one reason: it is the run whose
+`report.json` the six new browser cells read. Step 1 recorded 428 unit tests,
 the manifest again covered 247 tracked sources at 100 routes / 54 writes, and the legs repeated
 `mfa drill: 79/79`, `member drill: 98/98`, `erasure drill: 53/53`, `report drill: 50/50`,
 `hold drill: 48/48`, `media scan drill: 14/14`, `market reconciliation: 15/15`,

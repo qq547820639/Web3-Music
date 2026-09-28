@@ -17,9 +17,15 @@ browser runs sat under release-evidence/ until they were deleted).
 
 Every clause is given the sample that must make it fail.
 """
+import collections
+import importlib.util
+import json
 import pathlib
 import re
 import subprocess
+import tempfile
+
+import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 STEP_ROW = re.compile(r"^([a-z0-9-]+) \| (\w+)", re.MULTILINE)
@@ -706,3 +712,176 @@ def test_every_window_in_the_record_matches_its_own_run():
     # window would drop out of the census silently -- four faces open with a stamped window each.
     assert pairs >= 4, (f"only {pairs} quoted windows were read across the four faces; the stamped lines "
                         f"and the round sections all carry one, so the census has gone blind")
+
+
+def census_module():
+    spec = importlib.util.spec_from_file_location("server_refusal_census_under_test",
+                                                 ROOT / "scripts/server_refusal_census.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def reader_module():
+    spec = importlib.util.spec_from_file_location("stamp_release_faces_for_census",
+                                                 ROOT / "scripts/stamp_release_faces.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_two_refusal_observers_agree_on_the_certified_run():
+    """Whatever the gate recorded as refused has to be a subset of what the api answered.
+
+    Two observers of one fact, neither reading the other's file: the browser leg sees responses
+    (including the ones it fulfills itself), the api log sees requests. The subset direction is the point --
+    a refusal the server answered but no page recorded means the gate missed traffic it was sitting on, and
+    that is exactly how the console sentence was able to claim six refusals for eighteen. Once a certified
+    run carries `refusal_counts`, its cross-check artifact has to be committed too, or the reading exists
+    only on the laptop that ran the chain.
+    """
+    census, reader = census_module(), reader_module()
+    runs = [r for r in reader.runs() if r["fails"] == 0]
+    chosen = max(runs, key=lambda r: r["stamp"])
+    report = reader.browser_pair(chosen)
+    if report is None:
+        pytest.skip(f"{chosen['stamp']} has no paired browser report to reconcile against")
+    data = json.loads(report.read_text(encoding="utf-8"))
+    if "refusal_counts" not in data:
+        pytest.skip(f"{report.parent.name} predates the per-endpoint census; the reconciliation starts "
+                    "with the first certified run that recorded it")
+    artifact = report.parent / "server-refusals.txt"
+    assert artifact.exists(), (f"{report.parent.name} recorded refusals but has no {artifact.name}; run "
+                               "`python3 scripts/server_refusal_census.py --write` and `git add -f` it")
+    tracked = tracked_evidence()
+    assert artifact.parent.name in tracked, (f"{artifact} is not tracked, so the cross-check is a host-only "
+                                             "reading while the faces quote it")
+    server = collections.Counter()
+    parsed = 0
+    for line in artifact.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^\s*(\d{3}) (\w+)\s+(\S+)\s+(\d+)$", line)
+        if m:
+            code, method, path, count = m.groups()
+            server[(method, path, int(code))] += int(count)
+            parsed += 1
+        if line.startswith("request_lines_parsed:"):
+            parsed = max(parsed, int(line.split(":", 1)[1].strip()))
+    problems = census.reconcile(server, census.browser_census(report), parsed, parsed)
+    assert not problems, "the api and the browser leg disagree about what was refused: " + " | ".join(problems)
+
+
+def test_the_refusal_reconciliation_fires_on_both_polarities():
+    """Each direction needs its own broken-shape control, or the subset rule could be silently vacuous."""
+    census = census_module()
+    server = collections.Counter({("GET", "/api/auth/me", 401): 28, ("POST", "/api/account/erasure", 403): 2})
+    honest = collections.Counter(server)
+    honest[("GET", census.INJECTED, 500)] = 2
+    assert census.reconcile(server, honest, 40, 40) == [], (
+        "the honest pair went red, so the rule cannot be read as a subset check")
+    blind = collections.Counter(honest)
+    del blind[("POST", "/api/account/erasure", 403)]
+    missing = census.reconcile(server, blind, 40, 40)
+    assert any("2x POST /api/account/erasure" in p for p in missing), (
+        f"a gate that recorded none of the refusals the api answered was not named: {missing}")
+    reached = collections.Counter(server)
+    reached[("GET", census.INJECTED, 500)] = 2
+    assert any("reached the api" in p for p in census.reconcile(reached, honest, 40, 40)), (
+        "the injected route showed up on the server side and the census said nothing, so the stale-panel "
+        "arm could be reading a real 500 without anyone noticing")
+    assert any("the parser saw nothing" in p for p in
+               census.reconcile(collections.Counter(), collections.Counter(), 0, 60)), (
+        "zero parsed lines was read as 'no refusals' rather than as an instrument failure")
+
+
+# ------------------------------------------------- figures the tracked contracts already settle
+MATRIX = ROOT / "shared/contracts/authority-matrix.json"
+OPENAPI = ROOT / "shared/contracts/openapi-v13.json"
+
+# (face, marker selecting exactly one line, pattern, keys of contract_figures in capture order). These are
+# the copies of a version-controlled artifact's own numbers that live in prose: they need no run to
+# recompute, so the only honest rule is "equal to the artifact, right now".
+CONTRACT_QUOTES = (
+    ("docs/CODE_WALKTHROUGH.md", "authority-matrix.json", r"（(\d+) 条路由 / (\d+) 条写操作的权限派生件",
+     ("routes", "writes")),
+    ("docs/CODE_WALKTHROUGH.md", "authority-matrix.json", r"OpenAPI v13（(\d+) paths", ("openapi_paths",)),
+    ("docs/CODE_WALKTHROUGH.md", "由运行中的 FastAPI", r"OpenAPI v13（(\d+) paths）", ("openapi_paths",)),
+    ("docs/RELEASE_CHECKLIST.md", "哪些端点带这道检查不靠本文复述",
+     r"现读 (\d+) 条路由 / (\d+) 条写操作 / 其中 (\d+) 条带再认证", ("routes", "writes", "step_up")),
+)
+
+
+def contract_figures():
+    matrix = json.loads(MATRIX.read_text(encoding="utf-8"))["routes"]
+    document = json.loads(OPENAPI.read_text(encoding="utf-8"))
+    return {"routes": len(matrix),
+            "writes": sum(1 for r in matrix if r.get("writes")),
+            "step_up": sum(1 for r in matrix if r.get("step_up")),
+            "openapi_paths": len(document.get("paths", {})),
+            "security_schemes": sorted((document.get("components", {}) or {}).get("securitySchemes", {}) or {})}
+
+
+def contract_problems(root, figures):
+    problems = []
+    for rel, marker, pattern, keys in CONTRACT_QUOTES:
+        path = root / rel
+        if not path.exists():
+            problems.append(f"{rel} is missing, so its quoted contract figures cannot be checked")
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        hits = [i for i, line in enumerate(lines) if marker in line]
+        if len(hits) != 1:
+            problems.append(f"{rel}: marker {marker!r} selects {len(hits)} lines, expected 1")
+            continue
+        found = list(re.finditer(pattern, lines[hits[0]]))
+        if len(found) != 1:
+            problems.append(f"{rel}: {pattern!r} matched {len(found)} times, expected 1")
+            continue
+        for value, key in zip(found[0].groups(), keys):
+            if int(value) != figures[key]:
+                problems.append(f"{rel}: says {key}={value}, the tracked artifact says {figures[key]}")
+    return problems
+
+
+def test_figures_quoted_from_the_tracked_contracts_match_those_contracts():
+    figures = contract_figures()
+    problems = contract_problems(ROOT, figures)
+    assert not problems, " | ".join(problems)
+    # A vacuous census is the failure mode here: four quotes across two faces, all resolved against a real
+    # artifact whose own fields (not a method-name guess) decide.
+    assert figures["routes"] > 50 and figures["writes"] > 20 and figures["openapi_paths"] > 50, figures
+
+
+def test_a_stale_contract_figure_is_named():
+    """Plant one wrong digit in a real line and the clause has to point at that face and name the truth."""
+    figures = contract_figures()
+    rel, marker, pattern, keys = CONTRACT_QUOTES[0]
+    text = (ROOT / rel).read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    index = next(i for i, line in enumerate(lines) if marker in line)
+    found = re.search(pattern, lines[index])
+    stale = str(int(found.group(1)) + 7)
+    tampered = lines[:index] + [lines[index][:found.start(1)] + stale + lines[index][found.end(1):]] + \
+                 lines[index + 1:]
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("".join(tampered), encoding="utf-8")
+        for source in (MATRIX, OPENAPI):
+            (root / source.relative_to(ROOT)).parent.mkdir(parents=True, exist_ok=True)
+            (root / source.relative_to(ROOT)).write_bytes(source.read_bytes())
+        problems = contract_problems(root, figures)
+    assert any(rel in p and f"routes={stale}" in p for p in problems), (
+        f"the clause did not name the planted stale figure: {problems}")
+
+
+def test_the_contract_quoting_census_is_not_vacuous():
+    """Every face the table names has to be openable, or the clause reports a clean sheet over nothing."""
+    figures = contract_figures()
+    faces = sorted({rel for rel, _m, _p, _k in CONTRACT_QUOTES})
+    absent = [rel for rel in faces if not (ROOT / rel).exists()]
+    assert not absent, f"the table quotes faces that are not in the tree: {absent}"
+    assert len(CONTRACT_QUOTES) >= 4, (f"only {len(CONTRACT_QUOTES)} contract quotes are registered; the "
+                                       "prose carries more copies than the clause checks")
+    assert figures["security_schemes"], (
+        "the tracked OpenAPI contract carries no securitySchemes, so the walkthrough's sentence about them "
+        "needs to be re-read rather than left asserting the opposite of what the artifact holds")

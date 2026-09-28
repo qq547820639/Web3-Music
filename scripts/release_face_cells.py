@@ -77,6 +77,16 @@ CELLS = [
      r"留档的判红共 (\d+) 份（[^）]*）", "留档的判红共 {red_count} 份（{red_days_cn}）"),
     ("docs/RELEASE_CHECKLIST.md", "media scan drill:",
      r"media scan drill: (\d+/\d+)", "media scan drill: {media_scan}"),
+    # Two figures on this face had no owner at all: the restore-fidelity asset count (which moves with the
+    # demo database, and was still reading "4" while the archive read 2) and the accessibility authority
+    # line, which named a 2026-09-27 report as "the authoritative one" two days after it stopped being it.
+    ("docs/RELEASE_CHECKLIST.md", "现由 `scripts/restore_fidelity.py`",
+     r"实测 restore 后 (\d+) 个资产字节一致", "实测 restore 后 {restore_assets} 个资产字节一致"),
+    ("docs/RELEASE_CHECKLIST.md", "权威那次是两视口的",
+     r"`browser-a11y-[0-9TZ]+`：(\d+) 个视图记录 / (\d+) 次 axe 扫描",
+     "`{browser_report_dir}`：{browser_views} 个视图记录 / {browser_scans} 次 axe 扫描"),
+    ("docs/RELEASE_CHECKLIST.md", "权威那次是两视口的",
+     r"`boot_window_clicks` 为 (\d+)", "`boot_window_clicks` 为 {browser_boot_clicks}"),
     # ---------------------------------------------------------------- docs/TEST_REPORT.md
     ("docs/TEST_REPORT.md", "权威运行（",
      r"权威运行（(\d{4}-\d{2}-\d{2})）", "权威运行（{run_date}）"),
@@ -119,12 +129,17 @@ CELLS = [
     ("docs/TEST_REPORT.md", "真实浏览器验收", r"每个状态各有几个标签 `([^`]+)`",
      "每个状态各有几个标签 `{console_labels}`"),
     # Lines and events are different axes, and conflating them is what made the old sentence claim six
-    # refusals for what the server answered as eighteen. The request-side figures (`refusal_events`,
-    # `refusal_lines`, `refusal_endpoints`, `refusal_top`) are read by the reader but are deliberately NOT
-    # cells yet: `report.json` only started carrying `refusal_counts` with this round's harness change, so
-    # the newest certified report cannot fill them and a cell would refuse the whole stamping round. They
-    # stay cited prose off `scripts/server_refusal_census.py` until a chain that recorded them becomes the
-    # authority -- then this is a table-only swap.
+    # refusals for what the server answered as eighteen. These four cells are the request side: two gates
+    # had to land first, the harness recording per-endpoint counts and the census script committing the
+    # server-side cross-check, because a cell reading a field the newest report lacks refuses the round.
+    ("docs/TEST_REPORT.md", "真实浏览器验收",
+     r"亲眼看到 (\d+) 次被拒，按标签去重成 (\d+) 条、(\d+) 个端点",
+     "亲眼看到 {refusal_events} 次被拒，按标签去重成 {refusal_lines} 条、{refusal_endpoints} 个端点"),
+    ("docs/TEST_REPORT.md", "真实浏览器验收", r"最多的一支是 `([^`]+)`", "最多的一支是 `{refusal_top}`"),
+    ("docs/TEST_REPORT.md", "真实浏览器验收", r"服务端答了 (\d+) 次 4xx、摊在 (\d+) 个端点上",
+     "服务端答了 {server_4xx_events} 次 4xx、摊在 {server_endpoints} 个端点上"),
+    ("docs/TEST_REPORT.md", "真实浏览器验收", r"那几行压着 (\d+) 次真被拒的请求",
+     "那几行压着 {refusal_403_events} 次真被拒的请求"),
     ("docs/TEST_REPORT.md", "真实浏览器验收", r"共 (\d+) 个视图记录 / (\d+) 次 axe 扫描",
      "共 {browser_views} 个视图记录 / {browser_scans} 次 axe 扫描"),
     ("docs/TEST_REPORT.md", "真实浏览器验收", r"(\d+) 个 hidden 元素、(\d+) 个仍在渲染",

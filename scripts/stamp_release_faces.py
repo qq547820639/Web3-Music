@@ -184,6 +184,12 @@ def figures(run: dict) -> dict:
                        ("regression_step", "provider-regression-100"),
                        ("generic_step", "generic-rest-roundtrip")):
         got[name] = got["rows_by_name"].get(step, "NOT-FOUND")
+    # How many assets the restore-fidelity leg actually compared. The count moves with the demo database,
+    # so a face that quotes it has to be stamped rather than remembered: one round's "4 个资产字节一致"
+    # was still on the checklist while the archive read 2.
+    fidelity = str(got.get("restore", ""))
+    match = re.search(r"(\d+) assets", fidelity)
+    got["restore_assets"] = match.group(1) if match else "NOT-FOUND"
     report = browser_pair(run)
     got["browser_report"] = str(report.relative_to(ROOT)) if report else "MISSING"
     # The report-derived keys are declared up front so a run without a paired report reads NOT-FOUND rather
@@ -191,9 +197,10 @@ def figures(run: dict) -> dict:
     # dict, and keys that appear and disappear with the evidence make that check answer a different question.
     for name in ("browser_views", "browser_scans", "browser_mobile_fit", "browser_hidden",
                  "browser_rendered_hidden", "browser_export_bytes", "browser_violations", "browser_commit",
-                 "browser_uncaught", "console_lines", "console_app_lines", "console_network_lines",
+                 "browser_uncaught", "browser_boot_clicks", "browser_report_dir", "console_lines", "console_app_lines", "console_network_lines",
                  "console_status_breakdown", "console_labels", "console_error_events", "refusal_lines",
-                 "refusal_events", "refusal_endpoints", "refusal_403_events", "refusal_top"):
+                 "refusal_events", "refusal_endpoints", "refusal_403_events", "refusal_top",
+                 "server_4xx_events", "server_endpoints", "server_request_lines"):
         got.setdefault(name, "NOT-FOUND")
     if report:
         data = json.loads(report.read_text(encoding="utf-8"))
@@ -208,6 +215,8 @@ def figures(run: dict) -> dict:
             if data.get("scans") else "NOT-FOUND"
         got["browser_export_bytes"] = " / ".join(f"{e['bytes']}" for e in data.get("privacy_exports", [])) \
             or "NOT-FOUND"
+        got["browser_boot_clicks"] = data.get("boot_window_clicks", "NOT-FOUND")
+        got["browser_report_dir"] = report.parent.name
         got["browser_violations"] = data.get("violations_by_impact", "NOT-FOUND")
         got["browser_commit"] = data.get("git_commit", "NOT-FOUND")
         got["browser_uncaught"] = data.get("uncaught_errors", "NOT-FOUND")
@@ -252,6 +261,19 @@ def figures(run: dict) -> dict:
             got["refusal_top"] = f"{top} 共 {hits} 次"
         else:
             got["refusal_top"] = "NOT-FOUND"
+        # The second observer: `server-refusals.txt` is written by scripts/server_refusal_census.py from
+        # `docker compose logs api` over this run's own browser row window, so a face can quote what the
+        # server answered next to what the pages saw, and the two can be reconciled by the resident test.
+        census_file = report.parent / "server-refusals.txt"
+        got["server_4xx_events"] = got["server_endpoints"] = got["server_request_lines"] = "NOT-FOUND"
+        if census_file.exists():
+            census_text = census_file.read_text(encoding="utf-8", errors="replace")
+            for pattern, key in ((r"server_4xx_events: (\d+)", "server_4xx_events"),
+                                 (r"request_lines_parsed: (\d+)", "server_request_lines")):
+                found = re.search(pattern, census_text)
+                if found:
+                    got[key] = found.group(1)
+            got["server_endpoints"] = len(re.findall(r"^\s*\d{3} \w+\s+\S+\s+\d+$", census_text, re.M))
     return got
 
 

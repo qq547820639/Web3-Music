@@ -95,7 +95,13 @@ SHAPE = {
     "refusal_endpoints": "9",
     "refusal_403_events": "18",
     "refusal_top": "GET /api/auth/me -> 401 共 28 次",
+    "server_4xx_events": "48",
+    "server_endpoints": "8",
+    "server_request_lines": "503",
     "browser_commit_short": "0123456",
+    "restore_assets": "2",
+    "browser_report_dir": "browser-a11y-20260928T085606Z",
+    "browser_boot_clicks": "2",
     "media_scan": "14/14",
     "media_scan_step": "14",
 }

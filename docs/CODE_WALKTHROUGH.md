@@ -58,7 +58,7 @@ flowchart LR
 | 应用/API 层 | `services/api/app` | FastAPI：`main.py`（旧式路由）+ `routers/`（模块化路由）+ `domain/`（纯领域逻辑）+ `auth.py`（会话与令牌）+ `mfa.py`（第二因子材料与密封） |
 | 异步执行层 | `services/worker` | PostgreSQL Lease Worker（领取/心跳/重试/死信）、Provider Adapter、媒体入库、结算 |
 | 仿真/测试层 | `services/provider-emulator`、`services/payment-emulator`、`services/acceptance`、`services/loadtest` | 故障实验室、支付模拟、端到端验收、容量压测 |
-| 契约层 | `shared/contracts` | `authority-matrix.json`（96 条路由 / 51 条写操作的权限派生件，其中 5 条写路由另带「当场再交出凭据」这一列，与 `docs/AUTHORITY_MATRIX.md` 成对）+ OpenAPI v13（86 paths，含 `/api/account/export`、`/api/account/erasure`、五个 `/api/auth/mfa/*`、三条 `/api/workspace/members*` 与 5 条 `/api/workspace/invitations*` / `/api/account/invitations*`）+ JSON Schema |
+| 契约层 | `shared/contracts` | `authority-matrix.json`（100 条路由 / 54 条写操作的权限派生件，其中 5 条写路由另带「当场再交出凭据」这一列，与 `docs/AUTHORITY_MATRIX.md` 成对）+ OpenAPI v13（90 paths，含 `/api/account/export`、`/api/account/erasure`、五个 `/api/auth/mfa/*`、三条 `/api/workspace/members*` 与 5 条 `/api/workspace/invitations*` / `/api/account/invitations*`）+ JSON Schema |
 | 数据层 | `db/migrations`（19 个）、`db/bootstrap` | 领域表、RLS、约束/触发器/索引、种子数据、角色 |
 | 基础设施层 | `infrastructure/prometheus`、`infrastructure/kubernetes` | 指标抓取、生产参考部署 |
 | 运维层 | `scripts/`（33 个） | 启动/验证/Chaos/备份恢复/发布证据/容量 Gate/四条常驻演练 |
@@ -209,7 +209,7 @@ api/worker ──> MinIO（媒体）
 
 | 契约 | 事实源 | 与代码一致性 |
 |---|---|---|
-| OpenAPI v13（79 paths） | 由运行中的 FastAPI `/openapi.json` 导出 | 一致（`export-openapi.sh`），但 `securitySchemes` 空 |
+| OpenAPI v13（90 paths） | 由运行中的 FastAPI `/openapi.json` 导出 | 一致（`export-openapi.sh`）；`securitySchemes` 现在带 `JWTBearer` 与 `SessionCookie` 两项（本文早期版本记的是"空"，那一句与下面证据索引里同一行的 `paths=71` 快照同时写下，读的是当时那份导出件） |
 | `song-spec-runtime-v1` | `contracts.py` 运行时强制 | 一致（单测覆盖） |
 | 其余 JSON Schema | `shared/contracts/*.schema.json` | **仅文档，运行时未校验** |
 | Provider 契约 | `docs/PROVIDER_ADAPTER_CONTRACT.md` + `test_provider_contract.py` | 一致（未执行） |
@@ -375,4 +375,4 @@ graph TD
 - UX 信号：`app.js` 中 `prompt(` 16 次、`confirm(` 4 次、`loading`/`spinner` 0 次、`aria-` 0 次、`tabindex` 0 次。
 - 验证证据：`release-evidence/20260810T000459Z/static-verify.log` = `28 passed in 3.62s`；`environment.txt` = `git_commit=unavailable`。
 - 测试形态：`tests/unit/test_v13_final.py:7-16` 用 psycopg2 stub 规避 DB；`test_capacity_package.py` 为字符串包含断言。
-- OpenAPI：`shared/contracts/openapi-v13.json` `paths=71`、`securitySchemes=[]`。
+- OpenAPI：`shared/contracts/openapi-v13.json` `paths=71`、`securitySchemes=[]`（这一行是 2026-08-10 那份取证快照的读数，不是现状；现状由 `tests/unit/test_release_record_consistency.py` 的契约引用普查对着在册件现算，本文正文按它写）。
