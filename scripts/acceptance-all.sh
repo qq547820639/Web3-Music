@@ -257,6 +257,31 @@ step_fidelity_compare() {
 step_backup_restore() {
   ./scripts/backup.sh acceptance
   RESTORE_CONFIRM=YES ./scripts/restore.sh backups/acceptance
+  # 恢复会把应用层的容器重建一遍，容器地址也就跟着变了。这一步当时没有回头看网关：
+  # R35 那轮 8 步之后，网关的 upstream 还停在 api 上一个容器的地址上，之后每一个经由网关的请求
+  # 都是 502（那个地址已经被 IPAM 发给了 worker），而网关自己的 healthcheck 只问本机的
+  # /gateway-health，于是它整轮都"健康"——直到第 12 步那次经由网关的登录才撞红。
+  # 端口从 compose 实际发布的读，不写死：这台机器上 8080 是另一个项目的 ssh 隧道，写死就会去审计别人。
+  local code tries=0 gwport
+  gwport="$(docker compose port gateway 80 | cut -d: -f2)"
+  until [ -n "$gwport" ]; do
+    tries=$((tries + 1)); [ "$tries" -ge 10 ] && { echo "::error title=gateway-port::compose 没有报告 gateway:80 的发布端口"; return 1; }
+    sleep 2; gwport="$(docker compose port gateway 80 | cut -d: -f2)"
+  done
+  tries=0
+  while :; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:${gwport}/health" || true)"
+    [ "$code" = "200" ] && break
+    tries=$((tries + 1))
+    [ "$tries" -ge 15 ] && {
+      echo "::error title=gateway-upstream::经由网关(127.0.0.1:${gwport}) 的 /health 是 $code 而不是 200，" \
+           "恢复后的第 $((tries * 2)) 秒仍然如此。502 意味着网关把自己加载时解析到的 api 地址用到了现在——" \
+           "检查 services/gateway/nginx.conf 的 upstream 是否还有 zone + resolver + server ... resolve；" \
+           "直接问 api 是 $(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8000/health)。"
+      return 1; }
+    sleep 2
+  done
+  echo "经由网关（127.0.0.1:${gwport}）的 /health 是 200（等了 $((tries * 2)) 秒）：恢复重建的容器地址没有把网关留在旧地址上"
 }
 
 step_acceptance_rerun() {

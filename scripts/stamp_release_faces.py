@@ -16,8 +16,11 @@ So: compute them, print them, and paste nothing you did not just read.
     python scripts/stamp_release_faces.py --run 2026...Z  # a named one
     python scripts/stamp_release_faces.py --json          # machine-readable
 
-It writes nothing. Substituting into the faces stays a human-approved step because the sentences around
-each number carry claims about *why* a figure moved, and no template can say that.
+This script writes nothing on purpose: it is the reader. The writer is
+`scripts/release_face_cells.py`, which holds the cell table -- (file, marker line, regex, template) for
+every figure above -- and applies it in one gated pass: each cell must resolve to exactly one match or the
+whole round is refused, so a face cannot be stamped half a round. What no template can do is say *why* a
+figure moved; the sentences around the numbers stay written by whoever read the run.
 """
 from __future__ import annotations
 

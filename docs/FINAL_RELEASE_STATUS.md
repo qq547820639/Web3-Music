@@ -9,7 +9,7 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **21 steps PASS and 1 recorded as skipped** across 22 rows, commit `037b818`, 2026-09-27T19:41:52Z → 2026-09-27T19:57:19Z, evidence in `release-evidence/acceptance-20260927T194152Z/`, started under `host_load="5.02 4.64 5.21"` on a Docker VM 4 vCPU with `disk_free_kb=8442608` recorded beside it, with 17 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/21/21/21 rows with `FAIL=0` in every `SUMMARY.txt`), and 21 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 1).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **21 steps PASS and 1 recorded as skipped** across 22 rows, commit `037b818`, 2026-09-27T19:41:52Z → 2026-09-27T19:57:19Z, evidence in `release-evidence/acceptance-20260927T194152Z/`, started under `host_load="5.02 4.64 5.21"` on a Docker VM 4 vCPU with `disk_free_kb=8442608` recorded beside it, with 17 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/21/21/21 rows with `FAIL=0` in every `SUMMARY.txt`), and 22 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 2).
 `414752d` was this file's authority until the round before last, and the reason the sentence is now machine-checked rather than maintained: the paragraph below it carried a count, a commit list, a row list and a red total that nothing compared against the archive, so the header could describe a run that was no longer the newest one for two full rounds before anyone noticed.
 The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260927T195301Z/report.json`, stamped with the same commit: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes.
 
@@ -1084,3 +1084,58 @@ recreated stack: `clock skew vs host: api 0s`, `postgres 1s`.
 **Not yet certified.** No authoritative chain run includes step 19 or these 403 tests yet; the four faces
 still describe `037b818`. The next `acceptance-all.sh` run is what restamps them, and it will carry the
 address-dimension round above as well.
+
+## 2026-09-28 two reds that were about the machine, and the port that was never ours
+
+`acceptance-20260928T051817Z` and `acceptance-20260928T054641Z` both failed on things the code was right
+about. The first: one candidate of a generation job was judged permanently bad because `ffprobe` did not get
+scheduled in time (`TimeoutExpired: ... timed out after 15 seconds`, `attempt_count` stopped at **1**, host
+load 11.5 rising to 25 while eight CPUs were shared with my own unit ladder). The worker's `except Exception`
+wrapped every probe outcome as a content failure, so the retry path never saw it. Fixed by naming the line
+where the two classes actually differ -- `services/worker/validation.py:validation_is_infrastructure`
+(`TimeoutExpired` and `FileNotFoundError` are the machine, `CalledProcessError` is the file) -- wired at
+`services/worker/worker.py`, and pinned by `tests/unit/test_validation_retry.py`, whose AST arm asserts an
+`If` gated on the verdict and raising `Retryable`, because "the file mentions the function" is not a wiring
+assertion. The timeout was **not** raised: 15 idle seconds is the host's bill, and 60 seconds would only
+reappear later and uglier.
+
+The second was worse, because the stack lied about being healthy. Step 8's `restore.sh` recreates the
+application tier; a recreated container gets a new address from Docker's IPAM, and the gateway's
+`upstream api_upstream { server api:8000; }` resolves that name **once, at config load**. Its error log says
+it dialled `172.28.95.8:8000` while `docker inspect` had api at `.7` and worker at `.8` -- the pool had given
+the api's old address to somebody else, and nothing there listens on 8000. Every route behind the gateway was
+502 from then on; the gateway's own healthcheck asks a local `/gateway-health`, so `docker compose ps`
+reported it healthy for the rest of the run. Step 12's mfa drill, the only leg in the chain that posts
+through the gateway, took the hit (`status 502`), and the following session-count check read `5 -> 6` because
+that 502 minted one session short -- one cause, two faces.
+
+Two of my three reproduction attempts were void, and both for instrument reasons worth recording: the host's
+**8080 belongs to another project** (`curl :8080/openapi.json` returns `"title":"企业采购自动询价 Web 系统 API"`),
+because this stack publishes the gateway on `GATEWAY_PORT=18080` from `.env` while `.env.example` still
+advertises 8080 -- so the "it works now" readings that made me call this a race were someone else's app. The
+second arm recreated the api and got back the *same* IP, so its green was a no-op. Only a third arm, which
+pins the old slot with `docker run --ip` before recreating, moved the api `.12 -> .7`: the gateway was still
+502 at t+30s while `curl :8000/health` was 200. **Deterministic, not a race.**
+
+Chosen fix (over pinning api/web/admin addresses, the six-dimension notes are in the checklist item 30):
+make the gateway follow DNS -- `services/gateway/nginx.conf` now gives each upstream a `zone`, declares
+`resolver 127.0.0.11 valid=10s ipv6=off`, and uses `server api:8000 resolve;`. nginx's own doc for `resolve`:
+it "monitors changes of the IP addresses that correspond to a domain name of the server, and automatically
+modifies the upstream configuration without the need of restarting nginx", and needs a resolver plus a
+server group in shared memory; open-source gained it at 1.27.3 and the image reports `nginx/1.27.5`. The repo
+already carried this shape in `services/web/nginx.conf:12-18`, whose comment names the identical symptom --
+the defect survived only because the fix was never applied to the gateway.
+
+Verified as a pair on one fault state: old config + api moved ⇒ the new step-8 precondition goes red
+(`经由网关(127.0.0.1:18080) 的 /health 是 502 而不是 200 … 直接问 api 是 200`); new config + the same moved api
+⇒ green, waited 0 s, no gateway restart. Resident: `tests/unit/test_gateway_upstream_resolution.py` censuses
+`services/*/nginx.conf` for any proxy that cannot re-resolve, with a denominator (3 configs, the gateway's 3
+upstreams) and five firing arms -- drop `resolve`, drop `zone`, drop `resolver`, a `proxy_pass` naming no
+declared upstream, and a commented-out old shape which must **not** count. `scripts/smoke.sh` now asks
+`docker compose port gateway 80` instead of assuming 8080, and refuses (rc=2) when compose reports nothing,
+rather than printing four greens for a neighbouring project.
+
+**Not yet certified.** `acceptance-20260928T054641Z` stopped at step 12 (the chain is fail-fast), so it is
+archived as a judged-red finding, not an authority. The four faces' mechanically-derived cells were restamped
+to 22 archived reds / `26-09-28 = 2` by `scripts/release_face_cells.py --apply`; the authority sentence still
+describes `037b818`. Ladder 409 → 423 (7 gateway-census arms + 7 table-resolution arms).

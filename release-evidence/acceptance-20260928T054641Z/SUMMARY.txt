@@ -1,0 +1,26 @@
+Resonance AI Music Asset Platform — E2E Acceptance
+started_at=2026-09-28T05:46:41Z
+evidence_dir=release-evidence/acceptance-20260928T054641Z
+host=Mac
+host_load="6.91 11.42 17.41" host_cpus=10 docker_cpus=4
+git_commit=3370da13ba819aa928c9594dfef5a462f504822e
+fresh_database=1
+disk_free_kb=7262568
+
+STEP | RESULT | STARTED_AT | FINISHED_AT
+static-verify | PASS | 2026-09-28T05:46:41Z | 2026-09-28T05:46:57Z
+compose-up | PASS | 2026-09-28T05:46:57Z | 2026-09-28T05:47:20Z
+acceptance | PASS | 2026-09-28T05:47:20Z | 2026-09-28T05:47:46Z
+contract-test | PASS | 2026-09-28T05:47:46Z | 2026-09-28T05:47:53Z
+chaos-worker-recovery | PASS | 2026-09-28T05:47:53Z | 2026-09-28T05:48:36Z
+lease-contention | PASS | 2026-09-28T05:48:36Z | 2026-09-28T05:49:12Z
+restore-fidelity-snapshot | PASS | 2026-09-28T05:49:12Z | 2026-09-28T05:49:13Z
+backup-restore | PASS | 2026-09-28T05:49:13Z | 2026-09-28T05:49:53Z
+restore-fidelity-compare | PASS | 2026-09-28T05:49:53Z | 2026-09-28T05:49:54Z
+acceptance-rerun | PASS | 2026-09-28T05:49:54Z | 2026-09-28T05:50:19Z
+erasure-drill | PASS | 2026-09-28T05:50:19Z | 2026-09-28T05:51:06Z
+mfa-drill | FAIL | 2026-09-28T05:51:06Z | 2026-09-28T05:55:11Z
+failed_step_env: host_load="9.91 9.17 13.29" host_cpus=10 docker_cpus=4
+
+finished_at=2026-09-28T05:55:12Z
+host_load="9.91 9.17 13.29" host_cpus=10 docker_cpus=4
