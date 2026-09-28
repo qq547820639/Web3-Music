@@ -40,6 +40,53 @@ METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
 LINE_SCANNED = ("docs/CODE_WALKTHROUGH.md",)
 LINE_CLAIM = re.compile(r"`([^`]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z]{2,5})`（(\d+) 行）")
 
+# The same shape for resident-test case counts: prose that names a test file and states how many cases it
+# holds. Three existed across `docs/*.md`, and one was four cases short -- `test_environment_contract.py`
+# had grown from 9 to 13 while the gate item still said 9, in the present tense ("把这件事变成常驻门禁"), so a
+# reader would size the guard by a number that no longer describes it.
+CASE_CLAIM = re.compile(r"`(tests/unit/[a-z_0-9]+\.py)`（(\d+) 条")
+
+
+def case_claim_problems(root, paths):
+    problems = []
+    for doc in paths:
+        text = (root / doc).read_text(encoding="utf-8")
+        for found in CASE_CLAIM.finditer(text):
+            target = root / found.group(1)
+            if not target.exists():
+                problems.append(f"{doc} counts cases in {found.group(1)}, which is not in the tree")
+                continue
+            real = sum(1 for line in target.read_text(encoding="utf-8").splitlines()
+                       if line.startswith("def test_"))
+            if real != int(found.group(2)):
+                problems.append(f"{doc} says {found.group(1)} holds {found.group(2)} cases; "
+                                f"the file defines {real} `test_` functions")
+    return problems
+
+
+def test_the_documented_case_counts_match_the_case_files():
+    docs = sorted(f"docs/{p.name}" for p in (ROOT / "docs").glob("*.md"))
+    problems = case_claim_problems(ROOT, docs)
+    assert not problems, "\n".join(problems)
+    claims = sum(len(CASE_CLAIM.findall((ROOT / d).read_text(encoding="utf-8"))) for d in docs)
+    assert claims >= 3, f"only {claims} case-count claims are left in the docs; the scanner has nothing to say"
+
+
+def test_the_case_count_rule_fires_when_a_file_grows(tmp_path):
+    (tmp_path / "tests" / "unit").mkdir(parents=True)
+    (tmp_path / "tests/unit/test_x.py").write_text("def test_a():\n    pass\n\ndef test_b():\n    pass\n",
+                                                   encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    honest = "门禁见 `tests/unit/test_x.py`（2 条）"
+    (tmp_path / "docs/d.md").write_text(honest, encoding="utf-8")
+    assert case_claim_problems(tmp_path, ("docs/d.md",)) == []
+    (tmp_path / "docs/d.md").write_text("门禁见 `tests/unit/test_x.py`（9 条）", encoding="utf-8")
+    red = case_claim_problems(tmp_path, ("docs/d.md",))
+    assert len(red) == 1 and "defines 2" in red[0], red
+    (tmp_path / "docs/d.md").write_text("门禁见 `tests/unit/test_gone.py`（1 条）", encoding="utf-8")
+    missing = case_claim_problems(tmp_path, ("docs/d.md",))
+    assert len(missing) == 1 and "not in the tree" in missing[0], missing
+
 # Unambiguous citations: the path is real, so the line number is a claim about that file's content.
 # Bare names (`main.py:1018`) are skipped on purpose -- this tree has several `main.py` files, and picking
 # one by basename would make the gate agree with whichever file the checker happened to open.

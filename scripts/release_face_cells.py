@@ -135,6 +135,12 @@ CELLS = [
     # reading `violations_by_impact` says it whether or not the leg found anything.
     ("docs/TEST_REPORT.md", "真实浏览器验收",
      r"\*\*critical / serious / moderate 三档全零\*\*", "**{browser_violations_phrase}**"),
+    # The ladder series' last element is the only one that can be recomputed: everything before it was read
+    # from a log that never entered the tree. The tail sat at 437 -- two authorities behind -- because the
+    # sentence that names it as "权威运行 … 第 1 步的读数" was prose.
+    ("docs/TEST_REPORT.md", "单元测试：28 → 54",
+     r"→ \*\*(\d+)\*\*（末位是权威运行 `acceptance-\d{8}T\d{6}Z`",
+     "→ **{unit_passed}**（末位是权威运行 `acceptance-{stamp}`"),
     # Three more drill bullets on this face state a current `N/N` in the same shape as the two that were
     # made cells (mfa, media scan) and were left as prose: the reading is produced by the step, published by
     # the reader, and quoted by nobody, which means the sentence would keep its number after the drill grew.

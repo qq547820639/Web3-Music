@@ -1495,9 +1495,12 @@ eleven because the interpolation contains a colon. Whole-tree counts (`git ls-fi
 `db/migrations` 22) are date-labelled instead of gated, because gating them would redden every commit that
 adds a file and that tax would end with the rule being deleted.
 
-**Ladder.** 456 collected and passing at `c007b21` -- 445 at the previous authority. After this section was
-written the suite was re-run on the tree it describes: `pytest -q tests/unit` reads 462 passed (the six new
-cases being four in `tests/unit/test_reference_doc_figures.py` -- line counts, the port table, and their two
-fire controls -- and two in `test_release_record_consistency.py` for the verdict marker), and
-`scripts/static-verify.sh` exits 0. The stamped `unit_passed` stays 456 because that is what the certified
-run measured; 462 is the reading of the tree, quoted here with the command that produced it.
+**Ladder.** 456 collected and passing at `c007b21` -- 445 at the previous authority. The face quotes 456
+because that is what the certified run measured, and the stamped tail of `docs/TEST_REPORT.md`'s series is
+the cell that says so. The tree this section is written in reads higher: `pytest -q tests/unit` now prints
+464 passed and `scripts/static-verify.sh` exits 0. The eight cases between the two readings are six in
+`tests/unit/test_reference_doc_figures.py` -- the line-count rule and its fire control, the port table and its
+fire control, the case-count rule and its fire control -- and two in
+`test_release_record_consistency.py` for the verdict marker. That last number is a reading of this moment,
+not a claim about the record: any added case moves it, which is exactly why the authority figure lives in a
+cell and this one comes with the command that produced it.
