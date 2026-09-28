@@ -57,8 +57,9 @@ and logs the reading in the same header.
 > dispatches those jobs, but this environment cannot read their outcome: the repository is
 > private (unauthenticated fetch returns 404), the `gh` CLI is not logged in, the GitHub MCP
 > connector exposes no workflow-run tool, and the local browser has no GitHub session. Treat
-> the CI jobs as dispatched-and-unverified; every number quoted in this file comes from the
-> local run above.
+> the CI jobs as dispatched-and-unverified; every number quoted in **this section** comes from
+> the local run described just above it, and readings taken in later rounds live in the dated
+> sections below and in the stamped cells.
 
 - Compose E2E, twice — including once **after** a backup/restore: 11 resident cases over
   live api/worker/web/admin/gateway.

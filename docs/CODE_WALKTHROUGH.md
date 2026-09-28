@@ -81,7 +81,7 @@ flowchart LR
 | `README.md` | 质量高：闭环图、启动、验证、安全边界、外部前置条件、500 并发包说明齐全；并**诚实声明**"500 并发未经实测""正式上线需外部证据"。 |
 | `Makefile` | 薄封装，指向 `scripts/*`，职责清晰。 |
 | `.env.example` | 变量齐全、注释到位、带 v14 容量参数。**注意**：`DB_POOL_MAX=16` 与 `settings.py` 默认 `12` 不一致（§4 P2-10）。 |
-| `docker-compose.yml`（+3 个 override） | 12 服务编排正确；`depends_on` 用 healthcheck/`service_completed_successfully`；密码硬编码（`music_admin`/`minioadmin`），生产 override 用 `${VAR:?}` 强制注入。 |
+| `docker-compose.yml`（+4 个覆层） | 12 服务编排正确；`depends_on` 用 healthcheck/`service_completed_successfully`；密码硬编码（`music_admin`/`minioadmin`），生产 override 用 `${VAR:?}` 强制注入。 |
 | `SOURCE_MANIFEST.sha256`、`release-evidence/` | 存在源码清单与发布证据包，但 `static-verify.log` 只记录 **28 个单元测试通过**，无 Docker E2E 证据。 |
 | `LICENSE`/`SECURITY.md`/`THIRD_PARTY_NOTICES.md` | 合规文档齐全；SECURITY 明确列出"本地演示刻意保留的边界"与"对外部署前强制要求"。 |
 
@@ -143,7 +143,7 @@ HTTP → gateway → request_context(CSRF/安全头) → get_user(鉴权) → ge
 | `admin/index.html` | 3,438 B | 12 行 |
 | `admin/styles.css` | 5,054 B | 1 行（压缩） |
 
-**信息架构其实不差**：web 有 创作/资产/市场/账户 四视图，admin 有 总览/任务/财务/信任/发布证据 五视图，与后端 69 条 API 基本对齐。**但交互深度明显不足**（见 §5）。
+**信息架构其实不差**：web 有 创作/资产/市场/账户 四视图，admin 有 总览/任务/财务/信任/发布证据 五视图，与后端 100 条 /api 路由基本对齐。**但交互深度明显不足**（见 §5）。
 
 **JS 关键实现**：
 - `api()` 封装：Cookie + CSRF 双提交；401 时自动 `/api/auth/refresh` 重试一次；`credentials:'same-origin'`。`state.token` 恒为空 → 依赖 HttpOnly Cookie（符合 v13 设计，但登录响应里的 `access_token/csrf_token` 被前端丢弃，属历史遗留死字段）。
@@ -158,18 +158,18 @@ HTTP → gateway → request_context(CSRF/安全头) → get_user(鉴权) → ge
 | `payment-emulator` | 支付/退款意图 + HMAC 签名回调（后台线程延迟 0.8s） | 好；`processing/requires_action` 场景不回调 → 订单永久卡住（§4 P1-3） |
 | `migrate` | 版本化迁移（SHA-256 校验和，防篡改） | 好 |
 | `gateway` | Nginx 限流/CSP/安全头/前缀剥离 | 好；`proxy_next_upstream` 对非幂等写请求可能重放（标准坑） |
-| `acceptance` | 4 个 E2E 测试（默认/商业/Provider 契约/Payment 契约） | **代码完整且覆盖深，但交付环境未执行** |
+| `acceptance` | 5 个测试模块（默认/商业/Provider 契约/Payment 契约/跨租户隔离） | **代码完整且覆盖深，但交付环境未执行** |
 | `loadtest` | `load-test-500.py` 500 用户异步压测 | 仅 GET 读路径（README 已诚实声明不等于生成任务压测） |
 
 ### 2.5 `shared/contracts`（契约层）
 
 - `openapi-v13.json/yaml`：**现读 90 条路径、45 个 `components.schemas`，`securitySchemes` 有 `JWTBearer` 与 `SessionCookie` 两条**——这三个数由 `tests/unit/test_reference_doc_figures.py` 对着合同文件现算。本行原先记的是 §4 P1-5 还在册时的样子——路径数与 schema 数都还是旧合同的，且写着 `securitySchemes` 为空、安全模型未文档化；两种安全方案已声明、JSON/YAML 已重导并核对非空（见 `docs/ITERATION_CHANGES.md` A8 行）。
-- JSON Schema：顶层 8 个（song-spec-runtime、generation-job-v3、license-v1、order-v1、rights-evidence-v1、payment-event-v1、product-event-v1、brand-brief-v1、credit-hold）+ `design-reference/` 8 个旧版。
+- JSON Schema：顶层 10 个（song-spec-runtime-v1、generation-job-v3、license-v1、order-v1、rights-evidence-v1、payment-event-v1、product-event-v1、provider-submit-v1、brand-brief-v1、credit-hold）+ `design-reference/` 10 个旧版。
 - **关键事实**：运行时**只有 `song-spec-runtime-v1.schema.json` 被 `contracts.py` 真正加载校验**，其余 Schema 是"设计参考/文档事实源"，未在代码中执行（grep 确认无其他引用）。"JSON Schema 作为事实源"的说法**部分成立**——OpenAPI 是运行时导出的、SongSpec Schema 是强制的，但其余 Schema 与代码一致性无人自动校验（仅 `static-verify.sh` 做元模式校验 `check_schema`）。
 
 ### 2.6 `db/migrations` + `bootstrap`
 
-- 6 个迁移：001（25 表核心域）、002（26 表市场/商业）、003（跨租户外键 + Payout 不可变 + License 模板 RLS）、004（Brand Award 流程 + SECURITY DEFINER 函数）、005（auth_sessions/moderation_decisions + 不可变触发器）、006（容量索引）。
+- 22 个迁移（`db/migrations/001…022.sql`），前六支：001（核心域）、002（市场/商业）、003（跨租户外键 + Payout 不可变 + License 模板 RLS）、004（Brand Award 流程 + SECURITY DEFINER 函数）、005（auth_sessions/moderation_decisions + 不可变触发器）、006（容量索引）。
 - 亮点：`ledger_must_balance` 延迟约束触发器、`FORCE ROW LEVEL SECURITY` 批量循环、`prevent_immutable_mutation` 触发器（Revision/Asset/Rights/Ledger 追加不可变）、`payout_transition_guard` 状态机、`reserve_marketplace_offer` 等 SECURITY DEFINER 函数把并发/权限收口到 DB。
 - `bootstrap/00_roles.sql`：`music_app`（NOINHERIT，无 BYPASSRLS）、`music_worker`（NOINHERIT + **BYPASSRLS** 用于跨租户领取任务）。
 
@@ -179,7 +179,7 @@ HTTP → gateway → request_context(CSRF/安全头) → get_user(鉴权) → ge
 - `kubernetes/`：`resonance-apps.yaml`（Deployment×5 + Service）+ `resonance-capacity-500.yaml`（HPA api/worker min2 max10 + PDB + rollingUpdate maxUnavailable 0），占位镜像 `registry.example.com`，需外置 Secret controller。
 - `scripts/`（2026-09-28 现数 42 份文件，含 `requirements-browser.txt`、`requirements-load.txt` 两份测试侧依赖清单）：`up/test/smoke/reset`、`static-verify`、`architecture-audit`（**基于字符串包含的“契约审计”**，非真实架构校验）、`contract-test`、`chaos-worker-recovery` + `chaos_worker_recovery.py`（Kill-9 恢复 + 额度泄漏校验，质量高）、`lease-contention` + `lease_contention.py`、`backup/restore/verify-backup`、`restore_fidelity.py`（绝对指纹：逐账户账本余额 + 每个资产 master 音频 sha256）、`capacity-gate-500`、`load-test-500.py`、`release-evidence`、`source-manifest.sh`、`export-openapi.sh`、`generate-secrets`（**生成 `POSTGRES_*` 密码但 compose 未消费**，§4 P2-9）；链上常驻演练 `erasure_drill.py` / `mfa_drill.py` / `member_drill.py` / `media_scan_drill.py` / `report_drill.py` 五支（各自以 `N/N checks passed` 结尾，跑在宿主 Python 里、连真栈真库），另有浏览器门禁 `browser_a11y.py`（`BROWSER=1` 才在本地跑，CI 每次跑）；批量与对账 `provider_regression.py`、`reconcile_market.py`、`reservation_race.py`；以及 `authority_matrix.py`（从路由装饰器派生权限矩阵，`--check` 接进 `static-verify.sh`）与 `e2e_client.py`——它的 `totp_code()` 是从 RFC 6238 现写的 stdlib 实现，与被测服务端用的 pyotp 不同源，否则「演练绿」只说明两侧犯了同一个错。
 - `tests/unit`（本轮实测 45 个文件、`pytest -q tests/unit --collect-only -q` 读出 478 个收集实例，含参数化展开）：定位为**无栈的静态与纯函数判据**——`test_v13_final.py` 仍用 `psycopg2` stub 规避 DB 依赖；只有两个 emulator 测试用了 `TestClient`。本文件原先那句「**无任何 FastAPI 主应用 + 真实 PostgreSQL 的测试**」已被现实推翻，按现在的形状改写：真应用 + 真库那一层由链上五支演练承担（`erasure/mfa/member/media_scan/report`，各自用 httpx 打 `127.0.0.1:8000`、用 psql 打同一个 compose 里的库），静态侧补的是那些演练所依赖的接线（`test_db_refusal.py` 拿真 `psycopg2.Error` 去调用那个映射函数，`test_report_surface.py` 比对 Python 词表与 021 的 CHECK 名单）。两侧不是重叠：演练量行为，静态量「判据赖以成立的形状还在不在」。
-- `.github/workflows/ci.yml`：三 job —— `static-and-unit`、`compose-acceptance`（真实起 Docker + acceptance + contract + chaos + backup/restore）、`commercial-flow`。**CI 已编码完整 E2E，但本仓库无 CI 通过证据**（`git_commit=unavailable`，release-evidence 仅静态 log）。
+- `.github/workflows/ci.yml`：5 个 job —— `static-and-unit`、`compose-acceptance`（真实起 Docker + acceptance + contract + chaos + backup/restore）、`commercial-flow`、`browser-a11y`、`capacity-500`。**CI 已编码完整 E2E，但本仓库无 CI 通过证据**（`git_commit=unavailable`，release-evidence 仅静态 log）。
 
 ---
 
@@ -337,7 +337,7 @@ api/worker ──> MinIO（媒体）
 
 2. **验证层面：没有"做完"**。真实 E2E（跨容器 + PostgreSQL RLS + MinIO + Redis Outbox + Worker 恢复 + 商业闭环）**从未在本交付环境执行**，仓库里唯一"验证证据"是 28 个静态/单元测试的 log（`28 passed in 3.62s`）。CI 里虽编码了 `compose-acceptance` 与 `commercial-flow` 两套完整 E2E，但无通过证据。这印证了"28 个单测都是静态/单元级、真实 E2E 从未跑过"。
 
-3. **前端体验层面：明显是 MVP 骨架**。单文件压缩 JS（32KB/11KB）、`prompt()` 交互 16 处、零 loading/空/错误态、零 aria、无实时任务流、无 A/B 试听、质量评分无可视化、无分页搜索。后端 69 条 API 的丰富度**没有在前端得到对等呈现**。
+3. **前端体验层面：明显是 MVP 骨架**。单文件压缩 JS（32KB/11KB）、`prompt()` 交互 16 处、零 loading/空/错误态、零 aria、无实时任务流、无 A/B 试听、质量评分无可视化、无分页搜索。后端 100 条 /api 路由的丰富度**没有在前端得到对等呈现**。
 
 **一句话**：后端"宽度"到位、前端"厚度"不足、验证"可信度"缺失。
 

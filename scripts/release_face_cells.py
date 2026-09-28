@@ -75,6 +75,31 @@ CELLS = [
      r"同样 (\d+) 行绿了 (\d+) 次", "同样 {repeat_width} 行绿了 {repeat_times} 次"),
     ("docs/RELEASE_CHECKLIST.md", "权威运行是 `scripts/acceptance-all.sh`",
      r"留档的判红共 (\d+) 份（[^）]*）", "留档的判红共 {red_count} 份（{red_days_cn}）"),
+    # Item 17 attributed both regression legs to the wrong step numbers and copied a latency pair from an
+    # older round, while the same run's own `metrics` lines state the steps and the timings. Both halves are
+    # cells now, including the green-line denominators -- which the tool computes with `runs_with`, a rule
+    # that skips red runs and the certified run itself, and which my hand count of "rows that say PASS"
+    # disagreed with by seven.
+    ("docs/RELEASE_CHECKLIST.md", "至少 100 次真实 Provider 生成回归",
+     r"权威运行第 (\d+) 步读数 `25/25 completed, error rate 0\.0%, p50 ([0-9.]+)s / p95 ([0-9.]+)s`；"
+     r"同一轮第 (\d+) 步的 100 任务 `p50 ([0-9.]+)s / p95 ([0-9.]+)s`",
+     "权威运行第 {generic_step} 步读数 `25/25 completed, error rate 0.0%, p50 {generic_p50_s}s / "
+     "p95 {generic_p95_s}s`；同一轮第 {regression_step} 步的 100 任务 `p50 {regression_p50_s}s / "
+     "p95 {regression_p95_s}s`"),
+    ("docs/RELEASE_CHECKLIST.md", "至少 100 次真实 Provider 生成回归",
+     r"这两步各自已经跑过 (\d+) 次（第三方适配器往返）／(\d+) 次（100 任务回归）绿线",
+     "这两步各自已经跑过 {generic_runs} 次（第三方适配器往返）／{regression_runs} 次（100 任务回归）绿线"),
+    # The sentence that says which tree was accepted named a commit it copied by hand, and it had stopped
+    # being the certified one. `{short}` is the same value the head line's cells already resolve.
+    ("docs/RELEASE_CHECKLIST.md", "被验收的树以",
+     r"`git_commit=([0-9a-f]{7})`", "`git_commit={short}`"),
+    # Item 24 states the second-factor drill's own tally and the unit-case count in the present tense, and
+    # neither had an owner: both had drifted to the 2026-09-26 readings (`56/56`, `229`) while the certified
+    # run reports 79/79 at step 12 and 478 cases. Same two keys the TEST_REPORT face already stamps.
+    ("docs/RELEASE_CHECKLIST.md", "两步验证（TOTP）",
+     r"演练 `scripts/mfa_drill\.py` (\d+/\d+)", "演练 `scripts/mfa_drill.py` {mfa}"),
+    ("docs/RELEASE_CHECKLIST.md", "两步验证（TOTP）",
+     r"单元测试 (\d+) 条", "单元测试 {unit_passed} 条"),
     ("docs/RELEASE_CHECKLIST.md", "media scan drill:",
      r"media scan drill: (\d+/\d+)", "media scan drill: {media_scan}"),
     # This face's head line carried a second, unowned pointer to a browser report and claimed it was the
