@@ -119,7 +119,9 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 ```
 
 容量 Gate 可用环境变量微调（默认值见 `scripts/capacity-gate-500.sh`）：
-`CAPACITY_USERS`（默认 500）、`CAPACITY_REQUESTS_PER_USER`（2）、`CAPACITY_MAX_ERROR_RATE`（1%）、`CAPACITY_MAX_P95_MS`（800ms）、`KEEP_CAPACITY_STACK`（1 则跑完不销毁容量栈）。
+`CAPACITY_USERS`（默认 500）、`CAPACITY_REQUESTS_PER_USER`（2）、`CAPACITY_MAX_ERROR_RATE`（1%）、`CAPACITY_MAX_P95_MS`（800ms）、`KEEP_CAPACITY_STACK`（1 则跑完不销毁容量栈）、`CAPACITY_FROM_HOST`（1 则把压测客户端从被测容器里搬到本机的发布端口上打）。
+
+选 `CAPACITY_FROM_HOST=1` 时必须先过身份门：脚本会取 `docker compose port gateway 80` 报出的宿主端口，跑 `python scripts/gateway_identity.py --base-url http://127.0.0.1:<端口> --port <端口>`，两条判据是「该端口只有一个监听者（`lsof` 按命令+PID 去重）」与「它的 `/openapi.json` 覆盖 `shared/contracts/openapi-v13.json` 声明的端点集」，任一条读不到就退 1、不开压。这道门是 2026-09-28 两次作废读数换来的（8080 上站着别人项目的容器、网关发布端口被一条间歇 ssh 通配监听共占，两支 500×2 里的 205 个 502 在被测栈自己的日志中一个都不存在）——端口号是 compose 报的，不等于流量到了它。
 
 ### 3.4 能成为「权威运行」的调用口径
 
@@ -171,7 +173,7 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 门禁 | 判定标准 | Go | No-Go |
 |---|---|---|---|
 | 静态校验 | `static-verify.sh` 退出码 0 | ✅ | ❌ |
-| 单元测试 | `pytest -q tests/unit` 全过。用例数由 `pytest -q tests/unit --collect-only -q` 现读（本轮实测 465 个收集实例，含参数化展开），门禁判的是退出码 0、且数量不得比上一轮少 | ✅ | ❌ |
+| 单元测试 | `pytest -q tests/unit` 全过。用例数由 `pytest -q tests/unit --collect-only -q` 现读（本轮实测 475 个收集实例，含参数化展开），门禁判的是退出码 0、且数量不得比上一轮少 | ✅ | ❌ |
 | 默认 E2E | `acceptance`（步骤 4）全过 | ✅ | ❌ |
 | 契约测试 | `contract-test.sh` 全过 | ✅ | ❌ |
 | 故障恢复 | `chaos-worker-recovery.sh` verify 通过 | ✅ | ❌ |
@@ -208,7 +210,7 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 步骤 10（复跑 acceptance）额度泄漏/余额不符 | 恢复点与测试数据不一致 | 确认步骤 8 使用 `backups/acceptance`；检查 `SUMMARY.txt` 时间线是否连续 |
 | 步骤 5 chaos 超时 | worker 租约等待不够 | 调大 `LEASE_WAIT_SECONDS`（默认 35）后单独重跑 `scripts/chaos-worker-recovery.sh` |
 | 步骤 16 商业闭环失败 | Provider 未处于 `approved_commercial` | 确认 commercial-test 覆层已应用（脚本已自动加 `-f`）；检查 `commercial-compose-logs.txt` |
-| 步骤 22 容量 Gate 失败 | 资源不足 / Provider 限流 | 提高 CPU/RAM，调大 `CAPACITY_MAX_P95_MS`，或 `KEEP_CAPACITY_STACK=1` 保留现场排查 |
+| 行 23 容量 Gate 失败（行 22 是真实浏览器验收） | 资源不足 / Provider 限流 / 客户端与被测栈抢同一批核 | 提高 CPU/RAM 或换达标主机与 CI 大规格 runner；`KEEP_CAPACITY_STACK=1` 保留现场、`CAPACITY_FROM_HOST=1` 把客户端搬出被测栈（先过身份门）。**不要靠调小 `CAPACITY_USERS` 或调大 `CAPACITY_MAX_P95_MS` 拿绿**——那改的是判据不是容量，判据要动就按《低成本 500 并发》那份文档重新取证 |
 
 ---
 

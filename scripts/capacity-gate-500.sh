@@ -37,9 +37,15 @@ docker compose $FILES up -d $targets
 # says it is, not proof the traffic reached it (measured 2026-09-28: 8080 answered for another project's
 # container, and the gateway's own published port was also claimed by an ssh listener while the leg ran).
 if [ "${CAPACITY_FROM_HOST:-0}" = "1" ]; then
-  published=$(docker compose $FILES port gateway 80 | cut -d: -f2 | tail -1)
-  [ -n "$published" ] || { echo "::error title=gateway-port::compose 没有报告 gateway:80 的发布端口"; exit 1; }
-  python scripts/gateway_identity.py --base-url "http://127.0.0.1:$published" --port "$published" || exit 1
+  # `set -e` would abort on the assignment itself, beating the message below -- so capture the failure
+  # here and let the empty-value branch say what happened.
+  published=$(docker compose $FILES port gateway 80 2>/dev/null | cut -d: -f2 | tail -1 || true)
+  [ -n "$published" ] || { echo "::error title=gateway-port::compose 没有报告 gateway:80 的发布端口" \
+    "（端口未发布，或输出形状不是 host:port）"; exit 1; }
+  { echo "identity gate: base-url=http://127.0.0.1:$published port=$published"; \
+    python scripts/gateway_identity.py --base-url "http://127.0.0.1:$published" --port "$published"; } \
+    | tee -a "$log"
+  [ "${PIPESTATUS[0]}" = "0" ] || exit 1
   python scripts/load-test-500.py \
     --base-url "http://127.0.0.1:$published" \
     --path /api/projects \

@@ -5,14 +5,17 @@ printed. These tests prove the verdict functions can disagree with their input,
 so "browser a11y + walkthrough passed" means something.
 """
 
+import json
 import pathlib
 import sys
+
+import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from browser_a11y import (contrast_ratio, csp_failures, danger_pair, gate_failures,  # noqa: E402
-                       hidden_failures, mobile_fit_failures)
+                       hidden_failures, mobile_fit_failures, unsettled_entries)
 
 CSP_OK = "default-src 'self'; script-src 'self'; base-uri 'none'"
 ORIGINS = ["http://localhost:4173", "http://localhost:4174"]
@@ -123,6 +126,8 @@ def test_the_contrast_reader_refuses_a_rule_it_cannot_evaluate():
         raise AssertionError(f"a danger rule with no readable pair slipped through: {broken[:48]!r}")
 
 
+
+import importlib.util
 def test_an_element_marked_hidden_must_actually_not_render():
     """`label { display: grid }` outranks the UA's `[hidden]`, and that is how a verification-code
     field meant only for armed accounts rendered on the erasure panel. The gate's page-wide sweep is
@@ -140,3 +145,23 @@ def test_an_element_marked_hidden_must_actually_not_render():
     both = hidden_failures([scan(hidden_marked=2, hidden_but_rendered=["#a"]),
                             scan(label="view-2", hidden_marked=3, hidden_but_rendered=["#a", "#b"])])
     assert len(both) == 1 and "#a" in both[0] and "#b" in both[0] and "view-2" in both[0], both
+
+
+def test_the_teardown_notes_survive_being_published():
+    """`unsettled_at_close` became dict-shaped; the report line that published it stayed `sorted(set(...))`.
+
+    That raised TypeError the moment a run actually had an unsettled page, so the reading the refusal census
+    needs in order to excuse a shortfall could only ever have been the empty list -- an exemption unreachable
+    in practice while looking designed. Pinned here both ways: the helper publishes, orders and de-duplicates,
+    and the shape that used to crash still cannot be asked of a list of dicts.
+    """
+    entries = [
+        {"label": "b", "error": "TimeoutError", "outstanding": ["GET /api/x"]},
+        {"label": "a", "error": "TimeoutError", "outstanding": ["POST /api/y"]},
+        {"label": "b", "error": "TimeoutError", "outstanding": ["GET /api/x"]},
+    ]
+    published = unsettled_entries(entries)
+    assert [e["label"] for e in published] == ["a", "b"], published
+    json.dumps(published)
+    with pytest.raises(TypeError):
+        sorted(set(entries))

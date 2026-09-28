@@ -100,6 +100,22 @@ def _utc_ms() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now)) + ".%03dZ" % int((now % 1) * 1000)
 
 
+def unsettled_entries(entries: list[dict]) -> list[dict]:
+    """Order and de-duplicate the teardown notes without asking a dict to be hashable.
+
+    The crash this replaces was live: the report line was `sorted(set(auditor.unsettled))` after the notes
+    became dicts, so a run with ANY unsettled page raised TypeError while writing its own report -- which
+    means the reading the refusal census needs in order to excuse a shortfall could only ever have been
+    the empty list, and the exemption was unreachable in practice rather than by design.
+    """
+    out: dict[tuple, dict] = {}
+    for entry in entries:
+        key = (str(entry.get("label", "")), str(entry.get("error", "")),
+               tuple(sorted(entry.get("outstanding") or [])))
+        out[key] = entry
+    return [out[key] for key in sorted(out)]
+
+
 def url_path(url: str) -> str:
     """The path the api itself logs: no origin, no query.
 
@@ -1080,6 +1096,15 @@ def self_test(auditor: Auditor) -> int:
         problems.append("the page named unsettled did not also say WHICH requests it was still waiting on, "
                         "so the census would have to excuse a shortfall on the page's word alone "
                         f"(outstanding read {settled_outstanding})")
+    try:
+        published_probe = json.dumps(unsettled_entries(unsettled_probe))
+    except (TypeError, ValueError) as exc:
+        published_probe = f"UNPUBLISHABLE: {exc}"
+    if published_probe.startswith("UNPUBLISHABLE"):
+        problems.append(f"the report could not publish its own teardown notes: {published_probe}")
+    if len(unsettled_entries(unsettled_probe + unsettled_probe)) != len(unsettled_probe):
+        problems.append("the teardown notes do not de-duplicate, so a page settled twice would be counted "
+                        f"twice in the reading the census excuses a shortfall with: {unsettled_probe!r}")
     if any(u["outstanding"] == ["NO-READING"] for u in unsettled_probe):
         problems.append(f"a settle timeout came back with no outstanding reading, which the census reads "
                         f"as no exemption -- it should not happen for a page this run observed: "
@@ -1986,7 +2011,7 @@ def main() -> int:
         "request_events": sum(auditor.issued.values()),
         "aborted_requests": sorted({e["event"] for e in auditor.aborted}),
         "aborted_events": len(auditor.aborted),
-        "unsettled_at_close": sorted(set(auditor.unsettled)),
+        "unsettled_at_close": unsettled_entries(auditor.unsettled),
         "abort_timeline": sorted(auditor.aborted, key=lambda e: (e["ts"], e["label"])),
         "gate_started_at": auditor.started_at,
         "gate_last_refusal_at": max((e["ts"] for e in auditor.refusal_timeline), default=None),

@@ -57,6 +57,24 @@ if [ "$census_rc" -ne 0 ]; then
 fi
 census_arms=$(grep -o 'self-test: [0-9][0-9]* arms' "$census_log" | tail -1 | awk '{print $2}')
 rm -f "$census_log"
+
+# The capacity origin gate is judged the same way the census is: its arms must be able to fail inside step
+# 1, so a shipped instrument that quietly stopped being exercisable cannot ride on the release record's back.
+identity_log=$(mktemp)
+set +e
+python scripts/gateway_identity.py --self-test > "$identity_log" 2>&1
+identity_rc=$?
+set -e
+cat "$identity_log"
+if [ "$identity_rc" -ne 0 ]; then
+  echo "::error title=gateway-identity-selftest::容量身份门的自测有档失效（rc=$identity_rc），第 1 步不放行"
+  rm -f "$identity_log"
+  exit "$identity_rc"
+fi
+grep -q 'self-test: [1-9][0-9]* arms, failures: none' "$identity_log" \
+  || { echo "::error title=gateway-identity-selftest::自测没有报出它跑了几档，读数与没跑同形"; \
+       rm -f "$identity_log"; exit 1; }
+rm -f "$identity_log"
 if [ -n "$census_arms" ]; then
   printf 'metric refusal_census_selftest_arms=%s\n' "$census_arms"
 fi
