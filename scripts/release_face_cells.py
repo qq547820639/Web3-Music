@@ -127,6 +127,26 @@ CELLS = [
     ("docs/TEST_REPORT.md", "而不是自家模拟器适配器驱动生成",
      r"、本轮 [0-9.]+s/[0-9.]+s（`[0-9a-f]{7}`，第 \d+ 步）",
      "、本轮 {generic_p50_s}s/{generic_p95_s}s（`{short}`，第 {generic_step} 步）"),
+    # The all-zero claim was prose. axe has three blocking bands, and a face that says "三档全零" without
+    # reading `violations_by_impact` says it whether or not the leg found anything.
+    ("docs/TEST_REPORT.md", "真实浏览器验收",
+     r"\*\*critical / serious / moderate 三档全零\*\*", "**{browser_violations_phrase}**"),
+    # Three more drill bullets on this face state a current `N/N` in the same shape as the two that were
+    # made cells (mfa, media scan) and were left as prose: the reading is produced by the step, published by
+    # the reader, and quoted by nobody, which means the sentence would keep its number after the drill grew.
+    ("docs/TEST_REPORT.md", "成员与角色演练", r"\*\*(\d+/\d+)\*\*（流水线第", "**{member}**（流水线第"),
+    ("docs/TEST_REPORT.md", "对外侵权通知收件演练", r"\*\*(\d+/\d+)\*\*（流水线新第", "**{report}**（流水线新第"),
+    ("docs/TEST_REPORT.md", "数据主体访问与删除演练", r"权威运行读数 (\d+/\d+)；", "权威运行读数 {erasure}；"),
+    # The two regression lines' own completion strings were prose too: "100/100 completed, error rate 0.0%" is
+    # a reading the step states, so the sentence that repeats it takes it from the stamp, and the credits
+    # figure it has always quoted alongside.
+    ("docs/TEST_REPORT.md", "100 次生成回归",
+     r"`100/100 completed, error rate 0\.0%`", "`{regression}`"),
+    ("docs/TEST_REPORT.md", "100 次生成回归",
+     r"并结算 (\d+) credits（计时随主机负载浮动", "并结算 {regression_credits} credits（计时随主机负载浮动"),
+    ("docs/TEST_REPORT.md", "而不是自家模拟器适配器驱动生成",
+     r"每一次都是 `25/25 completed, error rate 0\.0%, settled 250 credits`",
+     "每一次都是 `{generic}, settled {generic_credits} credits`"),
     # ---------------------------------------------------------------- docs/TEST_REPORT.md
     ("docs/TEST_REPORT.md", "权威运行（",
      r"权威运行（(\d{4}-\d{2}-\d{2})）", "权威运行（{run_date}）"),

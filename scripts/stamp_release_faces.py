@@ -66,6 +66,21 @@ for _step, _prefix in (("mfa-drill", "mfa"), ("member-drill", "member"), ("erasu
     METRIC_FIGURES[(_step, "checks_passed")] = f"{_prefix}_checks_passed"
     METRIC_FIGURES[(_step, "checks_total")] = f"{_prefix}_checks_total"
 
+ALL_ZERO_PHRASE = "critical / serious / moderate 三档全零"
+
+
+def violations_phrase(impacts):
+    """The sentence the face quotes, derived from the leg's `violations_by_impact` and nothing else.
+
+    Kept as a function so the resident test drives this rule rather than restating it: a re-typed expectation
+    is a second opinion nobody asked for, and the face would then be stamped by one copy of the rule while the
+    test guarded another.
+    """
+    if not isinstance(impacts, dict):
+        return "NOT-FOUND"
+    named = {band: hits for band, hits in impacts.items() if hits}
+    return "、".join(f"{band} {hits}" for band, hits in sorted(named.items())) or ALL_ZERO_PHRASE
+
 # The cells the faces quote, keyed by the step whose log carries them. A missing log is reported, not
 # guessed at -- an absent reading and a zero reading are different facts.
 LOG_FIGURES = {
@@ -277,7 +292,7 @@ def figures(run: dict) -> dict:
     # than losing the keys entirely: the cell table's orphan check compares one fixed key set against this
     # dict, and keys that appear and disappear with the evidence make that check answer a different question.
     for name in ("browser_views", "browser_scans", "browser_mobile_fit", "browser_hidden",
-                 "browser_rendered_hidden", "browser_export_bytes", "browser_violations", "browser_commit",
+                 "browser_rendered_hidden", "browser_export_bytes", "browser_violations", "browser_violations_phrase", "browser_commit",
                  "browser_uncaught", "browser_boot_clicks", "browser_report_dir", "console_lines", "console_app_lines", "console_network_lines",
                  "console_status_breakdown", "console_labels", "console_error_events", "refusal_lines",
                  "refusal_events", "refusal_endpoints", "refusal_403_events", "refusal_top",
@@ -300,6 +315,11 @@ def figures(run: dict) -> dict:
         got["browser_boot_clicks"] = data.get("boot_window_clicks", "NOT-FOUND")
         got["browser_report_dir"] = report.parent.name
         got["browser_violations"] = data.get("violations_by_impact", "NOT-FOUND")
+        # The faces do not quote the dict, they quote a sentence ("三档全零"). A sentence nothing recomputes is
+        # how a record keeps saying "zero" after the leg found something, so the sentence itself is the
+        # reading: the blocking impacts by name when any is non-zero, the all-zero wording when none is, and
+        # NOT-FOUND when the report has no such field at all.
+        got["browser_violations_phrase"] = violations_phrase(got["browser_violations"])
         got["browser_commit"] = data.get("git_commit", "NOT-FOUND")
         got["browser_uncaught"] = data.get("uncaught_errors", "NOT-FOUND")
         # The console lines are `sorted(set(...))` of `"<label>: <text>"`, so they are *lines*, not events:

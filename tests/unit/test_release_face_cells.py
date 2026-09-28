@@ -280,6 +280,84 @@ def test_the_table_asks_for_no_value_nobody_computes():
                          f"({sorted(RFC.DERIVED)}) ever computes them, so no run can fill them")
 
 
+# The other direction: a reading the reader publishes that no face quotes. Every name here is a claim about
+# why it is not a hole -- either it is an input the reader uses to build a quoted figure, or a second spelling
+# of a quoted reading, or a number the faces state only inside a dated round section. A new published key that
+# fits none of those has to be given a cell (or a dated sentence), which is what keeps "the faces quote what
+# the run measured" from degrading back into "someone copied a terminal once".
+INTERNAL_FIGURES = {
+    "commit": "the full sha, used to build `short` and to pair the browser leg; the faces quote the short form",
+    "browser_commit": "the leg's sha, used to pair it with the run; the faces quote `browser_commit_short`",
+    "fails": "the reader's own green/red decision over the SUMMARY rows",
+    "fresh": "the header flag that makes the fresh-database sentence true or not",
+    "rows_by_name": "the row ordinal map behind every `第 N 步` figure",
+}
+DUPLICATE_FIGURES = {
+    "erasure_checks_passed": "erasure", "erasure_checks_total": "erasure",
+    "member_checks_passed": "member", "member_checks_total": "member",
+    "mfa_checks_passed": "mfa", "mfa_checks_total": "mfa",
+    "media_scan_checks_passed": "media_scan", "media_scan_checks_total": "media_scan",
+    "report_checks_passed": "report", "report_checks_total": "report",
+    "regression_ms": "regression_p50_s", "generic_ms": "generic_p50_s",
+    "run_unit_passed": "unit_passed",
+    "fidelity_assets": "restore", "fidelity_workspaces": "restore",
+    "lease_jobs": "lease", "lease_workers": "lease", "lease_credits_settled": "lease",
+    "browser_violations": "browser_violations_phrase",
+}
+DATED_ONLY_FIGURES = {
+    "browser_mobile_fit": "stated inside dated round sections of FINAL_RELEASE_STATUS, not in an authority sentence",
+    "browser_uncaught": "same; the current sentence says '无未捕获异常' only when the list is empty",
+    "console_error_events": "the console axis is quoted by `console_lines`/`console_labels`/`refusal_events`",
+    # The legal-hold and market-reconciliation counts are quoted only in the dated sections (the item that
+    # built each drill, and the round that ran it). Their bullets on the current-authority face do not state a
+    # count, so there is no sentence here to own -- and inventing one would be the record quoting itself.
+    "hold": "no current-authority sentence states the hold-drill count; the dated items 30/31 do",
+    "hold_checks_passed": "hold", "hold_checks_total": "hold", "hold_step": "hold",
+    "reconcile": "no current-authority sentence states the reconciliation count; dated item 29 does",
+    "reconcile_checks_passed": "reconcile", "reconcile_checks_total": "reconcile",
+}
+AWAITING_ARCHIVE = {
+    "census_selftest_arms": "produced only by a run whose step 1 already ran the cross-check self-test, so "
+                            "every earlier archive entry reads NOT-FOUND and a cell would refuse every round",
+}
+
+
+def test_every_published_reading_is_quoted_or_accounted_for():
+    """No live reading may be published-and-ignored without one of the four stated reasons."""
+    try:
+        run = max((r for r in READER.runs() if r["fails"] == 0), key=lambda r: r["stamp"])
+        published = set(READER.figures(run))
+    except (SystemExit, IndexError, OSError) as exc:
+        pytest.skip(f"no all-green tracked run to publish figures: {exc}")
+    quoted = RFC.required_keys()
+    accounted = set(INTERNAL_FIGURES) | set(DUPLICATE_FIGURES) | set(DATED_ONLY_FIGURES) | set(AWAITING_ARCHIVE)
+    unexplained = sorted(published - quoted - accounted)
+    assert not unexplained, f"{unexplained} are published by the reader and quoted by no cell, with no reason listed"
+    # Constructed boundary: a reading that belongs to none of the four buckets has to surface. Without this,
+    # an empty `unexplained` could mean "everything is owned" or "the sets swallowed the comparison".
+    probe = published | {"a_reading_nobody_classified"}
+    assert "a_reading_nobody_classified" in sorted(probe - quoted - accounted)
+    # The classifications must stay true: a duplicate's carrier has to be a cell's own key, and an
+    # "accounted for" name that stops being published is a stale entry the table should drop.
+    broken = sorted(f"{name}->{carrier}" for name, carrier in DUPLICATE_FIGURES.items()
+                    if carrier not in quoted)
+    assert not broken, f"{broken} claim a carrier no cell interpolates"
+    stale = sorted(name for name in accounted if name not in published)
+    assert not stale, f"{stale} are classified but the reader no longer publishes them; delete the entry"
+    assert len(published & quoted) >= 40, (f"only {len(published & quoted)} published readings are cell-owned; "
+                                           "the record has stopped quoting the run it certifies")
+
+
+def test_the_violations_phrase_names_the_bands_when_they_are_not_zero():
+    """The face's all-zero sentence is a stamp, so the stamp must be able to say otherwise."""
+    phrase = READER.violations_phrase
+    assert phrase({}) == "critical / serious / moderate 三档全零"
+    assert phrase({"critical": 2, "minor": 1}) == "critical 2、minor 1"
+    assert phrase({"critical": 0, "serious": 0}) == "critical / serious / moderate 三档全零"
+    assert phrase("NOT-FOUND") == "NOT-FOUND"
+    assert phrase({}) != phrase({"moderate": 1}), "a leg that found something would read as a clean one"
+
+
 def test_a_cell_reading_nobody_handed_it_stops_before_the_census():
     """The values gate: drop one reading and the table refuses to compile rather than rendering a hole.
 
