@@ -31,6 +31,25 @@ print(" ".join(sorted(n for n, s in services.items() if n in wanted and s.get("b
 done
 docker compose $FILES up -d $targets
 
+# The client's own location is part of the measurement: in here it shares the 4 vCPU VM with the thing it
+# is timing, which the cost doc names as the reason the tail cannot be signed. CAPACITY_FROM_HOST=1 moves
+# the client to this machine and pays for it with an identity gate -- a published port is what compose
+# says it is, not proof the traffic reached it (measured 2026-09-28: 8080 answered for another project's
+# container, and the gateway's own published port was also claimed by an ssh listener while the leg ran).
+if [ "${CAPACITY_FROM_HOST:-0}" = "1" ]; then
+  published=$(docker compose $FILES port gateway 80 | cut -d: -f2 | tail -1)
+  [ -n "$published" ] || { echo "::error title=gateway-port::compose 没有报告 gateway:80 的发布端口"; exit 1; }
+  python scripts/gateway_identity.py --base-url "http://127.0.0.1:$published" --port "$published" || exit 1
+  python scripts/load-test-500.py \
+    --base-url "http://127.0.0.1:$published" \
+    --path /api/projects \
+    --email owner@example.local \
+    --password demo-owner \
+    --users "${CAPACITY_USERS:-500}" \
+    --requests-per-user "${CAPACITY_REQUESTS_PER_USER:-2}" \
+    --max-error-rate "${CAPACITY_MAX_ERROR_RATE:-1}" \
+    --max-p95-ms "${CAPACITY_MAX_P95_MS:-800}" | tee "$log"
+else
 docker compose $FILES --profile capacity run --rm loadtest \
   --base-url http://gateway \
   --path /api/projects \
@@ -40,6 +59,7 @@ docker compose $FILES --profile capacity run --rm loadtest \
   --requests-per-user "${CAPACITY_REQUESTS_PER_USER:-2}" \
   --max-error-rate "${CAPACITY_MAX_ERROR_RATE:-1}" \
   --max-p95-ms "${CAPACITY_MAX_P95_MS:-800}" | tee "$log"
+fi
 
 # Domain correctness still matters after the traffic burst.
 docker compose $FILES --profile test run --rm acceptance | tee -a "$log"
