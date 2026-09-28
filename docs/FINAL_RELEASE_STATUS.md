@@ -1175,3 +1175,42 @@ so it is archived as a judged-red finding, not an authority. The four faces' mec
 restamped to 22 archived reds / `26-09-28 = 2` by `scripts/release_face_cells.py --apply` while that red was
 the newest evidence in the archive; the authority cells then moved to `acceptance-20260928T065139Z` in the
 same tool's next pass. Ladder 409 → 423 (7 gateway-census arms + 7 table-resolution arms).
+
+## 2026-09-28 retention stopped meaning only "cannot delete"
+
+`docs/RIGHTS_POLICY.md` promises a Legal Hold keeps every record, and promises an issued licence is frozen
+across parties, asset, manifest, template, terms, territory, duration, licensee and hash. What the tree
+enforced was narrower: `002:462-463` bound `rights_evidence` and `licenses` with **DELETE-only** triggers, so
+the rows could not be removed but their contents could be rewritten. That is the difference between an audit
+trail and an editable one.
+
+Freezing `UPDATE` outright would have been a defect, and that is measurable rather than arguable: the product
+writes to both tables in exactly two places -- `services/api/app/routers/assets.py:217` (`status`,
+`reviewed_by`, `reviewed_at` when a reviewer accepts evidence) and `services/api/app/routers/market.py:372`
+(`status='refunded'` on a refund); an exhaustive sweep of `UPDATE (rights_evidence|licenses)` across
+`services/`, `scripts/`, `tests/` and `db/migrations/` finds nothing else. So
+`db/migrations/022_frozen_evidence_and_license_columns.sql` freezes **columns**, not operations:
+`frozen_columns_except()` projects `to_jsonb(NEW)` and `to_jsonb(OLD)` minus an allowed list and refuses if
+the remainder differs, naming the column that moved. `rights_evidence` keeps `{status,reviewed_by,reviewed_at}`,
+`licenses` keeps `{status,activated_at}` -- which is the policy sentence read as a predicate.
+
+Eight readings on the live stack, both polarities: reviewer write `UPDATE 1`; status write `UPDATE 1`;
+`SET evidence=`, `SET submitted_by=`, `SET territory=`, `SET license_hash=`, `SET rights_manifest_id=` each
+refused with the offending column named; and `SET session_replication_role=replica` still bypasses, exactly
+like the rest of the immutability list -- so this guard is no stronger and no weaker than the ones already
+certified. `docker compose --profile test run --rm acceptance` on a clean stack carrying 022: `11 passed`.
+
+Two mistakes the measurement caught before certification, both worth keeping: a trigger function cannot
+declare parameters (`migrate` refused to compile it: "the arguments of the trigger can be accessed through
+TG_NARGS and TG_ARGV instead"), and `TG_ARGV` is 0-based -- writing `TG_ARGV[1]` left `allowed` NULL, which
+made **every** UPDATE raise `FOREACH expression must not be null`, including the two the platform needs. The
+must-not-fire arms of the matrix are what said so. Then the matrix itself was vacuous once, on a fresh
+database with no evidence or licence rows at all: an early version printed six "PASS" lines that were really
+`invalid input syntax for type uuid: ""`, so the script now aborts with rc=3 unless the fixture rows exist.
+
+Resident: `scripts/hold_drill.py` 42 -> **48/48**, the new arms being the five column readings above plus one
+that compares `pg_trigger.tgargs` against the expected column list byte for byte -- `tgargs` turned out to be
+a single NUL-terminated `bytea` (measured through `information_schema.columns`, after two wrong guesses:
+there is no `tgargn` column, and `chr(0)` is not permitted in SQL text), so the assertion is
+`tgargs = convert_to(args,'UTF8') || '\x00'::bytea`, and a trigger that lost its argument list would fail
+the drill instead of silently refusing everything.

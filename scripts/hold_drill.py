@@ -446,6 +446,36 @@ def main():
     lic_id = sql(f"SELECT id FROM licenses WHERE order_id='{order['id']}' LIMIT 1")
     err = sql_err(f"DELETE FROM licenses WHERE id='{lic_id}'")
     check("an issued licence refuses DELETE as well", "licenses is immutable" in err, err[:200])
+
+    # The 002 pair refused DELETE only, so the *content* of an evidence row and the *terms* of a licence
+    # stayed writable -- that is why docs/RIGHTS_POLICY.md's "保留所有证据" sentence was only partly true.
+    # Migration 022 froze exactly the columns the policy names as immutable and left the two shapes the
+    # product itself writes. Both directions are measured here, because a freeze that also refuses the
+    # product's own write is a broken feature, not a guard -- and that is what the first attempt at 022
+    # did: a NULL trigger argument (plpgsql's TG_ARGV is 0-based) made every UPDATE raise before the
+    # frozen-column message could even be reached.
+    err = sql_err(f"UPDATE rights_evidence SET evidence='{{\"drill\":1}}'::jsonb WHERE id='{c['evidence']}'")
+    check("evidence content refuses UPDATE and names the column that moved",
+          "frozen" in err and "attempted change: evidence" in err, err[:200])
+    err = sql_err(f"UPDATE rights_evidence SET status='verified',reviewed_at=now() WHERE id='{c['evidence']}'")
+    check("the reviewer's own write still lands (the shape services/api/app/routers/assets.py:217 sends)",
+          err == "", err[:200])
+    err = sql_err(f"UPDATE licenses SET territory='Nowhere' WHERE id='{lic_id}'")
+    check("a licence's territory refuses UPDATE", "attempted change: territory" in err, err[:200])
+    err = sql_err(f"UPDATE licenses SET license_hash=repeat('0',64) WHERE id='{lic_id}'")
+    check("the hash that identifies the grant refuses UPDATE too", "attempted change: license_hash" in err,
+          err[:200])
+    err = sql_err(f"UPDATE licenses SET status='suspended' WHERE id='{lic_id}'")
+    check("the refund/suspension write the platform performs still lands (market.py:372's shape)",
+          err == "", err[:200])
+    wired = sql("SELECT count(*) FROM (VALUES"
+                " ('immutable_rights_evidence_content','{status,reviewed_by,reviewed_at}'),"
+                " ('immutable_license_terms','{status,activated_at}')) v(name,args)"
+                " JOIN pg_trigger t ON t.tgname=v.name"
+                " WHERE t.tgargs = convert_to(v.args,'UTF8') || '\\x00'::bytea")
+    check("both freeze triggers carry the column list this file reads", wired == "2",
+          f"{wired} of 2 carry their expected list; pg_trigger stores the argument as one NUL-terminated "
+          f"bytea, and an absent list makes the guard refuse every UPDATE -- a broken feature, not a guard")
     guardless = sql("SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid"
                     " WHERE c.relname='media_assets' AND t.tgtype & 8 = 8 AND NOT tgisinternal")
     check("MEDIA ASSETS HAS NO DELETE TRIGGER AT ALL, so a held asset's bytes are deletable",
