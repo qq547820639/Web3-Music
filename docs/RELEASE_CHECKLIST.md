@@ -127,6 +127,12 @@
 
 证据入库：`release-evidence/acceptance-20260928T163801Z/SUMMARY.txt` 与 `release-evidence/browser-a11y-20260928T165253Z/report.json` 自本轮起被跟踪（逐步骤日志仍留在跑过流水线的机器上，与其他轮次一致）。本文头部"judged-red SUMMARY"的计数因此由盖章格自己重算，不手抄。
 
+37. **把「抄所有读数」改对的同时，我把整条流水线改哑了：一步没有读数，就是链条的终点。**（本轮第 1 步之后的现场：`acceptance-20260928T184002Z` 的 SUMMARY 只有两行、没有 FAIL 行，`compose-up` 之后终端再没有输出。）上一格刚把 `run_step` 从"只抄最后一行 `metric `"改成"逐行都抄"，改动本身没错，错在删掉了旧写法里的 `|| true`：`scripts/acceptance-all.sh:19` 是 `set -euo pipefail`，`grep '^metric ' "$log"` 没命中时返回 1，加了 pipefail 之后这条管道的退码就是那一步的退码，`set -e` 于是把脚本在第 2 行之后静默收走。一个 fail-fast 的链停止时不写判决行，比写一行 FAIL 更糟：它在档案里读起来像"没跑完"，而不是"跑坏了"。第二处同源污染：`scripts/metric_line.py --self-test` 有一档拿 `emit(a=1)` 造样例，而 `emit` 是打印函数，于是逐步日志里出现一行真生产者线，被逐行抄录规则原样搬进在册件，读成 `metrics static-verify a=1`——定义格式的那把尺子在描述格式的时候把自己定义的格式说了一遍。
+
+两处都已改：抄录管道补回 `|| true`；那一档改用模块自己的 `PRODUCER_PREFIX` 拼样例，不再调用打印函数。常驻件 `test_a_self_test_never_prints_a_producer_line` 用子进程跑这两把尺子的 `--self-test`，要求退码 0 且标准输出里没有 `^metric k=` 形状的行，另配一条由构造给出的反证（现场调用 `emit()`）证明这道探针看得见 offense，并钉住抄录块的收尾行仍是 `done || true`——否则这条判据只证明"今天安静"。
+
+两件没做完的写在这里，不抹平：①改完之后还没跑过一次端到端，下面那次认证运行才是它的证据；②这份两行 SUMMARY 有意不入册——`stamp_release_faces.runs()` 只按"有没有 FAIL 行"判绿，缺 `finished_at=` 也算一个全绿运行，收进来会让盖章器把一次中断的链当权威。下一轮该给 `runs()` 加"没有 finished_at 即不完整"的判据，并同时决定中断件要不要作为 finding 入册。
+
 ### 已澄清（上一版记为"需属主决策"，读码 + 实测后确认不是缺口）
 
 1. **平台 15% 服务费不是"没有分录"。** 上一版本文说它在账本里没有分录，一半说对了、一半说错了：`ledger_accounts` 里 15 个账户的 `currency` **全部是 `CREDIT`**——积分账本按 credit 计量，货币收入本就不该往这里塞；货币侧分录在 `revenue_splits`，`record_license_revenue` 为每张许可证写一对 `(workspace 8500, platform 1500)`，实测库里 6 张许可证正好 6+6 行、合计 60000bp。更硬的一层是数据库自己：`revenue_split_total_must_balance` 约束触发器要求同一 subject 的分账和恰为 10000bp，两向探针实测——成对插入被接受（`INSERT 0 2`，sum=10000），只插 9000 被拒 `revenue split total must equal 10000 basis points, got 9000`，探针全部回滚、残留 0 行。所以 G10 这条剩下的只是"拿真实结算单比对"，不是"补一套货币科目"。

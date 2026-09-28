@@ -136,7 +136,7 @@ run_step() {
   # 盖章器按步骤名合并；只取最后一行会让前面那些读数静默消失，读起来像"这一步没测"。
   grep '^metric ' "$log" | while IFS= read -r producer_line; do
     printf 'metrics %s %s\n' "$name" "${producer_line#metric }" >> "$RESULTS_FILE"
-  done
+  done || true
   echo ""
   echo "---- ${name} 输出（完整日志：${log}） ----"
   cat "$log"

@@ -96,8 +96,9 @@ def self_test() -> int:
                  _raises(lambda: format("s")) is ValueError))
     arms.append(("a step name that would break the table is refused",
                  _raises(lambda: format("two words", a=1)) is ValueError))
+    producer = f"{PRODUCER_PREFIX}a=1"
     arms.append(("a producer line is not read as a summary line",
-                 parse(emit(a=1)) == (None, {}) and parse_producer(f"metric a=1") == {"a": "1"}))
+                 parse(producer) == (None, {}) and parse_producer(producer) == {"a": "1"}))
     arms.append(("absent is not zero: no line parses to nothing rather than to 0",
                  parse("provider regression: 100/100 completed") == (None, {})))
     width = max(len(name) for name, _ in arms)

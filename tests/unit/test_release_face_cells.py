@@ -348,6 +348,36 @@ def test_every_published_reading_is_quoted_or_accounted_for():
                                            "the record has stopped quoting the run it certifies")
 
 
+def test_a_self_test_never_prints_a_producer_line():
+    """`run_step` copies every log line starting `metric ` into the SUMMARY, so a demo line is a fake reading.
+
+    This is the shape that aborted the 2026-09-28 chain and polluted the row: `metric_line --self-test` built
+    one of its sample lines with `emit()`, which prints, and the copy step dutifully recorded
+    `metrics static-verify a=1`. The tools that define the format must not emit it while describing it.
+    """
+    import subprocess
+    import sys
+    probe = re.compile(r"^metric [a-z_]+=")
+    for script in ("scripts/metric_line.py", "scripts/server_refusal_census.py"):
+        done = subprocess.run([sys.executable, script, "--self-test"], cwd=ROOT, capture_output=True, text=True)
+        assert done.returncode == 0, f"{script} --self-test failed: {done.stdout[-400:]} {done.stderr[-400:]}"
+        printed = [line for line in done.stdout.splitlines() if probe.match(line)]
+        assert not printed, f"{script} prints a producer-shaped line into the step log: {printed}"
+    # The probe has to be able to see the offence, or the two assertions above only prove the tools are
+    # quiet today. `emit()` is the producer's own call, so it is the constructed boundary.
+    fired = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, 'scripts');"
+                              "import metric_line; metric_line.emit(a=1)"],
+                           cwd=ROOT, capture_output=True, text=True)
+    assert probe.match(fired.stdout.strip()), fired.stdout
+    # And the chain's own copy rule must survive a step that states nothing: under `set -euo pipefail` a
+    # grep with no match returns 1, which is how the pipeline killed the run after row 2.
+    launcher = (ROOT / "scripts/acceptance-all.sh").read_text(encoding="utf-8").splitlines()
+    at = [i for i, line in enumerate(launcher) if "producer_line#metric" in line]
+    assert len(at) == 1, f"the metric copy is not the single block this test reads: {at}"
+    assert launcher[at[0] + 1].strip() == "done || true", \
+        f"the copy pipeline lost its pipefail shield; the line after the copy reads {launcher[at[0] + 1]!r}"
+
+
 def test_the_violations_phrase_names_the_bands_when_they_are_not_zero():
     """The face's all-zero sentence is a stamp, so the stamp must be able to say otherwise."""
     phrase = READER.violations_phrase
