@@ -830,19 +830,30 @@ def test_the_refusal_reconciliation_fires_on_both_polarities():
 
 
 def test_the_unsettled_exemption_is_named_and_not_a_rubber_stamp():
-    """A shortfall may only be excused by evidence the run itself handed over, and never by an absence.
+    """A shortfall may only be excused by evidence that names the endpoint it explains, never by an absence.
 
-    The three shapes have to be told apart: the gate named a page it closed too early (excused, and the
-    census prints which page), the gate recorded that nothing was left open (red -- the blindness has no
-    story left), and the report predates the field (also red: no reading is not a clean reading).
+    The shapes that must be told apart: a page closed while still waiting on THIS endpoint (excused, and
+    the census prints which page and what it waited on), a page closed while waiting on something else
+    (red), the gate recorded nothing left open (red -- the blindness then has no story), a legacy string
+    entry or a missing reading (red: no reading is not a clean reading).
     """
     census = census_module()
     server = collections.Counter({("GET", "/api/auth/me", 401): 3})
     seen = collections.Counter({("GET", "/api/auth/me", 401): 2})
     assert census.shortfall(server, seen) == [(("GET", "/api/auth/me", 401), 3, 2)], (
         "the shortfall is not exposed as data, so the census cannot print what it is excusing")
-    assert census.reconcile(server, seen, 40, 60, ["desktop-stale-admin: TimeoutError"]) == [], (
-        "a named unsettled page did not excuse the shortfall, so settling is not consumed anywhere")
+    named_waiting = [{"label": "desktop-stale-admin", "error": "TimeoutError",
+                      "outstanding": ["GET /api/auth/me"]}]
+    assert census.reconcile(server, seen, 40, 60, named_waiting) == [], (
+        "a page named as still waiting on exactly this endpoint did not excuse the shortfall, so the "
+        "settling reading is not consumed anywhere")
+    off_target = [{"label": "desktop-axe-studio", "error": "TimeoutError",
+                   "outstanding": ["POST /api/auth/logout"]}]
+    assert census.reconcile(server, seen, 40, 60, off_target), (
+        "a page waiting on a DIFFERENT endpoint excused this shortfall -- the exemption is a tolerance "
+        "with a label on it again")
+    assert census.outstanding_keys(named_waiting) == {"GET /api/auth/me"}, (
+        "the outstanding reading is not taken as data, so the note and the judgement can disagree")
     assert census.reconcile(server, seen, 40, 60, []), (
         "an empty unsettled list excused the shortfall -- the exemption became a tolerance")
     assert census.reconcile(server, seen, 40, 60), (

@@ -1536,7 +1536,7 @@ So the fix is a witness taken before an answer can hide (`c469bf3`), not a bette
   rather than tolerating it; a page that never goes idle is published in `unsettled_at_close` by name.
 
 The comparison itself is untouched: still `server ⊆ gate`, still no ±1. The only exemption is the run's own
-named reading -- an empty or absent `unsettled_at_close` leaves a shortfall red. Measured after the fix, the
+named reading -- an empty or absent `unsettled_at_close` (or one naming a different endpoint) leaves a shortfall red. Measured after the fix, the
 desktop-only leg `release-evidence/browser-a11y-20260928T211052Z/` reads server 4xx 25 against gate 4xx 25
 with `unsettled_at_close: []` and the census exiting 0 with empty stderr, so no exemption was used. Its
 artifact carries `gate_issued_events: 261` and `gate_aborted_events: 5`.
@@ -1549,7 +1549,7 @@ every one read `…-studio (popup)`. Without the `document` field added the same
 as "the admin stage did not run". The hook's label is now a fallback that never wins over a walk's, and the
 `-admin` labels came back.
 
-Census self-test 12 → 23 arms; the browser gate gained real-page fixtures for the second page of an armed
+Census self-test 12 → 25 arms (the last two pin the tightened exemption: the named page has to have been waiting on the very endpoint that is short, and a legacy string entry excuses nothing); the browser gate gained real-page fixtures for the second page of an armed
 context, the abort axis and the settle axis (each with the polarity that must stay silent). On the resident
 side `tests/unit/test_release_record_consistency.py` now pins that an empty unsettled list and a missing
 unsettled reading both stay red, and that a report carrying `request_counts` must have the axis written into

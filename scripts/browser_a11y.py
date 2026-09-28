@@ -265,7 +265,12 @@ class Auditor:
         # Pages that had not gone network-idle when the walk closed them -- the one condition under which a
         # refusal can be logged by the api and never reach any observer, so the census reads this list
         # before it reads a shortfall on the refusal axis as a blind spot.
-        self.unsettled: list[str] = []
+        self.unsettled: list[dict] = []
+        # Per observed page, the requests it had put on the wire and not yet been handed an answer for.
+        # The census reads this before it lets an unsettled page excuse a shortfall: "a page was closed
+        # while it was still waiting" only explains the missing 401 if the endpoint it waited on *is* the
+        # one that is short -- otherwise the note is a tolerance with a label on it.
+        self._outstanding: dict[int, collections.Counter] = {}
         # Pages and contexts are keyed by id() with the object kept as the value: holding the reference is
         # what makes the address a stable key, and dropping it would let a recycled address inherit another
         # page's "already armed" mark -- a self-inflicted version of the blindness this fixes.
@@ -321,7 +326,12 @@ class Auditor:
         try:
             page.wait_for_load_state("networkidle", timeout=8000)
         except Exception as exc:
-            self.unsettled.append(f"{label}: {type(exc).__name__}")
+            counter = self._outstanding.get(id(page))
+            self.unsettled.append({
+                "label": label,
+                "error": type(exc).__name__,
+                "outstanding": sorted(counter.elements()) if counter is not None else ["NO-READING"],
+            })
 
     def settle_context(self, context, label: str):
         """Settle every page a context still holds, so no in-flight answer is lost to teardown."""
@@ -387,7 +397,19 @@ class Auditor:
             if BLOCKING_CONSOLE.search(message.text):
                 self.crashes.append(entry)
 
+        outstanding = collections.Counter()
+        self._outstanding[id(page)] = outstanding
+
+        def on_request(request):
+            outstanding[f"{request.method} {url_path(request.url)}"] += 1
+
+        def on_release(request):
+            key = f"{request.method} {url_path(request.url)}"
+            if outstanding[key]:
+                outstanding[key] -= 1
+
         page.on("console", on_console)
+        page.on("request", on_request)
         # The request side of the same story. `console_errors` is a deduplicated set of "<label>: <text>",
         # and the network layer's text carries only the status, so two different refusals under one label
         # collapse into a single line -- which is how a hand-written sentence came to claim six refusals
@@ -407,6 +429,8 @@ class Auditor:
             })
 
         def on_request_failed(request):
+            key = f"{request.method} {url_path(request.url)}"
+            outstanding[key] = max(0, outstanding[key] - 1)
             if request.method in ("GET", "POST", "PUT", "PATCH", "DELETE") and url_path(request.url).startswith("/api/"):
                 self.aborted.append({
                     "ts": _utc_ms(),
@@ -416,6 +440,7 @@ class Auditor:
                 })
 
         page.on("response", on_response)
+        page.on("requestfinished", on_release)
         page.on("requestfailed", on_request_failed)
         page.on("pageerror", lambda e: self.crashes.append(f"{named()}: uncaught exception: {e}"))
 
@@ -921,6 +946,8 @@ def self_test(auditor: Auditor) -> int:
         auditor.settle_context(settle_context, "self-test-settle")
         auditor.settle_context(idle_context, "self-test-idle")
         unsettled_probe = list(auditor.unsettled)
+        settled_outstanding = sorted({key for e in unsettled_probe if e["label"] == "self-test-settle"
+                                      for key in e["outstanding"]})
         settle_context.close()
         idle_context.close()
 
@@ -1041,14 +1068,22 @@ def self_test(auditor: Auditor) -> int:
         problems.append("the request axis must count each request the armed pages put on the wire exactly "
                         f"once, whatever the answer was (read "
                         f"{ {k: v for k, v in auditor.issued.items() if 'popup-' in k} })")
-    if not any(u.startswith("self-test-settle:") for u in unsettled_probe):
+    if not any(u["label"] == "self-test-settle" for u in unsettled_probe):
         problems.append("a page still holding an unanswered request when it was closed was not named in "
                         f"`unsettled` (read {unsettled_probe!r}), so a shortfall would have no evidence to "
                         "explain it with and would have to be tolerated instead")
-    if any(u.startswith("self-test-idle:") for u in unsettled_probe):
+    if any(u["label"] == "self-test-idle" for u in unsettled_probe):
         problems.append(f"the page that really did go idle was named as unsettled: {unsettled_probe!r}")
     if any("/api/never-answers" in r for r in auditor.refusals):
         problems.append("a request that was never answered was recorded as a refusal")
+    if "GET /api/never-answers" not in settled_outstanding:
+        problems.append("the page named unsettled did not also say WHICH requests it was still waiting on, "
+                        "so the census would have to excuse a shortfall on the page's word alone "
+                        f"(outstanding read {settled_outstanding})")
+    if any(u["outstanding"] == ["NO-READING"] for u in unsettled_probe):
+        problems.append(f"a settle timeout came back with no outstanding reading, which the census reads "
+                        f"as no exemption -- it should not happen for a page this run observed: "
+                        f"{unsettled_probe!r}")
     if aborted_x != ["self-test-popup"] or refusal_of_aborted:
         problems.append("a request that never got an answer must land on the abort axis and nowhere else "
                         f"(abort axis read {aborted_x!r}, refusal axis read {refusal_of_aborted!r})")

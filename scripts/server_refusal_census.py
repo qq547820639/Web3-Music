@@ -154,6 +154,20 @@ def unsettled_at_close(report: pathlib.Path) -> list[str] | None:
     return json.loads(report.read_text(encoding="utf-8")).get("unsettled_at_close")
 
 
+def outstanding_keys(unsettled: list) -> set[str]:
+    """The endpoints a closing page was still waiting on, as "METHOD path" keys.
+
+    Entries are shaped `{"label", "error", "outstanding": [...]}`. An older string entry, or one that came
+    back without the reading, contributes nothing -- and contributing nothing is what keeps the shortfall
+    red rather than excused on a page's bare word.
+    """
+    keys: set[str] = set()
+    for entry in unsettled or []:
+        if isinstance(entry, dict):
+            keys.update(k for k in (entry.get("outstanding") or []) if isinstance(k, str) and k != "NO-READING")
+    return keys
+
+
 def aborted_events(report: pathlib.Path) -> list[str]:
     return [f"{e.get('label', '?')}: {e.get('event', '?')}" for e in
             (json.loads(report.read_text(encoding="utf-8")).get("abort_timeline") or [])]
@@ -216,7 +230,7 @@ def shortfall(server: collections.Counter, seen: collections.Counter) -> list[tu
 
 
 def reconcile(server: collections.Counter, seen: collections.Counter, parsed: int, raw: int,
-              unsettled: list[str] | None = None) -> list[str]:
+              unsettled: list | None = None) -> list[str]:
     """Server ⊆ browser, with one required exception: what the gate fulfills never reaches the server.
 
     Counts are compared as data, not as rendered strings. A page can see a refusal the server never
@@ -234,8 +248,12 @@ def reconcile(server: collections.Counter, seen: collections.Counter, parsed: in
     if parsed == 0:
         return [f"the window held {raw} log line(s) and none parsed as a request line, so a zero here "
                 "means the parser saw nothing, not that the server answered no refusals"]
+    waiting = outstanding_keys(unsettled)
     for tuple_, n, got in shortfall(server, seen):
-        if unsettled:
+        if f"{tuple_[0]} {tuple_[1]}" in waiting:
+            # Named and pointable: some page was still waiting on exactly this endpoint when the gate
+            # closed it, so the api's answer had no page left to hand it to. Any other shortfall is a
+            # shortfall the gate simply did not record, and stays red with a note on its side.
             continue
         problems.append(f"the server answered {n}x {tuple_[0]} {tuple_[1]} -> {tuple_[2]} but the "
                         f"gate recorded {got}")
@@ -338,9 +356,22 @@ def self_test() -> int:
                  any("2x" in p or "3x" in p for p in reconcile(one_short_server, two_seen, 40, 60, []))))
     arms.append(("a shortfall with no reading on the gate's side stays red too",
                  bool(reconcile(one_short_server, two_seen, 40, 60, None))))
-    arms.append(("a shortfall the gate named an unsettled page for is excused, not tolerated",
-                 reconcile(one_short_server, two_seen, 40, 60, ["desktop-stale-admin: TimeoutError"]) == []
+    waiting_entry = [{"label": "desktop-stale-admin", "error": "TimeoutError",
+                      "outstanding": ["GET /api/auth/me"]}]
+    arms.append(("a shortfall the gate named a page still waiting on THAT endpoint for is excused",
+                 reconcile(one_short_server, two_seen, 40, 60, waiting_entry) == []
                  and bool(reconcile(one_short_server, two_seen, 40, 60, []))))
+    off_target = [{"label": "desktop-axe-studio", "error": "TimeoutError",
+                   "outstanding": ["POST /api/auth/logout"]}]
+    legacy_shape = [{"label": "old-shape", "error": "TimeoutError"}]
+    arms.append(("a named page waiting on some OTHER endpoint does not excuse the shortfall, and neither "
+                 "does an entry written in the old string shape",
+                 bool(reconcile(one_short_server, two_seen, 40, 60, off_target))
+                 and bool(reconcile(one_short_server, two_seen, 40, 60, legacy_shape))))
+    arms.append(("the outstanding keys are read as data, not as a string blob",
+                 outstanding_keys(waiting_entry) == {"GET /api/auth/me"}
+                 and outstanding_keys([{"label": "x", "outstanding": ["NO-READING"]}]) == set()
+                 and outstanding_keys(["legacy string entry"]) == set()))
     arms.append(("the shortfall list is what the note prints, as data",
                  shortfall(one_short_server, two_seen) == [(("GET", "/api/auth/me", 401), 3, 2)]))
     fake_run = {"stamp": "acceptance-selftest", "commit": "0" * 40}
@@ -438,11 +469,15 @@ def main():
         problems += request_axis(server, every, issued)
     aborted = aborted_events(report)
     short = shortfall(server, seen)
-    if short and unsettled:
-        print("# the refusal axis is short by " + ", ".join(f"{n - got}x {m} {pth} -> {c}"
-              for (m, pth, c), n, got in short) + "; the gate recorded that these pages had not gone "
-              "network-idle before close, so those answers were logged to a page that was going away: "
-              + " | ".join(unsettled), file=sys.stderr)
+    waiting = outstanding_keys(unsettled)
+    excused = [f"{n - got}x {m} {pth} -> {code}" for (m, pth, code), n, got in short
+               if f"{m} {pth}" in waiting]
+    if excused:
+        named = " | ".join(f"{e.get('label', '?')} waiting on {', '.join(e.get('outstanding') or [])}"
+                           for e in (unsettled or []) if isinstance(e, dict))
+        print("# excused on the gate's own teardown reading (" + ", ".join(excused) + "): a page was closed "
+              "while still waiting on that endpoint, so the api had no page left to answer -- " + named,
+              file=sys.stderr)
     if problems:
         if issued is None:
             print("# request axis: the paired report has no `request_counts`, so nothing here can say "
