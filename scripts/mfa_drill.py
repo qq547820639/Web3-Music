@@ -123,6 +123,23 @@ def container_ip(service: str) -> str:
     return lines[0]
 
 
+def retry_matches_window(retry_after, ttl: int, elapsed: float, slack: float = 1.0) -> bool:
+    """Whether a refusal's stated wait describes the same window the store reports, given when each was read.
+
+    `Retry-After` is computed from the key's TTL the instant the api answers; the TTL here is read afterwards,
+    over a `docker compose exec` round trip whose duration the drill does not control. A fixed tolerance
+    therefore measures the host: under a concurrent `pytest -q tests/unit` on this 4-vCPU VM the two
+    observations came 4 s apart and `abs(retry_after - ttl) <= 2` reddened a limiter that had done nothing
+    wrong (host load 20.09, `acceptance-20260928T192315Z`). The sound form is directional and clock-bound:
+    the later sample cannot be larger than the earlier one, and whatever the two differ by must be explained
+    by the seconds that actually went by.
+    """
+    if not (isinstance(retry_after, str) and retry_after.isdigit()):
+        return False
+    stated = int(retry_after)
+    return 0 < stated <= 60 and 0 <= stated - ttl <= elapsed + slack
+
+
 def container_file(service: str, path: str) -> str:
     out = subprocess.run(["docker", "compose", "exec", "-T", service, "cat", path],
                          capture_output=True, text=True)
@@ -453,16 +470,18 @@ def main() -> int:
         # The wall sits in front of the credential check, so knowing the password buys nothing while the
         # window is full -- and because a refusal spends nothing, this attempt must not move the counter.
         outranked = sign_in(WINDOW_PROBE)
+        answered_at = time.monotonic()
         check("while throttled, even the right password is refused", outranked.status_code == 429,
               f"{outranked.status_code} {outranked.text[:160]}")
         filled = redis_cli("GET", login_key)
         ttl = int(redis_cli("TTL", login_key) or -2)
+        gap = time.monotonic() - answered_at
         check("the counter is a bounded window in the shared store, not a permanent lock",
               0 < ttl <= 60, f"key {login_key} TTL {ttl}")
         retry_after = outranked.headers.get("Retry-After", "")
         check("the refusal says how long to wait, and says the window's own number",
-              retry_after.isdigit() and 0 < int(retry_after) <= 60 and abs(int(retry_after) - ttl) <= 2,
-              f"Retry-After {retry_after!r} against TTL {ttl}")
+              retry_matches_window(retry_after, ttl, gap),
+              f"Retry-After {retry_after!r} against TTL {ttl} {gap:.1f}s after the answer")
         # Decay has to be measured *while* the door is being knocked on: a nap after the last refusal lets
         # even a refreshing limiter count down, and that is how the first version of this check read green
         # against the pre-fix script. So the traffic runs until two seconds of wall time have gone by, the

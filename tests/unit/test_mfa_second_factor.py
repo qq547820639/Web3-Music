@@ -56,6 +56,42 @@ def unkeyed(monkeypatch):
 
 # ---------------------------------------------------------------- sealing ----
 
+def _mfa_drill():
+    """Load the live drill for its pure helpers; nothing on the stack is touched."""
+    import importlib.util
+    sys.path.insert(0, str(ROOT / "scripts"))
+    spec = importlib.util.spec_from_file_location("mfa_drill_for_window_rule", ROOT / "scripts/mfa_drill.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_refusal_wait_is_compared_to_the_window_within_the_time_that_passed():
+    """The live check once used a fixed 2-second tolerance, and a loaded host walked straight through it.
+
+    `acceptance-20260928T192315Z` reddened here with "Retry-After '55' against TTL 51" while a
+    `pytest -q tests/unit` of mine competed with the drill on a 4-vCPU VM: the header is read from the
+    response, the TTL a `docker exec` round trip later, and the gap grew past the magic number. The rule is
+    now directional and clock-bound, so the same pair of readings either way is judged by the seconds that
+    actually went by -- and the pair below is the proof that the rule cannot be satisfied by loosening a
+    constant.
+    """
+    drill = _mfa_drill()
+    ok_same = drill.retry_matches_window("55", 55, 0.2)
+    ok_drift_explained = drill.retry_matches_window("55", 51, 4.0)
+    red_drift_unexplained = drill.retry_matches_window("55", 45, 1.0)
+    assert ok_same and ok_drift_explained and not red_drift_unexplained
+    # The refusal may never promise less than the window it is charged with: that is the direction a
+    # re-arming limiter would break, and it must fail no matter how much time passed.
+    assert drill.retry_matches_window("50", 55, 30.0) is False
+    assert drill.retry_matches_window("", 55, 1.0) is False
+    assert drill.retry_matches_window("soon", 55, 1.0) is False
+    assert drill.retry_matches_window("61", 60, 1.0) is False
+    assert drill.retry_matches_window("0", 55, 1.0) is False
+    assert drill.retry_matches_window("-5", 55, 1.0) is False
+    # Same three numbers, opposite verdicts: only the measured interval changed.
+    assert drill.retry_matches_window("40", 30, 9.5) is True
+    assert drill.retry_matches_window("40", 30, 1.5) is False
 def test_seal_round_trips(keyed):
     secret = keyed.new_secret()
     assert keyed.unseal(keyed.seal(secret)) == secret

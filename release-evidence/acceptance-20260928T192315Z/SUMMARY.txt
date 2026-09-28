@@ -1,0 +1,32 @@
+Resonance AI Music Asset Platform — E2E Acceptance
+started_at=2026-09-28T19:23:15Z
+evidence_dir=release-evidence/acceptance-20260928T192315Z
+host=Mac
+host_load="4.56 6.51 8.44" host_cpus=10 docker_cpus=4
+git_commit=f34e8bed55359d0fcb163f1da016b0694b54f8fc
+fresh_database=1
+disk_free_kb=9983720
+
+STEP | RESULT | STARTED_AT | FINISHED_AT
+static-verify | PASS | 2026-09-28T19:23:15Z | 2026-09-28T19:23:32Z
+metrics static-verify refusal_census_selftest_arms=11
+metrics static-verify unit_passed=464
+compose-up | PASS | 2026-09-28T19:23:32Z | 2026-09-28T19:23:59Z
+acceptance | PASS | 2026-09-28T19:23:59Z | 2026-09-28T19:24:25Z
+contract-test | PASS | 2026-09-28T19:24:25Z | 2026-09-28T19:24:32Z
+chaos-worker-recovery | PASS | 2026-09-28T19:24:32Z | 2026-09-28T19:25:14Z
+lease-contention | PASS | 2026-09-28T19:25:14Z | 2026-09-28T19:25:44Z
+metrics lease-contention credits_settled=160.0 jobs=8 workers=2
+restore-fidelity-snapshot | PASS | 2026-09-28T19:25:44Z | 2026-09-28T19:25:45Z
+backup-restore | PASS | 2026-09-28T19:25:45Z | 2026-09-28T19:26:27Z
+restore-fidelity-compare | PASS | 2026-09-28T19:26:27Z | 2026-09-28T19:26:28Z
+metrics restore-fidelity-compare assets=2 workspaces=2
+acceptance-rerun | PASS | 2026-09-28T19:26:28Z | 2026-09-28T19:26:54Z
+erasure-drill | PASS | 2026-09-28T19:26:54Z | 2026-09-28T19:27:32Z
+metrics erasure-drill checks_passed=53 checks_total=53
+mfa-drill | FAIL | 2026-09-28T19:27:32Z | 2026-09-28T19:32:03Z
+metrics mfa-drill checks_passed=78 checks_total=79
+failed_step_env: host_load="20.09 14.81 11.13" host_cpus=10 docker_cpus=4
+
+finished_at=2026-09-28T19:32:03Z
+host_load="20.09 14.81 11.13" host_cpus=10 docker_cpus=4
