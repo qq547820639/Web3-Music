@@ -43,6 +43,23 @@ PY
 python scripts/architecture-audit.py
 # 读数格式自己的对照：解析与渲染必须能互相还原，否则下面这些 `metric` 行会一路静默到盖章那天。
 python scripts/metric_line.py --self-test
+# 「两个观察者对得上吗」这套判据自己的档数也写成机器读数：文书引用它时不必手抄，而抄过一次的
+# 那一格已经在两轮之间漂过（7 档 → 11 档）。退码同样要逐字保留，判据红就是整步红。
+census_log=$(mktemp)
+set +e
+python scripts/server_refusal_census.py --self-test > "$census_log" 2>&1
+census_rc=$?
+set -e
+cat "$census_log"
+if [ "$census_rc" -ne 0 ]; then
+  rm -f "$census_log"
+  exit "$census_rc"
+fi
+census_arms=$(grep -o 'self-test: [0-9][0-9]* arms' "$census_log" | tail -1 | awk '{print $2}')
+rm -f "$census_log"
+if [ -n "$census_arms" ]; then
+  printf 'metric refusal_census_selftest_arms=%s\n' "$census_arms"
+fi
 # 阶梯的条数也写成机器读数。文书里"权威运行第 1 步读出 N 条"这一格此前只能手抄：数在逐步日志里，
 # 而逐步日志被 .gitignore 挡在树外。`metric` 前缀由 run_step 抄进 SUMMARY.txt（见 scripts/metric_line.py）。
 # 退码必须逐字保留，所以这里显式接管管道：pytest 失败要仍然把整步判红。

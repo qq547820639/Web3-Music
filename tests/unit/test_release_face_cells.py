@@ -448,6 +448,16 @@ def test_a_step_reading_round_trips_from_producer_to_reader(tmp_path):
     table = READER.step_metrics(tmp_path)
     assert table == {"provider-regression-100": {"note": "2 workspaces, 2 assets",
                                                  "p50_s": "4.095", "p95_s": "6.43"}}, table
+    # A step may state several readings on separate lines (row 1 states the ladder count and the census's own
+    # arm count), and the chain copies them in order rather than keeping only the last. The reader therefore
+    # merges per step: assigning the line wholesale would let the later line erase the earlier one, and the
+    # erased figure would read as "this run never produced it".
+    summary.write_text("STEP | RESULT | STARTED_AT | FINISHED_AT\n"
+                       "static-verify | PASS | 2026-01-01T00:00:00Z | 2026-01-01T00:00:30Z\n"
+                       "metrics static-verify refusal_census_selftest_arms=11\n"
+                       "metrics static-verify unit_passed=453\n", encoding="utf-8")
+    merged = READER.step_metrics(tmp_path)
+    assert merged == {"static-verify": {"refusal_census_selftest_arms": "11", "unit_passed": "453"}}, merged
     empty = tmp_path / "older-run"
     empty.mkdir()
     (empty / "SUMMARY.txt").write_text("STEP | RESULT | STARTED_AT | FINISHED_AT\n"

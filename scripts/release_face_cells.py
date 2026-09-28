@@ -116,6 +116,17 @@ CELLS = [
     ("docs/RELEASE_CHECKLIST.md", "两个 Worker Lease 竞争与 Kill-9 恢复",
      r"\d+ jobs, \d+ workers, [\d.]+ credits settled once", "{lease}"),
     ("docs/TEST_REPORT.md", "绝对指纹校验通过", r"本轮读数 `([^`]+)`", "本轮读数 `{restore}`"),
+    # The two latency series were the last readings anyone copied by hand out of a per-step log. The steps
+    # have stated them themselves since `c9e3cbd` (`metrics provider-regression-100 p50_s=…`), so the tail of
+    # each series -- the one entry that claims to be *this* run -- is now a cell, and only that entry. The
+    # older items stay as the dated readings they are, because the logs they were read from never entered
+    # the tree and no template can recompute them.
+    ("docs/TEST_REPORT.md", "100 次生成回归",
+     r"、本轮（`[0-9a-f]{7}`，第 \d+ 步）[0-9.]+s/[0-9.]+s，每次都是 100/100",
+     "、本轮（`{short}`，第 {regression_step} 步）{regression_p50_s}s/{regression_p95_s}s，每次都是 100/100"),
+    ("docs/TEST_REPORT.md", "而不是自家模拟器适配器驱动生成",
+     r"、本轮 [0-9.]+s/[0-9.]+s（`[0-9a-f]{7}`，第 \d+ 步）",
+     "、本轮 {generic_p50_s}s/{generic_p95_s}s（`{short}`，第 {generic_step} 步）"),
     # ---------------------------------------------------------------- docs/TEST_REPORT.md
     ("docs/TEST_REPORT.md", "权威运行（",
      r"权威运行（(\d{4}-\d{2}-\d{2})）", "权威运行（{run_date}）"),

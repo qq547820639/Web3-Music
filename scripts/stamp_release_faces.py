@@ -44,6 +44,10 @@ STEP_ROW = re.compile(r"^\s*(?:\d+\s*\|\s*)?([a-z0-9-]+)\s*\|\s*(PASS|FAIL|SKIPP
 # carried whatever was last typed in. A step that emitted no line reads NOT-FOUND, never 0.
 METRIC_FIGURES = {
     ("static-verify", "unit_passed"): "run_unit_passed",
+    # How many arms the two-observer cross-check has. Published only by runs whose step 1 already ran the
+    # census self-test, so for every earlier run this reads NOT-FOUND -- which is the truth: nobody counted
+    # it there, and a face quoting a number from that era is quoting a terminal.
+    ("static-verify", "refusal_census_selftest_arms"): "census_selftest_arms",
     ("provider-regression-100", "p50_s"): "regression_p50_s",
     ("provider-regression-100", "p95_s"): "regression_p95_s",
     ("provider-regression-100", "credits"): "regression_credits",
@@ -198,7 +202,10 @@ def step_metrics(run_dir: pathlib.Path) -> dict:
     for line in text.splitlines():
         step, readings = metrics.parse(line)
         if step:
-            out[step] = readings
+            # A step may state several readings on separate lines (row 1 reports both the ladder count and
+            # the census's own arm count); the copy keeps them as they came, so merge rather than replace --
+            # replacing would make the earlier line read as "that figure was never produced".
+            out.setdefault(step, {}).update(readings)
     return out
 
 

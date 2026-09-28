@@ -132,10 +132,11 @@ run_step() {
   # （那个目录被 .gitignore 挡在树外），`metrics <步骤名> k=v` 才进 SUMMARY.txt，所以盖章器
   # 从此能引用延迟与各演练的 `N/N`，而不是抄上一次有人手敲进文书的那一份。没有这一行的步骤
   # 读数是"缺席"，不是 0 —— 这条由盖章侧的哨兵守，脚本这里不替它编值。
-  producer_metric=$(grep '^metric ' "$log" | tail -1 || true)
-  if [ -n "$producer_metric" ]; then
-    printf 'metrics %s %s\n' "$name" "${producer_metric#metric }" >> "$RESULTS_FILE"
-  fi
+  # 一个步骤可以写好几行读数（第 1 步同时报阶梯条数与对账件的判据自测档数），逐行都抄，
+  # 盖章器按步骤名合并；只取最后一行会让前面那些读数静默消失，读起来像"这一步没测"。
+  grep '^metric ' "$log" | while IFS= read -r producer_line; do
+    printf 'metrics %s %s\n' "$name" "${producer_line#metric }" >> "$RESULTS_FILE"
+  done
   echo ""
   echo "---- ${name} 输出（完整日志：${log}） ----"
   cat "$log"

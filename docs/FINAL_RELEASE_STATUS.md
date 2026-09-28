@@ -1299,9 +1299,12 @@ Two things surfaced while wiring those cells, and both are defects in the record
    cited prose until a chain whose report carries `refusal_counts` becomes the authority, because a cell
    reading a field that report does not have would stop the whole round.
 
-The gate that compares the two observers is `scripts/server_refusal_census.py --self-test` (7 arms: the
-honest pair, a refusal the gate missed, one event short, an injected route that actually reached the api, unparsable
-lines, an empty window, and both docker line shapes), and the browser leg grew the same shape of arm in its
+The gate that compares the two observers is `scripts/server_refusal_census.py --self-test`, and its arm count
+is the tool's own printout -- at that round the run printed 7, which is what
+`git show a841628:scripts/server_refusal_census.py` still shows as seven `arms.append` lines, while
+`scripts/static-verify.sh` now runs that self-test inside step 1 and refuses the whole step if any arm fails,
+so no sentence has to keep the number current. Its arms were then: the honest pair, a refusal the gate missed, one event short, an injected route that actually reached the api, unparsable
+lines, an empty window, and both docker line shapes. The browser leg grew the same shape of arm in its
 own `--self-test`: a planted 403 must appear in `refusals` and a 200 on the next request must not, proved
 by removing the listener and watching the arm go red (rc=1, message named) before restoring the file
 byte-identically.
