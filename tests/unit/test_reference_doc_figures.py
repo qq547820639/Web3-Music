@@ -105,9 +105,11 @@ def ci_job_count(root=ROOT):
 
 
 def contract_census(root=ROOT):
-    paths = json.loads((root / CONTRACT).read_text(encoding="utf-8"))["paths"]
+    contract = json.loads((root / CONTRACT).read_text(encoding="utf-8"))
+    paths = contract["paths"]
     operations = sum(1 for item in paths.values() for verb in item if verb in METHODS)
-    return len(paths), operations
+    schemas = len(contract.get("components", {}).get("schemas", {}))
+    return len(paths), operations, schemas
 
 
 def figure_problems(text, compose, jobs, contract):
@@ -124,8 +126,13 @@ def figure_problems(text, compose, jobs, contract):
         if stated != jobs[0]:
             problems.append(f"'{found.group(0)}' against {jobs[0]} jobs in {CI}: {', '.join(jobs[1])}")
     for found in re.finditer(r"(\d+) paths / (\d+) operations", text):
-        if (int(found.group(1)), int(found.group(2))) != contract:
+        if (int(found.group(1)), int(found.group(2))) != contract[:2]:
             problems.append(f"'{found.group(0)}' against {contract[0]} paths / {contract[1]} operations in {CONTRACT}")
+    # The walkthrough states the same object in Chinese and adds the schema count, and its last line about
+    # `securitySchemes` still described the pre-fix contract; the sentence now carries the measured triple.
+    for found in re.finditer(r"(\d+) 条路径、(\d+) 个", text):
+        if (int(found.group(1)), int(found.group(2))) != (contract[0], contract[2]):
+            problems.append(f"'{found.group(0)}' against {contract[0]} 条路径、{contract[2]} 个 components.schemas")
     return problems
 
 
@@ -174,12 +181,15 @@ def test_the_ci_job_count_the_implementation_sentence_claims():
 
 
 def test_the_contract_census_the_iteration_record_claims():
-    assert contract_census() == (90, 103)
+    assert contract_census() == (90, 103, 45)
+
+
+FIGURE_SCANNED = AUDITED + ("docs/CODE_WALKTHROUGH.md",)
 
 
 def test_the_audited_docs_agree_with_the_tree_right_now():
     problems = []
-    for doc in AUDITED:
+    for doc in FIGURE_SCANNED:
         text = (ROOT / doc).read_text(encoding="utf-8")
         problems += [f"{doc}: {p}" for p in figure_problems(text, compose_census(), ci_job_count(),
                                                             contract_census())]

@@ -163,7 +163,7 @@ HTTP → gateway → request_context(CSRF/安全头) → get_user(鉴权) → ge
 
 ### 2.5 `shared/contracts`（契约层）
 
-- `openapi-v13.json/yaml`：**69 条路径、33 个 schema，但 `securitySchemes: []`（空）** → 安全模型未文档化（§4 P1-5）。
+- `openapi-v13.json/yaml`：**现读 90 条路径、45 个 `components.schemas`，`securitySchemes` 有 `JWTBearer` 与 `SessionCookie` 两条**——这三个数由 `tests/unit/test_reference_doc_figures.py` 对着合同文件现算。本行原先记的是 §4 P1-5 还在册时的样子——路径数与 schema 数都还是旧合同的，且写着 `securitySchemes` 为空、安全模型未文档化；两种安全方案已声明、JSON/YAML 已重导并核对非空（见 `docs/ITERATION_CHANGES.md` A8 行）。
 - JSON Schema：顶层 8 个（song-spec-runtime、generation-job-v3、license-v1、order-v1、rights-evidence-v1、payment-event-v1、product-event-v1、brand-brief-v1、credit-hold）+ `design-reference/` 8 个旧版。
 - **关键事实**：运行时**只有 `song-spec-runtime-v1.schema.json` 被 `contracts.py` 真正加载校验**，其余 Schema 是"设计参考/文档事实源"，未在代码中执行（grep 确认无其他引用）。"JSON Schema 作为事实源"的说法**部分成立**——OpenAPI 是运行时导出的、SongSpec Schema 是强制的，但其余 Schema 与代码一致性无人自动校验（仅 `static-verify.sh` 做元模式校验 `check_schema`）。
 
