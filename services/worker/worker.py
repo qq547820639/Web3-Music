@@ -9,6 +9,7 @@ from botocore.client import Config
 from provider import close_http_client as close_provider_http_client, create_adapter
 from ledger import close_hold
 import media_scan
+from validation import validation_is_infrastructure
 from outcomes import error_signature, terminal_error
 from metrics import inc as metric_inc, set_gauge, start_server as start_metrics_server
 
@@ -206,6 +207,10 @@ async def fetch_media(url:str):
                 raise ValueError("non-positive audio duration")
             duration_ms=int(duration_value*1000)
         except Exception as exc:
+            # The machine's fault or the bytes'? Same split the scanner and the media transport already
+            # make: a probe that never got a CPU slice says nothing about this candidate's audio.
+            if validation_is_infrastructure(exc):
+                raise Retryable(f"audio validation could not run: {exc}") from exc
             raise RuntimeError(f"audio decode validation failed: {exc}") from exc
         return tmp_path,sha.hexdigest(),mime,size,duration_ms
     except Exception:

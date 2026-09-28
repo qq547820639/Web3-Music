@@ -11,7 +11,7 @@
 | 层 | 结论 | 证据 |
 |---|---|---|
 | 后端领域能力 | **基本实现（质量中上）** | 创作/资产/市场三 OS、双分录账本、Lease Worker、RLS、SSRF 防护、Provider/Payment 契约、6 个迁移、20 个脚本——均为真实代码，无 TODO |
-| 验证可信度 | **已闭环（2026-09-25）** | 跨容器 E2E 已在真实 Compose 栈跑通并留证：`release-evidence/acceptance-20260925T144245Z/`（`acceptance-all.sh` 全 14 步 PASS，commit `82f2ffe`）；单测 28 → 54；详见 `docs/FINAL_RELEASE_STATUS.md` |
+| 验证可信度 | **已闭环（2026-09-25）** | 跨容器 E2E 已在真实 Compose 栈跑通并留证：`release-evidence/acceptance-20260925T144245Z/`（`acceptance-all.sh` 全 14 步 PASS + 1 步按开关跳过（共 15 行，容量 Gate 需 `CAPACITY=1`），commit `82f2ffe`）；单测 28 → 54；详见 `docs/FINAL_RELEASE_STATUS.md` |
 | 前端体验 | **MVP 骨架** | 后端 69 条 API 未在前端对等呈现；原 app.js 32KB 压缩、16 处 `prompt()`、0 loading/aria |
 
 ## 本轮实际落地（14 项）
