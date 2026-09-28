@@ -235,6 +235,11 @@ CELLS = [
      r"行数 (\d+)→(\d+)", "行数 {narrowest_rows}→{widest_rows}"),
     ("docs/CHANGELOG_COST500.md", "权威运行 `release-evidence/",
      r"(\d+) 份判红 SUMMARY 留档（[^）]*）", "{red_count} 份判红 SUMMARY 留档（{red_days_cn}）"),
+    # This face's closing clause named a browser report that no cell owned: every figure around it was
+    # re-stamped from the current authority while the pointer kept the 2026-09-27 file it was written with,
+    # i.e. a report for a different run and a different commit than the sentence's own authority.
+    ("docs/CHANGELOG_COST500.md", "权威运行 `release-evidence/",
+     r"浏览器结果 `release-evidence/browser-a11y-[0-9TZ]+/report\.json`", "浏览器结果 `{browser_report}`"),
     # ---------------------------------------------------------------- docs/CODE_WALKTHROUGH.md + runbook
     ("docs/CODE_WALKTHROUGH.md", "本轮实测",
      r"(\d+) 个文件、`pytest -q tests/unit --collect-only -q` 读出 (\d+) 个收集实例",

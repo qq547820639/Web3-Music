@@ -1,0 +1,15 @@
+Resonance AI Music Asset Platform — E2E Acceptance
+started_at=2026-09-28T11:05:02Z
+evidence_dir=release-evidence/acceptance-20260928T110502Z
+host=Mac
+host_load="5.69 9.98 14.41" host_cpus=10 docker_cpus=4
+git_commit=1bbd0349529c93fe867303c4be782b11f13b9a34
+fresh_database=1
+disk_free_kb=11476316
+
+STEP | RESULT | STARTED_AT | FINISHED_AT
+static-verify | FAIL | 2026-09-28T11:05:02Z | 2026-09-28T11:05:03Z
+failed_step_env: host_load="5.69 9.98 14.41" host_cpus=10 docker_cpus=4
+
+finished_at=2026-09-28T11:05:03Z
+host_load="5.69 9.98 14.41" host_cpus=10 docker_cpus=4

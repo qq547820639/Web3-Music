@@ -150,6 +150,7 @@ CHECKLIST = ROOT / "docs/RELEASE_CHECKLIST.md"
 REPORT = ROOT / "docs/TEST_REPORT.md"
 CHANGELOG = ROOT / "docs/CHANGELOG_COST500.md"
 STATUS = ROOT / "docs/FINAL_RELEASE_STATUS.md"
+RUNBOOK = ROOT / "docs/E2E_ACCEPTANCE_RUNBOOK.md"
 
 SENTENCES = (
     (CHECKLIST, r"已有 (\d+) 次 `FAIL=0`", r"次 `FAIL=0`（(.*?)，旧→新", r"当时分别是 ([\d/]+) 行",
@@ -807,6 +808,11 @@ CONTRACT_QUOTES = (
     ("docs/CODE_WALKTHROUGH.md", "由运行中的 FastAPI", r"OpenAPI v13（(\d+) paths）", ("openapi_paths",)),
     ("docs/RELEASE_CHECKLIST.md", "哪些端点带这道检查不靠本文复述",
      r"现读 (\d+) 条路由 / (\d+) 条写操作 / 其中 (\d+) 条带再认证", ("routes", "writes", "step_up")),
+    # The same two contract figures stated in the test report's own words. This phrasing existed for four
+    # rounds with the pre-v13 numbers (96 / 51) while the walkthrough line beside it was policed, so the
+    # gate read green and the report stayed wrong.
+    ("docs/TEST_REPORT.md", "从 AST 派生",
+     r"从 AST 派生 (\d+) 条 /api 路由、(\d+) 条写操作", ("routes", "writes")),
 )
 
 
@@ -941,7 +947,6 @@ def pairing_problems(runs, legs, paths):
                 named += [runs[r][:7] for r in run_stamps if r in runs]
                 named += [t for t in tokens if len(t) == 7 and t.islower() and not t.isdigit()]
                 unresolved = [r for r in run_stamps if r not in runs]
-                unresolved = [r for r in run_stamps if r not in runs]
                 if unresolved:
                     problems.append(f"{path.name}:{number} claims a shared commit with untracked runs "
                                     f"{unresolved}")
@@ -999,3 +1004,148 @@ def test_the_same_commit_clause_fires_on_a_stale_leg_pointer():
                         "`acceptance-20260928T084412Z` 各说各的\n", encoding="utf-8")
         assert pairing_problems(runs, legs, [face]) == [], (
             "the clause paired a line that never claims a shared commit")
+
+
+# ------------------------------------------------------------------ an authority line cites its own leg
+def authority_pointer_problems(paths, authority_stamp, leg_owner):
+    """Every a11y leg cited on a face's authority line has to belong to the run that line is about.
+
+    The scope is the physical LINE, not the sentence, and that is the whole point: docs/CHANGELOG_COST500.md
+    writes its authority as one giant parenthetical whose clauses are split by `；`, with the browser pointer
+    in the last clause. A sentence-scoped clause was tried first and stayed silent while the pointer named a
+    leg from four commits back -- it could not see the run the pointer belonged to.
+
+    Three shapes are accepted for a leg on an authority line: it pairs to the authority; it pairs to another
+    run that the same line also names (a face comparing two authorities, which CHECKLIST line 5 does); or the
+    reader pairs it to nothing at all, because a report from before the browser leg had a row window cannot be
+    attributed to any run. That third case is counted and ratcheted rather than ignored, so the exemption
+    cannot quietly grow into a way of never checking anything.
+    """
+    problems, checked, unattributable = [], 0, 0
+    for path in paths:
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            runs = set(RUN_STAMP.findall(line))
+            if authority_stamp not in runs:
+                continue
+            for leg in dict.fromkeys(LEG_STAMP.findall(line)):
+                checked += 1
+                owner = leg_owner(leg)
+                if owner is None:
+                    unattributable += 1
+                elif owner != authority_stamp and owner not in runs:
+                    problems.append(f"{path.name}:{number} cites browser-a11y-{leg}, which pairs to "
+                                    f"acceptance-{owner}, on a line whose authority is "
+                                    f"acceptance-{authority_stamp}")
+    return problems, checked, unattributable
+
+
+def leg_owners():
+    """Invert the reader's pairing: for every report on disk, which run's window does it belong to."""
+    reader = reader_module()
+    owners = {}
+    for run in reader.runs():
+        paired = reader.browser_pair(run)
+        if paired is not None:
+            owners[paired.parent.name.removeprefix("browser-a11y-")] = run["stamp"]
+    return owners
+
+
+def test_every_authority_line_cites_the_authoritys_own_leg():
+    owners = leg_owners()
+    certified = authority(archived_runs())["stamp"]
+    problems, checked, unattributable = authority_pointer_problems(
+        [p for p in DOCUMENTS if p.exists()], certified, owners.get)
+    assert not problems, " | ".join(problems)
+    assert checked >= 4, (f"the clause read {checked} citations on authority lines; the faces have stopped "
+                          "naming a run and a leg together, so it now proves nothing")
+    assert unattributable <= 1, (f"{unattributable} legs cited on authority lines cannot be attributed to "
+                                 "any run; that exemption was granted for the pre-window reports only")
+
+
+def test_the_pointer_clause_fires_on_the_real_changelog_sentence():
+    """A live control: the shipped changelog with one substring swapped, read through the same clause.
+
+    The synthetic fixture that came with the first version of this clause passed while the real face was
+    still invisible to it, so the control now tampers the face itself.
+    """
+    owners = leg_owners()
+    certified = authority(archived_runs())["stamp"]
+    text = (ROOT / "docs/CHANGELOG_COST500.md").read_text(encoding="utf-8")
+    line = next(l for l in text.splitlines() if certified in l)
+    named = set(RUN_STAMP.findall(line)) | {certified}
+    certified_leg = next(leg for leg, run in owners.items() if run == certified)
+    other = next(leg for leg, run in owners.items() if run not in named)
+    with tempfile.TemporaryDirectory() as tmp:
+        face = pathlib.Path(tmp) / "CHANGELOG.md"
+        face.write_text(text, encoding="utf-8")
+        assert authority_pointer_problems([face], certified, owners.get)[0] == [], "the shipped face is red"
+        face.write_text(text.replace(certified_leg, other), encoding="utf-8")
+        problems, checked, _ = authority_pointer_problems([face], certified, owners.get)
+    assert checked >= 1 and any(other in p and certified in p for p in problems), (
+        f"swapping the authority's leg {certified_leg} for {other} -- one that pairs to "
+        f"acceptance-{owners[other]}, which the line never names -- did not fire: {problems}")
+
+
+def test_the_pointer_clause_reads_the_two_accepted_shapes():
+    owners = {"20260928T113020Z": "20260928T111210Z", "20260926T094118Z": "20260926T093142Z"}
+    certified = "20260928T111210Z"
+    with tempfile.TemporaryDirectory() as tmp:
+        face = pathlib.Path(tmp) / "NOTES.md"
+        # A comparison of two authorities on one line: both legs are attributed, so neither is a problem.
+        face.write_text("权威运行 acceptance-20260928T111210Z 的报告 `browser-a11y-20260928T113020Z`，"
+                        "上一轮 acceptance-20260926T093142Z 的报告 `browser-a11y-20260926T094118Z`\n",
+                        encoding="utf-8")
+        assert authority_pointer_problems([face], certified, owners.get) == ([], 2, 0), (
+            "the clause refuted a line that attributes every leg it names")
+        # A pre-window report: nothing pairs to it, so it is counted as unattributable, not as a violation.
+        face.write_text("权威运行 acceptance-20260928T111210Z 另见旧记录 `browser-a11y-20260926T074554Z`\n",
+                        encoding="utf-8")
+        assert authority_pointer_problems([face], certified, owners.get) == ([], 1, 1), (
+            "the clause either fired on, or silently dropped, an unattributable leg")
+        # A leg whose owner the line never names: that is the stale pointer.
+        face.write_text("权威运行 acceptance-20260928T111210Z 的浏览器结果 "
+                        "`browser-a11y-20260926T094118Z`\n", encoding="utf-8")
+        problems, checked, _ = authority_pointer_problems([face], certified, owners.get)
+    assert checked == 1 and any("20260926T094118Z" in p for p in problems), problems
+
+
+# ------------------------------------------------------------------ the runbook's step table keeps its shape
+def table_shape_problems(path):
+    """Every data row of the runbook's step table must carry the header's column count.
+
+    The runbook is the face an operator reads while the chain is running, and its rows are written by the
+    same hand that edits them: a `|` left inside a cell splits one row into five columns, which renders as a
+    row whose 判据 column has gone missing. Found live this round in the row this session had just widened.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    header = next((i for i, line in enumerate(lines) if line.startswith("| # |")), None)
+    if header is None:
+        return [f"{path.name}: no `| # |` header, so the step table's shape cannot be checked"], 0
+    width = lines[header].count("|")
+    problems, rows = [], 0
+    for i in range(header + 2, len(lines)):
+        if not lines[i].startswith("|"):
+            break
+        rows += 1
+        if lines[i].count("|") != width:
+            problems.append(f"{path.name}:{i + 1} has {lines[i].count('|')} pipes where the header has "
+                            f"{width} -- a stray `|` inside a cell splits the row")
+    return problems, rows
+
+
+def test_the_runbook_step_table_keeps_one_shape():
+    problems, rows = table_shape_problems(RUNBOOK)
+    assert not problems, " | ".join(problems)
+    assert rows == 23, f"the step table read {rows} data rows; the chain has 23 steps"
+
+
+def test_a_stray_pipe_in_the_step_table_fires_the_shape_clause():
+    text = RUNBOOK.read_text(encoding="utf-8")
+    needle = "`python scripts/browser_a11y.py` → 取 UTC 秒两次"
+    assert text.count(needle) == 1, "the control's anchor has moved"
+    with tempfile.TemporaryDirectory() as tmp:
+        face = pathlib.Path(tmp) / "RUNBOOK.md"
+        face.write_text(text.replace(needle, "`python scripts/browser_a11y.py` | → 取 UTC 秒两次"),
+                        encoding="utf-8")
+        problems, rows = table_shape_problems(face)
+    assert rows == 23 and any("pipes where the header" in p for p in problems), problems

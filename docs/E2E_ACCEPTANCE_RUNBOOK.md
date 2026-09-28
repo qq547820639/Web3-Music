@@ -159,7 +159,7 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 19 | hold-drill | `python scripts/hold_drill.py`（需要步骤 16 的商业覆层仍在跑） | 打印 `legal hold drill: N/N checks passed`；两种载体各自的拒绝措辞、放行后的同一条调用必须开火与不开火、目录里读得到该标记的对象恰好那三个、以及 `media_assets` 没有删除触发器这一条实测缺口 |
 | 20 | provider-regression-100 | `python scripts/provider_regression.py "${REGRESSION_JOBS:-100}" "${REGRESSION_CONCURRENCY:-8}"` | 打印 `provider regression: N/N completed, error rate ...` 且无 `FAIL:` 行；台账闭合、无悬挂 hold |
 | 21 | generic-rest-roundtrip | `docker compose -f docker-compose.yml -f docker-compose.generic-rest.yml up --build -d` → `python scripts/provider_regression.py "${GENERIC_REST_JOBS:-25}" 4 generic_rest` | 退出码 0；`/api/bootstrap` 报出的 provider 身份必须是 `generic_rest`，否则 `expected provider ...` 直接判红 |
-| 22 | browser-a11y | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (BROWSER=1 才执行)`；`BROWSER=1` 时 `python scripts/browser_a11y.py --self-test` → `python scripts/browser_a11y.py` | → 取 UTC 秒两次，`python scripts/server_refusal_census.py --since "$START" --until "$END" --write`（不能用 `--run "$STAMP"`：那一行的起止时间戳是步骤返回之后才写进 SUMMARY 的）（把 `docker compose logs api` 在同一行时间窗里的 4xx 数一遍，落 `server-refusals.txt` 作为第二观察者） | 退出码 0，`browser a11y + walkthrough passed`；前置为 playwright + Chromium（`scripts/requirements-browser.txt`） |
+| 22 | browser-a11y | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (BROWSER=1 才执行)`；`BROWSER=1` 时 `python scripts/browser_a11y.py --self-test` → `python scripts/browser_a11y.py` → 取 UTC 秒两次，`python scripts/server_refusal_census.py --since "$START" --until "$END" --write`（不能用 `--run "$STAMP"`：那一行的起止时间戳是步骤返回之后才写进 SUMMARY 的）（把 `docker compose logs api` 在同一行时间窗里的 4xx 数一遍，落 `server-refusals.txt` 作为第二观察者） | 退出码 0，`browser a11y + walkthrough passed`；前置为 playwright + Chromium（`scripts/requirements-browser.txt`） |
 | 23 | capacity-gate-500 | 默认**不执行**，`SUMMARY.txt` 记 `SKIPPED (CAPACITY=1 才执行)`；`CAPACITY=1` 时先 `docker compose down --remove-orphans`（商业覆层同做一次）释放端口，再 `./scripts/capacity-gate-500.sh` | 错误率 ≤ `CAPACITY_MAX_ERROR_RATE`（默认 1%）、p95 ≤ `CAPACITY_MAX_P95_MS`（默认 800ms），随后容量栈里的 acceptance 复跑通过 |
 
 **判读要点**：每步结束后控制台会打印 `STEP N RESULT: PASS/FAIL`。任一步 `FAIL` 会立即停止，并提示 `该步骤失败，日志在 …`。
@@ -171,7 +171,7 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 门禁 | 判定标准 | Go | No-Go |
 |---|---|---|---|
 | 静态校验 | `static-verify.sh` 退出码 0 | ✅ | ❌ |
-| 单元测试 | `pytest -q tests/unit` 全过。用例数由 `pytest -q tests/unit --collect-only -q` 现读（本轮实测 434 个收集实例，含参数化展开），门禁判的是退出码 0、且数量不得比上一轮少 | ✅ | ❌ |
+| 单元测试 | `pytest -q tests/unit` 全过。用例数由 `pytest -q tests/unit --collect-only -q` 现读（本轮实测 437 个收集实例，含参数化展开），门禁判的是退出码 0、且数量不得比上一轮少 | ✅ | ❌ |
 | 默认 E2E | `acceptance`（步骤 4）全过 | ✅ | ❌ |
 | 契约测试 | `contract-test.sh` 全过 | ✅ | ❌ |
 | 故障恢复 | `chaos-worker-recovery.sh` verify 通过 | ✅ | ❌ |
