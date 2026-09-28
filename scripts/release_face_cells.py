@@ -94,6 +94,22 @@ CELLS = [
      "`{browser_report_dir}`：{browser_views} 个视图记录 / {browser_scans} 次 axe 扫描"),
     ("docs/RELEASE_CHECKLIST.md", "权威那次是两视口的",
      r"`boot_window_clicks` 为 (\d+)", "`boot_window_clicks` 为 {browser_boot_clicks}"),
+    # The privacy-walk item quotes the export file sizes as a current measurement, and it had drifted a
+    # round behind the report (2614/2613 against 2731/2730).
+    ("docs/RELEASE_CHECKLIST.md", "在真实浏览器里把两条权利各走完一遍",
+     r"实测 \d+ / \d+ 字节", "实测 {browser_export_bytes} 字节"),
+    # The server-side census quoted in 附带发现第 33 条: same window, same artifact as the browser-side
+    # figures above, so it must be stamped rather than copied from a terminal.
+    ("docs/RELEASE_CHECKLIST.md", "本轮窗口",
+     r"本轮窗口 (\d+) 行请求里服务端答了 \*\*(\d+) 次 4xx、摊在 (\d+) 个端点上\*\*",
+     "本轮窗口 {server_request_lines} 行请求里服务端答了 **{server_4xx_events} 次 4xx、摊在 "
+     "{server_endpoints} 个端点上**"),    ("docs/RELEASE_CHECKLIST.md", "本轮窗口", r"其中 401 有 (\d+) 次",
+     "其中 401 有 {server_401_events} 次"),
+    ("docs/RELEASE_CHECKLIST.md", "本轮窗口", r"403 有 (\d+) 次（[^）]*）",
+     "403 有 {server_403_events} 次（{server_403_endpoints}）"),
+    ("docs/RELEASE_CHECKLIST.md", "本轮窗口", r"而 500 \*\*(\d+) 次\*\*",
+     "而 500 **{server_500_events} 次**"),
+
     # Two more run readings lived on this face and in the report with no owner: the lease-contention
     # settlement line and the restore-fidelity line. Both are printed by their step and parsed by the
     # reader already, so leaving them as prose meant copying last round's numbers forward.

@@ -354,12 +354,19 @@ step_hold_drill() {
 step_browser_a11y() {
   # The self-test arm proves the audit can fire before its verdict is trusted.
   python scripts/browser_a11y.py --self-test
+  START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   python scripts/browser_a11y.py
-  # The census cross-check is part of this step, not a follow-up chore: the report now records
-  # per-endpoint refusals, and tests/unit/test_release_record_consistency.py refuses a certified run
-  # that carries refusals without the server-side artifact to compare them against. Running it here
-  # is what keeps 'the api log said the same thing' a reading instead of a recollection.
-  python scripts/server_refusal_census.py --run "${STAMP}" --write
+  END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  # The census cross-check is part of this step, not a follow-up chore: the report records per-endpoint
+  # refusals, and tests/unit/test_release_record_consistency.py refuses a certified run that carries
+  # refusals without the server-side artifact to compare them against.
+  #
+  # The window comes from the clock around the gate, exactly as in CI, and NOT from `--run "$STAMP"`:
+  # run_step writes this row's STARTED_AT/FINISHED_AT into SUMMARY.txt only after the step returns, so
+  # asking for the row's own window from inside the step asks for a row that does not exist yet. Measured
+  # that way on acceptance-20260928T103425Z: the gate passed ("browser a11y + walkthrough passed") and the
+  # step still went red on `no browser report pairs to this run by commit and window`.
+  python scripts/server_refusal_census.py --since "$START" --until "$END" --write
 }
 
 step_generic_rest_roundtrip() {

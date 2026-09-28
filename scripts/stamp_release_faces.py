@@ -218,7 +218,8 @@ def figures(run: dict) -> dict:
                  "browser_uncaught", "browser_boot_clicks", "browser_report_dir", "console_lines", "console_app_lines", "console_network_lines",
                  "console_status_breakdown", "console_labels", "console_error_events", "refusal_lines",
                  "refusal_events", "refusal_endpoints", "refusal_403_events", "refusal_top",
-                 "server_4xx_events", "server_endpoints", "server_request_lines"):
+                 "server_4xx_events", "server_endpoints", "server_request_lines", "server_401_events",
+                 "server_403_events", "server_500_events", "server_403_endpoints"):
         got.setdefault(name, "NOT-FOUND")
     if report:
         data = json.loads(report.read_text(encoding="utf-8"))
@@ -292,6 +293,18 @@ def figures(run: dict) -> dict:
                 if found:
                     got[key] = found.group(1)
             got["server_endpoints"] = len(re.findall(r"^\s*\d{3} \w+\s+\S+\s+\d+$", census_text, re.M))
+            # The rows themselves carry the status, so the per-status split needs no new field in the
+            # artifact -- and the "the injected 500 never reached the server" property becomes a stamped
+            # reading (server_500_events) instead of a sentence someone hopes stays true.
+            per_status: dict[str, int] = {}
+            endpoints: dict[str, list] = {}
+            for row in re.findall(r"^\s*(\d{3}) (\w+)\s+(\S+)\s+(\d+)$", census_text, re.M):
+                code, method, path, hits = row
+                per_status[code] = per_status.get(code, 0) + int(hits)
+                endpoints.setdefault(code, []).append(f"`{method} {path}` {hits}")
+            for code in ("401", "403", "500"):
+                got[f"server_{code}_events"] = per_status.get(code, 0)
+            got["server_403_endpoints"] = "、".join(endpoints.get("403", [])) or "一次也没有"
     return got
 
 
