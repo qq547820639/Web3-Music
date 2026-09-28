@@ -53,14 +53,14 @@ LOG_FIGURES = {
     "hold-drill": [("hold", re.compile(r"legal hold drill: (\d+/\d+)"))],
     "market-reconciliation": [("reconcile", re.compile(r"market reconciliation: (\d+/\d+)"))],
     "lease-contention": [("lease", re.compile(r"(\d+ jobs, \d+ workers, [0-9.]+ credits settled once)"))],
-    "restore-fidelity-compare": [("restore", re.compile(r"restore fidelity: (.+)"))],
+    "restore-fidelity-compare": [("restore", re.compile(r"restore fidelity passed: (.+)"))],
     "provider-regression-100": [
         ("regression", re.compile(r"(\d+/\d+ completed, error rate [\d.]+%)")),
-        ("regression_ms", re.compile(r"p50 ([\d.]+)s / p95 ([\d.]+)s")),
+        ("regression_ms", re.compile(r"p50 ([\d.]+)s, p95 ([\d.]+)s")),
     ],
     "generic-rest-roundtrip": [
         ("generic", re.compile(r"(\d+/\d+ completed, error rate [\d.]+%)")),
-        ("generic_ms", re.compile(r"p50 ([\d.]+)s / p95 ([\d.]+)s")),
+        ("generic_ms", re.compile(r"p50 ([\d.]+)s, p95 ([\d.]+)s")),
     ],
 }
 HEADER_KEYS = {
@@ -113,10 +113,25 @@ def step_log(run_dir: pathlib.Path, step: str) -> str | None:
     return candidates[-1].read_text(encoding="utf-8", errors="replace") if candidates else None
 
 
+def rows_by_name(run_dir: pathlib.Path) -> dict:
+    """Which row of the archived record each step is, as the faces count it ("流水线第 N 步").
+
+    Read off the SUMMARY's own row order, not off `acceptance-all.sh`: a step dispatched inside a
+    conditional (`browser-a11y`) has no line starting the file's `run_step` column, so parsing the script
+    silently numbers everything after it one row early.
+    """
+    text = (run_dir / "SUMMARY.txt").read_text(encoding="utf-8", errors="replace")
+    out = {}
+    for index, (step, _result) in enumerate(STEP_ROW.findall(text), start=1):
+        out.setdefault(step, index)
+    return out
+
+
 def figures(run: dict) -> dict:
     got = {k: run[k] for k in ("stamp", "commit", "rows", "pass", "skipped", "fails", "started",
                                "ended", "host_load", "cpus", "disk", "fresh")}
     run_dir = EVIDENCE / f"acceptance-{run['stamp']}"
+    got["rows_by_name"] = rows_by_name(run_dir)
     for step, probes in LOG_FIGURES.items():
         text = step_log(run_dir, step)
         for name, pattern in probes:
@@ -125,6 +140,11 @@ def figures(run: dict) -> dict:
                 continue
             m = pattern.search(text)
             got[name] = m.group(1) if m and m.lastindex == 1 else (m.groups() if m else "NOT-FOUND")
+    for name, step in (("mfa_step", "mfa-drill"), ("media_scan_step", "media-scan-drill"),
+                       ("hold_step", "hold-drill"), ("browser_step", "browser-a11y"),
+                       ("regression_step", "provider-regression-100"),
+                       ("generic_step", "generic-rest-roundtrip")):
+        got[name] = got["rows_by_name"].get(step, "NOT-FOUND")
     report = run_dir / "report.json"
     if not report.exists():
         browser = sorted((EVIDENCE).glob(f"browser-a11y-{run['stamp'][:8]}*/report.json"))
@@ -132,8 +152,17 @@ def figures(run: dict) -> dict:
     got["browser_report"] = str(report.relative_to(ROOT)) if report.exists() else "MISSING"
     if report.exists():
         data = json.loads(report.read_text(encoding="utf-8"))
-        got["browser_views"] = data.get("views", "NOT-FOUND")
+        # `views_scanned` is what the scanner prints; the earlier guess `views` was never on the object, so
+        # this cell read NOT-FOUND for a round while the faces kept quoting a view count copied by hand.
+        got["browser_views"] = data.get("views_scanned", data.get("views", "NOT-FOUND"))
         got["browser_scans"] = data.get("axe_scans", data.get("scans", "NOT-FOUND"))
+        got["browser_mobile_fit"] = data.get("mobile_fit_measured", "NOT-FOUND")
+        got["browser_hidden"] = sum(int(s.get("hidden_marked", 0)) for s in data.get("scans", [])) \
+            if data.get("scans") else "NOT-FOUND"
+        got["browser_rendered_hidden"] = sum(len(s.get("hidden_but_rendered", [])) for s in data.get("scans", [])) \
+            if data.get("scans") else "NOT-FOUND"
+        got["browser_export_bytes"] = " / ".join(f"{e['bytes']}" for e in data.get("privacy_exports", [])) \
+            or "NOT-FOUND"
         got["browser_violations"] = data.get("violations_by_impact", "NOT-FOUND")
         got["browser_commit"] = data.get("git_commit", "NOT-FOUND")
         got["browser_uncaught"] = data.get("uncaught_errors", "NOT-FOUND")

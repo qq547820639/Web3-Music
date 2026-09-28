@@ -9,7 +9,7 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **21 steps PASS and 1 recorded as skipped** across 22 rows, commit `037b818`, 2026-09-27T19:41:52Z → 2026-09-27T19:57:19Z, evidence in `release-evidence/acceptance-20260927T194152Z/`, started under `host_load="5.02 4.64 5.21"` on a Docker VM 4 vCPU with `disk_free_kb=8442608` recorded beside it, with 17 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/21/21/21 rows with `FAIL=0` in every `SUMMARY.txt`), and 22 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 2).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `ef88d14`, 2026-09-28T06:51:39Z → 2026-09-28T07:07:49Z, evidence in `release-evidence/acceptance-20260928T065139Z/`, started under `host_load="6.34 7.69 11.67"` on a Docker VM 4 vCPU with `disk_free_kb=5634660` recorded beside it, with 18 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/21/21/21/22 rows with `FAIL=0` in every `SUMMARY.txt`), and 22 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 2).
 `414752d` was this file's authority until the round before last, and the reason the sentence is now machine-checked rather than maintained: the paragraph below it carried a count, a commit list, a row list and a red total that nothing compared against the archive, so the header could describe a run that was no longer the newest one for two full rounds before anyone noticed.
 The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260927T195301Z/report.json`, stamped with the same commit: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes.
 
@@ -18,7 +18,7 @@ browser run's `report.json`; the per-step logs and the two compose log files sta
 So a clone can re-check the step ledger and the whole browser reading (views, scans, violations per impact, CSP,
 `uncaught_errors`, the second-factor states) against committed artifacts, while the drill tallies and timings quoted
 below come from per-step logs that exist only on that host -- re-running the pipeline is how a reader verifies those.
-The pipeline is 22 rows wide now: `report-drill` joined at step 15, right after `media-scan-drill`
+The pipeline is 23 rows wide now: `report-drill` joined at step 15, right after `media-scan-drill`
 (step 14), which is also where the erasure drill's step 11 and the member drill's step 13 readings
 come from. The pipeline widened as steps were added, so what the green runs share is "each passed
 every row that existed then", not "the same 20 rows seven times". The count, the commit sequence, the per-run row counts, the red
@@ -1085,6 +1085,30 @@ recreated stack: `clock skew vs host: api 0s`, `postgres 1s`.
 still describe `037b818`. The next `acceptance-all.sh` run is what restamps them, and it will carry the
 address-dimension round above as well.
 
+## 2026-09-28 the certification that closes the gateway defect
+
+Authoritative run `acceptance-20260928T065139Z` (commit `ef88d14`, fresh database recorded as `fresh_database=1` in the same header, 2026-09-28T06:51:39Z → 2026-09-28T07:07:49Z, 23 rows: 22 PASS and `capacity-gate-500` skipped by switch, host load "6.34 7.69 11.67" on a 4-cpu Docker VM with `disk_free_kb=5634660` beside it), browser record `release-evidence/browser-a11y-20260928T070328Z/report.json`.
+This is the first archived chain that carries the Legal Hold drill at all (`hold-drill` row 19, 42/42), and
+the first whose second-factor drill archives 79/79 -- the two checks that had only ever been read on a
+running stack. It is also the run that proves the gateway fix in place rather than on a bench: step 8's
+restore recreates the application tier, and the step's new precondition reads
+`经由网关（127.0.0.1:18080）的 /health 是 200（等了 0 秒）`; step 12's gateway login, which was the 502 that
+stopped the previous run, is green inside the same drill that found the defect. Step 1 read 423 unit tests
+over 42 files, the manifest covered 246 tracked sources, and the authority matrix still agrees with the
+code at 100 routes / 54 writes.
+
+**Still not certified, unchanged by this run:** the 500-concurrency gate. Row 23 is skipped unless
+`CAPACITY=1`, and on this host (`docker_cpus=4`) the gate measures red, which is why the switch is off by
+default rather than the red being filed as a pass.
+
+**What the stamping tool still cannot do.** Two figure families in `docs/TEST_REPORT.md` remain hand-appended:
+the per-run latency series for `provider-regression-100` (now thirteen readings) and for
+`generic-rest-roundtrip` (fourteen), together with the counts of green runs that carry them. Their denominator
+is "which archived runs actually ran that step, and with what timings", and those numbers live only in the
+per-step logs, which `.gitignore` keeps off the tree -- so they cannot be recomputed from the tracked archive
+the way the commit sequence and the red census can. They are appended by hand from the current run's log
+(`p50 4.09s / p95 5.28s` and `4.11s / 4.16s` here), and the sentences say so ("计数会跨跑传，耗时不会").
+
 ## 2026-09-28 two reds that were about the machine, and the port that was never ours
 
 `acceptance-20260928T051817Z` and `acceptance-20260928T054641Z` both failed on things the code was right
@@ -1135,7 +1159,8 @@ declared upstream, and a commented-out old shape which must **not** count. `scri
 `docker compose port gateway 80` instead of assuming 8080, and refuses (rc=2) when compose reports nothing,
 rather than printing four greens for a neighbouring project.
 
-**Not yet certified.** `acceptance-20260928T054641Z` stopped at step 12 (the chain is fail-fast), so it is
-archived as a judged-red finding, not an authority. The four faces' mechanically-derived cells were restamped
-to 22 archived reds / `26-09-28 = 2` by `scripts/release_face_cells.py --apply`; the authority sentence still
-describes `037b818`. Ladder 409 → 423 (7 gateway-census arms + 7 table-resolution arms).
+**Certified by the section above.** `acceptance-20260928T054641Z` stopped at step 12 (the chain is fail-fast),
+so it is archived as a judged-red finding, not an authority. The four faces' mechanically-derived cells were
+restamped to 22 archived reds / `26-09-28 = 2` by `scripts/release_face_cells.py --apply` while that red was
+the newest evidence in the archive; the authority cells then moved to `acceptance-20260928T065139Z` in the
+same tool's next pass. Ladder 409 → 423 (7 gateway-census arms + 7 table-resolution arms).

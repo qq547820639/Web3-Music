@@ -102,6 +102,18 @@ CELLS = [
     ("docs/TEST_REPORT.md", "第二因子演练", r"\*\*(\d+/\d+)\*\*（流水线第 \d+ 步", "**{mfa}**（流水线第 {mfa_step} 步"),
     ("docs/TEST_REPORT.md", "媒体扫描边界演练", r"\*\*(\d+/\d+)\*\*（流水线第 \d+ 步）",
      "**{media_scan}**（流水线第 {media_scan_step} 步）"),
+    # The browser leg's four figures live only in the a11y report and the chain log, so until now they were
+    # copied by hand from the previous round -- and one of them (the step number) had quietly gone stale by
+    # one when hold-drill widened the pipeline.
+    ("docs/TEST_REPORT.md", "权威运行（",
+     r"浏览器结果为 `release-evidence/browser-a11y-[0-9TZ]+/report\.json`",
+     "浏览器结果为 `{browser_report}`"),
+    ("docs/TEST_REPORT.md", "真实浏览器验收", r"（第 \d+ 步）", "（第 {browser_step} 步）"),
+    ("docs/TEST_REPORT.md", "真实浏览器验收", r"共 (\d+) 个视图记录 / (\d+) 次 axe 扫描",
+     "共 {browser_views} 个视图记录 / {browser_scans} 次 axe 扫描"),
+    ("docs/TEST_REPORT.md", "真实浏览器验收", r"(\d+) 个 hidden 元素、(\d+) 个仍在渲染",
+     "{browser_hidden} 个 hidden 元素、{browser_rendered_hidden} 个仍在渲染"),
+    ("docs/TEST_REPORT.md", "主体权利走查", r"导出文件 [\d/ ]+ 字节", "导出文件 {browser_export_bytes} 字节"),
     # ---------------------------------------------------------------- docs/FINAL_RELEASE_STATUS.md
     ("docs/FINAL_RELEASE_STATUS.md", "Authoritative run: `scripts/acceptance-all.sh` on a fresh database",
      r"\*\*(\d+) steps PASS and (\d+) recorded as skipped\*\* across (\d+) rows",
@@ -482,6 +494,10 @@ def main():
             chosen = max(greens, key=lambda r: r["stamp"])
         figures = reader.figures(chosen)
     values = dict(derive(root, figures))
+    conflicting = sorted(k for k in set(values) & set(figures) if values[k] != figures[k])
+    if conflicting:
+        raise SystemExit(f"stamp: {[(k, values[k], figures[k]) for k in conflicting]} -- the aggregate this "
+                         f"tool computes and the archived record disagree, so neither may be stamped")
     values.update(figures)
     # Refuse on the readings the table actually consumes. A run that predates a step carries unread cells no
     # one asked for, and aborting on those would bury the ones that matter; a consumed cell carrying a
