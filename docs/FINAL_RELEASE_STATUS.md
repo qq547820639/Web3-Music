@@ -1554,8 +1554,9 @@ context, the abort axis and the settle axis (each with the polarity that must st
 side `tests/unit/test_release_record_consistency.py` now pins that an empty unsettled list and a missing
 unsettled reading both stay red, and that a report carrying `request_counts` must have the axis written into
 its own artifact. This section's own counts are readings of the moment:
-`python -m pytest tests/unit -q` printed 467 passed and `scripts/static-verify.sh` exits 0 with
-`metric unit_passed=467` while writing it -- the two cases above the certified run's own 465 are
-`test_the_unsettled_exemption_is_named_and_not_a_rubber_stamp` and
-`test_a_certified_run_that_recorded_the_request_axis_wrote_it_into_the_artifact`, added after the chain had
-already run. The authority figures live in the stamped cells, not here.
+`python -m pytest tests/unit -q` printed 475 passed and `scripts/static-verify.sh` exits 0 with
+`metric unit_passed=475` at the end of this round -- ten cases above the certified run's own 465: two for
+the unsettled exemption and the axis publication (`test_the_unsettled_exemption_is_named_and_not_a_rubber_stamp`,
+`test_a_certified_run_that_recorded_the_request_axis_wrote_it_into_the_artifact`) and eight for the capacity
+origin gate (`tests/unit/test_gateway_identity.py`), all added after `acceptance-20260928T211437Z` had run.
+The authority figures live in the stamped cells, not here.
