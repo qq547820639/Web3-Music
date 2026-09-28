@@ -829,6 +829,52 @@ def test_the_refusal_reconciliation_fires_on_both_polarities():
         "zero parsed lines was read as 'no refusals' rather than as an instrument failure")
 
 
+def test_the_unsettled_exemption_is_named_and_not_a_rubber_stamp():
+    """A shortfall may only be excused by evidence the run itself handed over, and never by an absence.
+
+    The three shapes have to be told apart: the gate named a page it closed too early (excused, and the
+    census prints which page), the gate recorded that nothing was left open (red -- the blindness has no
+    story left), and the report predates the field (also red: no reading is not a clean reading).
+    """
+    census = census_module()
+    server = collections.Counter({("GET", "/api/auth/me", 401): 3})
+    seen = collections.Counter({("GET", "/api/auth/me", 401): 2})
+    assert census.shortfall(server, seen) == [(("GET", "/api/auth/me", 401), 3, 2)], (
+        "the shortfall is not exposed as data, so the census cannot print what it is excusing")
+    assert census.reconcile(server, seen, 40, 60, ["desktop-stale-admin: TimeoutError"]) == [], (
+        "a named unsettled page did not excuse the shortfall, so settling is not consumed anywhere")
+    assert census.reconcile(server, seen, 40, 60, []), (
+        "an empty unsettled list excused the shortfall -- the exemption became a tolerance")
+    assert census.reconcile(server, seen, 40, 60), (
+        "a report with no unsettled reading excused the shortfall -- absence read as innocence")
+
+
+def test_a_certified_run_that_recorded_the_request_axis_wrote_it_into_the_artifact(tmp_path):
+    """The axis only counts as measured if the run that recorded it also published it.
+
+    A `report.json` with `request_counts` whose cross-check artifact has no `gate_issued_events` line would
+    mean the census read the field and dropped it, which is how a witness becomes a rumour again.
+    """
+    census, reader = census_module(), reader_module()
+    runs = [r for r in reader.runs() if r["fails"] == 0]
+    chosen = max(runs, key=lambda r: r["stamp"])
+    report = reader.browser_pair(chosen)
+    if report is None:
+        pytest.skip(f"{chosen['stamp']} has no paired browser report")
+    data = json.loads(report.read_text(encoding="utf-8"))
+    if "request_counts" not in data:
+        pytest.skip(f"{report.parent.name} predates the request axis")
+    assert data["request_events"] == sum(data["request_counts"].values()), (
+        f"{report.parent.name} publishes a total that is not the sum of its own per-endpoint counts")
+    artifact = report.parent / "server-refusals.txt"
+    assert artifact.exists(), f"{report.parent.name} recorded the axis but has no artifact"
+    text = artifact.read_text(encoding="utf-8")
+    for key in ("gate_issued_events", "gate_aborted_events"):
+        assert f"{key}: " in text, f"{artifact} has no {key} line although the report carried it"
+    assert "unsettled_at_close" in data, (
+        f"{report.parent.name} settled its pages but did not publish what the settling found")
+
+
 # ------------------------------------------------- figures the tracked contracts already settle
 MATRIX = ROOT / "shared/contracts/authority-matrix.json"
 OPENAPI = ROOT / "shared/contracts/openapi-v13.json"

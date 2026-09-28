@@ -9,9 +9,9 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `c007b21`, 2026-09-28T18:47:30Z → 2026-09-28T19:04:20Z, evidence in `release-evidence/acceptance-20260928T184730Z/`, started under `host_load="7.43 7.61 9.53"` on a Docker VM 4 vCPU with `disk_free_kb=10333140` recorded beside it, with 26 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `aa3605b`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818`, `ef88d14`, `3dbd175`, `1dbf99e`, `fb6ff39`, `a841628`, `d98e650`, `c9e3cbd` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23 rows with `FAIL=0` in every `SUMMARY.txt`), and 27 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 7).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `c469bf3`, 2026-09-28T21:14:37Z → 2026-09-28T21:31:20Z, evidence in `release-evidence/acceptance-20260928T211437Z/`, started under `host_load="7.79 6.72 7.73"` on a Docker VM 4 vCPU with `disk_free_kb=9573696` recorded beside it, with 27 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `aa3605b`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818`, `ef88d14`, `3dbd175`, `1dbf99e`, `fb6ff39`, `a841628`, `d98e650`, `c9e3cbd`, `c007b21` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23/23 rows with `FAIL=0` in every `SUMMARY.txt`), and 27 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 7).
 `414752d` was this file's authority until the round before last, and the reason the sentence is now machine-checked rather than maintained: the paragraph below it carried a count, a commit list, a row list and a red total that nothing compared against the archive, so the header could describe a run that was no longer the newest one for two full rounds before anyone noticed.
-The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260928T185947Z/report.json`, stamped with the same commit `c007b21`: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes. Both halves of that sentence are stamped cells now, and the pairing they rest on was repaired this round: the reader used to take whatever `browser-a11y-*/report.json` was newest *on the same calendar day*, which on 2026-09-28 -- the day carried several a11y legs, each belonging to a
+The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260928T212652Z/report.json`, stamped with the same commit `c469bf3`: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes. Both halves of that sentence are stamped cells now, and the pairing they rest on was repaired this round: the reader used to take whatever `browser-a11y-*/report.json` was newest *on the same calendar day*, which on 2026-09-28 -- the day carried several a11y legs, each belonging to a
 different run -- six by the close of that day (`070328Z`→`065139Z`, `083139Z`→`081806Z`, `085606Z`→`084412Z`, `100927Z`→`095607Z`, `105051Z`→`103425Z`, `113020Z`→`111210Z`; each pairing is a measured row of
 `browser_pair` over the tracked archive) -- paired a certified run with another run's report and quietly moved
 the hidden-element census by one. It now requires both keys -- the report's `git_commit` equals the one the SUMMARY records, and its `generated_at` falls inside that run's own `browser-a11y` row window -- and when nothing satisfies both, the answer is "no report" and the round refuses rather than quoting the closest file. The commit-equality is enforced in `derive()` for the same reason: the sentence claims "the same commit", so a run whose a11y leg tested a different tree cannot be stamped at all.
@@ -1504,3 +1504,58 @@ fire control, the case-count rule and its fire control -- and two in
 `test_release_record_consistency.py` for the verdict marker. That last number is a reading of this moment,
 not a claim about the record: any added case moves it, which is exactly why the authority figure lives in a
 cell and this one comes with the command that produced it.
+
+## 2026-09-28 the third refusal-census red, and the axis that finally attributes it
+
+Authoritative run `acceptance-20260928T211437Z` (commit `c469bf3`, `fresh_database=1` in the same header, 2026-09-28T21:14:37Z → 21:31:20Z, 23 rows: 22 PASS and `capacity-gate-500` skipped by switch, host load "7.79 6.72 7.73" on a 4-cpu Docker VM with `host_cpus=10` beside it), browser record `release-evidence/browser-a11y-20260928T212652Z/report.json`, cross-check `release-evidence/browser-a11y-20260928T212652Z/server-refusals.txt` -- server 4xx 48 against gate 4xx 48, `unsettled_at_close` empty, census exit 0 with no exemption used.
+
+That host pair read "4.54 4.98 5.69" when the chain wrote its `finished_at=` line, i.e. the machine was quieter at the
+end of the run than at its start -- stated here because the load a round is judged under is the one printed
+beside its own run on the line above.
+
+`acceptance-20260928T200930Z` row 22 failed with `the server answered 27x GET /api/auth/me -> 401 but the
+gate recorded 26`, and the sentence I had written from its own diagnostic -- "the gate was alive at that
+instant, therefore teardown is refuted and a blind page is the live hypothesis" -- was withdrawn this round.
+The print it rested on, `surplus_times()`, returns the newest N of that tuple's server stamps; it never said
+which stamp went unpaired. Aligning the 27 server stamps against the 26 gate events monotonically (±250 ms)
+matched 26 of 27 and left the last one ambiguous between two neighbours, because the inter-observer offset
+itself ranges −31.6 … +142.6 ms (median −9.5). Milliseconds were no better than seconds at this question.
+
+So the fix is a witness taken before an answer can hide (`c469bf3`), not a better clock:
+
+- `request_counts` -- every request the armed pages put on the wire, including this process's own `api_post`
+  calls, judged as `server lines ⊆ issued` per endpoint, restricted to endpoints that refused at least once
+  so the health check's `GET /ready` and Prometheus' `GET /metrics` (both in the same window, neither the
+  gate's to observe) cannot make it red. In the red window `/api/auth/me` reads 27 issued against 27 logged:
+  the missing event was a response, not an observer.
+- `abort_timeline` -- the requests that got no answer at all. The apps' own `logout()` handlers await the
+  request and then call `location.reload()` (`services/web/app.js:413`, `services/admin/admin.js:235`), so
+  five per viewport-leg end in `net::ERR_ABORTED` while the api still answers 204 and logs it. That is the
+  class the response axis cannot see, now named instead of argued.
+- `settle_context()` -- each context waits for networkidle before it closes, which removes the blind window
+  rather than tolerating it; a page that never goes idle is published in `unsettled_at_close` by name.
+
+The comparison itself is untouched: still `server ⊆ gate`, still no ±1. The only exemption is the run's own
+named reading -- an empty or absent `unsettled_at_close` leaves a shortfall red. Measured after the fix, the
+desktop-only leg `release-evidence/browser-a11y-20260928T211052Z/` reads server 4xx 25 against gate 4xx 25
+with `unsettled_at_close: []` and the census exiting 0 with empty stderr, so no exemption was used. Its
+artifact carries `gate_issued_events: 261` and `gate_aborted_events: 5`.
+
+The instrumentation also caught a defect this round's own change had introduced. `context.on("page")` is
+dispatched during the *next* blocking call, i.e. after the walk has already named that page, so the hook's
+fallback label overwrote the Control Plane's own name: in
+`release-evidence/browser-a11y-20260928T205945Z/report.json` not a single `desktop-*-admin` label survived,
+every one read `…-studio (popup)`. Without the `document` field added the same round I would have read that
+as "the admin stage did not run". The hook's label is now a fallback that never wins over a walk's, and the
+`-admin` labels came back.
+
+Census self-test 12 → 23 arms; the browser gate gained real-page fixtures for the second page of an armed
+context, the abort axis and the settle axis (each with the polarity that must stay silent). On the resident
+side `tests/unit/test_release_record_consistency.py` now pins that an empty unsettled list and a missing
+unsettled reading both stay red, and that a report carrying `request_counts` must have the axis written into
+its own artifact. This section's own counts are readings of the moment:
+`python -m pytest tests/unit -q` printed 467 passed and `scripts/static-verify.sh` exits 0 with
+`metric unit_passed=467` while writing it -- the two cases above the certified run's own 465 are
+`test_the_unsettled_exemption_is_named_and_not_a_rubber_stamp` and
+`test_a_certified_run_that_recorded_the_request_axis_wrote_it_into_the_artifact`, added after the chain had
+already run. The authority figures live in the stamped cells, not here.
