@@ -121,6 +121,15 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 容量 Gate 可用环境变量微调（默认值见 `scripts/capacity-gate-500.sh`）：
 `CAPACITY_USERS`（默认 500）、`CAPACITY_REQUESTS_PER_USER`（2）、`CAPACITY_MAX_ERROR_RATE`（1%）、`CAPACITY_MAX_P95_MS`（800ms）、`KEEP_CAPACITY_STACK`（1 则跑完不销毁容量栈）。
 
+### 3.4 能成为「权威运行」的调用口径
+
+认证一条运行用的固定调用是 `FRESH=1 BROWSER=1 ./scripts/acceptance-all.sh`，两个开关都不是可选装饰：
+
+- `FRESH=1` 让 SUMMARY 头部写下 `fresh_database=1`，《发布检查表》第一格读的就是这个字段；
+- `BROWSER=1` 让第 22 步真的跑。文书里浏览器那一半的读数（视图数、axe 扫描数、hidden 普查、导出字节、console 行数与状态分布与标签形状、拒绝的事件数/去重条数/端点数、报告指针本身）来自那一行的 `report.json`，而配对规则要求报告的 `generated_at` 落在**该运行自己那一行**的起止时间里、且 `git_commit` 等于 SUMMARY 记的那一个。少了第 22 行的运行没有可配对的报告，`stamp_release_faces.figures()` 返回 `browser_report="MISSING"`，`release_face_cells.py --apply` 整轮拒写（这一形状由 `tests/unit/test_release_face_cells.py::test_the_browser_report_is_paired_by_commit_and_window` 常驻钉住）。
+
+这一坑我今天亲自踩了一次：09:34 那条链启动时忘了 `BROWSER=1`，第 22、23 行都记成 `SKIPPED (…才执行)`，21 PASS 也是"全部验收步骤通过 ✅"——退码与结论行看不出浏览器那一半没跑，只有 SUMMARY 的行能看出来。所以判断一条运行能否当权威，看的是行表里 `browser-a11y | PASS`，不是最终结论那一行。
+
 ---
 
 ## 4. 每步做什么 / 结果怎么判读
@@ -160,7 +169,7 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 门禁 | 判定标准 | Go | No-Go |
 |---|---|---|---|
 | 静态校验 | `static-verify.sh` 退出码 0 | ✅ | ❌ |
-| 单元测试 | `pytest -q tests/unit` 全过。用例数由 `pytest -q tests/unit --collect-only -q` 现读（本轮实测 428 个收集实例，含参数化展开），门禁判的是退出码 0、且数量不得比上一轮少 | ✅ | ❌ |
+| 单元测试 | `pytest -q tests/unit` 全过。用例数由 `pytest -q tests/unit --collect-only -q` 现读（本轮实测 434 个收集实例，含参数化展开），门禁判的是退出码 0、且数量不得比上一轮少 | ✅ | ❌ |
 | 默认 E2E | `acceptance`（步骤 4）全过 | ✅ | ❌ |
 | 契约测试 | `contract-test.sh` 全过 | ✅ | ❌ |
 | 故障恢复 | `chaos-worker-recovery.sh` verify 通过 | ✅ | ❌ |

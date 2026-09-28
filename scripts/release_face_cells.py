@@ -77,6 +77,13 @@ CELLS = [
      r"留档的判红共 (\d+) 份（[^）]*）", "留档的判红共 {red_count} 份（{red_days_cn}）"),
     ("docs/RELEASE_CHECKLIST.md", "media scan drill:",
      r"media scan drill: (\d+/\d+)", "media scan drill: {media_scan}"),
+    # This face's head line carried a second, unowned pointer to a browser report and claimed it was the
+    # authority's own commit. It is now stamped from the same three values the pairing rule checks, so the
+    # claim can no longer be quoted at a stale file.
+    ("docs/RELEASE_CHECKLIST.md", "权威运行是 `scripts/acceptance-all.sh`",
+     r"浏览器验收另见权威运行 `acceptance-\d{8}T\d{6}Z` 自己那一行的 "
+     r"`release-evidence/browser-a11y-[0-9TZ]+/report\.json`，同一 commit",
+     "浏览器验收另见权威运行 `acceptance-{stamp}` 自己那一行的 `{browser_report}`，同一 commit"),
     # Two figures on this face had no owner at all: the restore-fidelity asset count (which moves with the
     # demo database, and was still reading "4" while the archive read 2) and the accessibility authority
     # line, which named a 2026-09-27 report as "the authoritative one" two days after it stopped being it.
@@ -87,6 +94,12 @@ CELLS = [
      "`{browser_report_dir}`：{browser_views} 个视图记录 / {browser_scans} 次 axe 扫描"),
     ("docs/RELEASE_CHECKLIST.md", "权威那次是两视口的",
      r"`boot_window_clicks` 为 (\d+)", "`boot_window_clicks` 为 {browser_boot_clicks}"),
+    # Two more run readings lived on this face and in the report with no owner: the lease-contention
+    # settlement line and the restore-fidelity line. Both are printed by their step and parsed by the
+    # reader already, so leaving them as prose meant copying last round's numbers forward.
+    ("docs/RELEASE_CHECKLIST.md", "两个 Worker Lease 竞争与 Kill-9 恢复",
+     r"\d+ jobs, \d+ workers, [\d.]+ credits settled once", "{lease}"),
+    ("docs/TEST_REPORT.md", "绝对指纹校验通过", r"本轮读数 `([^`]+)`", "本轮读数 `{restore}`"),
     # ---------------------------------------------------------------- docs/TEST_REPORT.md
     ("docs/TEST_REPORT.md", "权威运行（",
      r"权威运行（(\d{4}-\d{2}-\d{2})）", "权威运行（{run_date}）"),
@@ -119,6 +132,13 @@ CELLS = [
      r"浏览器结果为 `release-evidence/browser-a11y-[0-9TZ]+/report\.json`",
      "浏览器结果为 `{browser_report}`"),
     ("docs/TEST_REPORT.md", "真实浏览器验收", r"（第 \d+ 步）", "（第 {browser_step} 步）"),
+    # Two faces hand-counted "the Nth green run that carried this step" and disagreed with each other and
+    # with the archive: a run whose row was SKIPPED does not carry it, so the count has to be read off the
+    # SUMMARY rows rather than remembered.
+    ("docs/TEST_REPORT.md", "100 次生成回归", r"在册带这一步的绿线运行已有 (\d+) 次",
+     "在册带这一步的绿线运行已有 {regression_runs} 次"),
+    ("docs/TEST_REPORT.md", "第三方 Provider 适配器往返", r"在册带这一步的绿线运行已有 (\d+) 次",
+     "在册带这一步的绿线运行已有 {generic_runs} 次"),
     # The console sentence was hand-written for several rounds, and it had drifted: it counted the report's
     # deduplicated lines as if they were events, and attributed a refusal to the wrong page. Its four
     # figures are now cells, so the sentence can only be stamped from what `report.json` actually holds.
@@ -209,7 +229,8 @@ CELLS = [
 
 DERIVED = ("short", "green_count", "green_list_cn", "green_list_arrow", "green_list_en", "green_rows",
            "narrowest_rows", "widest_rows", "repeat_width", "repeat_times", "red_count", "red_days_cn",
-           "red_days_en", "run_date", "unit_files", "mfa_step", "media_scan_step", "browser_commit_short")
+           "red_days_en", "run_date", "unit_files", "mfa_step", "media_scan_step",
+           "browser_commit_short", "regression_runs", "generic_runs", "browser_runs", "hold_runs")
 
 # What the reader prints when a step's log carries no such figure. An absent reading is not a zero reading,
 # so these never become prose: main() refuses the round on any consumed one, and resolve() re-checks the
@@ -301,6 +322,24 @@ def derive(root: pathlib.Path, figures: dict) -> dict:
         raise SystemExit(f"derive: a prior green run is dated after the certified run ({dates[-1]} > "
                          f"{run_date}) -- the record would certify a run that is not the newest")
     pipeline = (root / "scripts/acceptance-all.sh").read_text(encoding="utf-8", errors="replace")
+    # How many tracked all-green runs actually carry a given step's PASS row. The faces have been quoting
+    # hand-counted ordinals ("the fifteenth green run with this step") that disagree with each other and
+    # with the archive, because a run whose row was skipped does not carry it; this counts the rows.
+    def runs_with(step_row):
+        count = 0
+        for archived in runs:
+            if archived["fails"] or archived["stamp"] == certified:
+                continue
+            text = (root / "release-evidence" / f"acceptance-{archived['stamp']}" /
+                    "SUMMARY.txt").read_text(encoding="utf-8", errors="replace")
+            if re.search(rf"^{step_row} \| PASS", text, re.M):
+                count += 1
+        return count + 1  # plus the certified run itself, which always carries the row it is judged on
+
+    counted = {"regression_runs": runs_with("provider-regression-100"),
+               "generic_runs": runs_with("generic-rest-roundtrip"),
+               "browser_runs": runs_with("browser-a11y"),
+               "hold_runs": runs_with("hold-drill")}
     order = re.findall(r'^run_step "([a-z0-9-]+)"', pipeline, re.M)
     steps = {}
     for name in ("mfa-drill", "media-scan-drill"):
@@ -339,6 +378,7 @@ def derive(root: pathlib.Path, figures: dict) -> dict:
         "mfa_step": steps["mfa-drill"],
         "media_scan_step": steps["media-scan-drill"],
     }
+    out.update(counted)
     absent = sorted(set(DERIVED) - set(out))
     if absent:
         raise SystemExit(f"derive: {absent} is in the table but derive() never computes it")

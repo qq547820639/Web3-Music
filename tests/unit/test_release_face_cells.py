@@ -102,6 +102,10 @@ SHAPE = {
     "restore_assets": "2",
     "browser_report_dir": "browser-a11y-20260928T085606Z",
     "browser_boot_clicks": "2",
+    "regression_runs": "23",
+    "generic_runs": "18",
+    "browser_runs": "21",
+    "hold_runs": "4",
     "media_scan": "14/14",
     "media_scan_step": "14",
 }

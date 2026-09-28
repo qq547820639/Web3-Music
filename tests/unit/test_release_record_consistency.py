@@ -885,3 +885,117 @@ def test_the_contract_quoting_census_is_not_vacuous():
     assert figures["security_schemes"], (
         "the tracked OpenAPI contract carries no securitySchemes, so the walkthrough's sentence about them "
         "needs to be re-read rather than left asserting the opposite of what the artifact holds")
+
+
+# ------------------------------------------------------------------ the "same commit" pairing claim
+RUN_STAMP = re.compile(r"acceptance-(\d{8}T\d{6}Z)")
+LEG_STAMP = re.compile(r"browser-a11y-(\d{8}T\d{6}Z)")
+# Only lines that *assert* the equality are in scope. Two faces name a browser leg and an acceptance run on
+# the same line without claiming they belong together ("浏览器侧另留两条发现记录: ..."), and reading a
+# proximity pairing out of such a line would make the clause fire on prose that says nothing checkable.
+SAME_COMMIT_CLAIM = ("同一 commit", "stamped with the same commit", "同一個 commit")
+COMMIT_TOKEN = re.compile(r"`([0-9a-f]{7})`")
+# Sentences, not lines: these faces are single physical lines carrying many claims, and pairing a leg with
+# every run stamp anywhere on the line would compare a leg against runs it never refers to.
+SENTENCE_SPLIT = re.compile(r"[。；;]|\.\s")
+
+
+def sentences(line):
+    return [part for part in SENTENCE_SPLIT.split(line) if part.strip()]
+
+
+def leg_commits():
+    out = {}
+    for path in sorted((ROOT / "release-evidence").glob("browser-a11y-*/report.json")):
+        stamp = path.parent.name.replace("browser-a11y-", "")
+        try:
+            out[stamp] = json.loads(path.read_text(encoding="utf-8")).get("git_commit", "?")
+        except ValueError:
+            out[stamp] = "??"
+    return out
+
+
+def pairing_problems(runs, legs, paths):
+    """A sentence that says the a11y record carries the run's commit has to name things that can be checked.
+
+    Three readings are compared: the leg's own `git_commit`, every 7-hex commit token in the sentence, and
+    every run stamp in the sentence (via its tracked SUMMARY). All named values must agree, and a sentence
+    that claims the equality while naming nothing resolvable is reported rather than skipped -- that shape
+    is unfalsifiable prose, which is the thing this whole file exists to stop.
+    """
+    problems = []
+    for path in paths:
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            for sentence in sentences(line):
+                if not any(claim in sentence for claim in SAME_COMMIT_CLAIM):
+                    continue
+                leg_stamps = LEG_STAMP.findall(sentence)
+                run_stamps = RUN_STAMP.findall(sentence)
+                tokens = COMMIT_TOKEN.findall(sentence)
+                named = []
+                for leg in leg_stamps:
+                    if leg not in legs:
+                        problems.append(f"{path.name}:{number} names {leg}, whose report.json is not on disk")
+                    else:
+                        named.append(legs[leg][:7])
+                named += [runs[r][:7] for r in run_stamps if r in runs]
+                named += [t for t in tokens if len(t) == 7 and t.islower() and not t.isdigit()]
+                unresolved = [r for r in run_stamps if r not in runs]
+                unresolved = [r for r in run_stamps if r not in runs]
+                if unresolved:
+                    problems.append(f"{path.name}:{number} claims a shared commit with untracked runs "
+                                    f"{unresolved}")
+                counterparts = [runs[r][:7] for r in run_stamps if r in runs]
+                counterparts += [t for t in tokens if len(t) == 7 and not t.isdigit()]
+                if named and not counterparts:
+                    # This is the shape the clause was written for: a sentence that says "the same commit"
+                    # next to a leg and nothing to compare it with. Left alone it reads as a true pairing
+                    # forever, even when the leg is two days and four commits out of date.
+                    problems.append(f"{path.name}:{number} claims a shared commit naming only "
+                                    f"{leg_stamps or tokens}; no run stamp or commit token in the same "
+                                    "sentence, so the pairing is unfalsifiable as written")
+                    continue
+                if counterparts and not named:
+                    problems.append(f"{path.name}:{number} claims a shared commit but names no leg whose "
+                                    "report can be read")
+                    continue
+                if not named and not counterparts:
+                    problems.append(f"{path.name}:{number} claims a shared commit but names nothing that "
+                                    "can be checked")
+                    continue
+                if len(set(named + counterparts)) > 1:
+                    problems.append(f"{path.name}:{number} says '同一 commit' about values that differ: "
+                                    f"{sorted(set(named + counterparts))}")
+    return problems
+
+
+def test_every_same_commit_claim_matches_the_run_it_names():
+    runs = {r["stamp"]: r["commit"] for r in archived_runs()}
+    problems = pairing_problems(runs, leg_commits(), [p for p in DOCUMENTS if p.exists()])
+    assert not problems, " | ".join(problems)
+
+
+def test_the_same_commit_clause_fires_on_a_stale_leg_pointer():
+    """The exact defect this round found: the head of the checklist named a two-day-old leg as the
+    certified run's own record, and no guard could see it because another cell owned that same line."""
+    runs = {"20260928T084412Z": "1dbf99e" + "0" * 33}
+    legs = {"20260927T174714Z": "2f25fe5" + "0" * 33}
+    line = ("权威运行是 `acceptance-20260928T084412Z`，浏览器验收另见 "
+            "`release-evidence/browser-a11y-20260927T174714Z/report.json`，同一 commit")
+    with tempfile.TemporaryDirectory() as tmp:
+        face = pathlib.Path(tmp) / "CHECKLIST.md"
+        face.write_text(line + "\n", encoding="utf-8")
+        problems = pairing_problems(runs, legs, [face])
+    assert any("2f25fe5" in p and "1dbf99e" in p for p in problems), (
+        f"a leg from another tree was accepted: {problems}")
+    honest = {"20260928T085606Z": "1dbf99e" + "0" * 33}
+    with tempfile.TemporaryDirectory() as tmp:
+        face = pathlib.Path(tmp) / "CHECKLIST.md"
+        face.write_text(line.replace("20260927T174714Z", "20260928T085606Z") + "\n", encoding="utf-8")
+        assert pairing_problems(runs, honest, [face]) == [], "the clause cannot read an honest pairing"
+    with tempfile.TemporaryDirectory() as tmp:
+        face = pathlib.Path(tmp) / "NOTES.md"
+        face.write_text("浏览器侧另留两条发现记录：`browser-a11y-20260927T174714Z` 与 "
+                        "`acceptance-20260928T084412Z` 各说各的\n", encoding="utf-8")
+        assert pairing_problems(runs, legs, [face]) == [], (
+            "the clause paired a line that never claims a shared commit")
