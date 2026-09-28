@@ -33,7 +33,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 # --no-log-prefix drops only the service part, so the pattern is anchored on the request line itself
 # and searched rather than matched: a parser pinned to one shape silently reads "the server answered
 # no refusals" on the other, which is the false green this whole script exists to avoid.
-LOG_LINE = re.compile(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\S*Z\s+INFO:\s+\S+ - "(\w+) (\S+) '
+LOG_LINE = re.compile(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)Z?\s+INFO:\s+\S+ - "(\w+) (\S+) '
                       r'HTTP/[\d.]+" (\d{3})')
 # The route the a11y gate fulfills itself (scripts/browser_a11y.py, walk_stale_panels). It must show up on
 # the browser side and not on the server side: if it ever reaches the api, the "partial failure must not
@@ -238,6 +238,13 @@ def self_test() -> int:
                  == ["2026-01-01T00:00:03"]))
     arms.append(("an even pair produces no surplus timestamps",
                  surplus_times(surplus_lines[:2], two, two) == {}))
+    subsecond = [f'api-1  | 2026-01-01T00:00:{frac}.123456789Z INFO:     172.28.0.9:1 - '
+                 f'"GET /api/auth/me HTTP/1.1" 401 Unauthorized' for frac in ("01", "01", "01")]
+    sub, gate2 = (collections.Counter({("GET", "/api/auth/me", 401): 3}),
+                  collections.Counter({("GET", "/api/auth/me", 401): 2}))
+    stamps = surplus_times(subsecond, sub, gate2)[("GET", "/api/auth/me", 401)]
+    arms.append(("sub-second stamps survive the parser, so same-second events stay countable",
+                 all(s.startswith("2026-01-01T00:00:01.") for s in stamps) and len(stamps) == 1))
     fake_run = {"stamp": "acceptance-selftest", "commit": "0" * 40}
     text = render(fake_run, "a", "b", server, seen, 40, 60)
     arms.append(("the two 4xx lines compare the same class, with the injected 500 on its own line",

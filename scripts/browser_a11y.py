@@ -85,6 +85,20 @@ CLIP_JS = """() => {
 }"""
 
 
+def _utc_ms() -> str:
+    """Wall clock with milliseconds, the only resolution that can attribute a missed refusal.
+
+    The cross-check compares the gate's per-event log against `docker compose logs api`. Both sides wrote
+    second-granular stamps, so when the two observers disagreed by one event -- as they did on
+    `acceptance-20260928T163801Z` and again on `acceptance-20260928T194108Z` -- the surplus landed in a
+    second that also held several events the gate *did* see, and "a response arrived after the page closed"
+    was indistinguishable from "the hook never fired". Milliseconds make the two orders comparable; the
+    census prints them.
+    """
+    now = time.time()
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now)) + ".%03dZ" % int((now % 1) * 1000)
+
+
 def wait_painted(page, gap_ms: int = 250, tries: int = 12) -> bool:
     previous = None
     for _ in range(tries):
@@ -275,7 +289,7 @@ class Auditor:
             event = f"{label}: {response.request.method} {path} -> {response.status}"
             self.refusals.append(event)
             self.refusal_timeline.append({
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "ts": _utc_ms(),
                 "label": label,
                 "event": f"{response.request.method} {path} -> {response.status}",
             })
