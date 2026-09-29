@@ -22,6 +22,7 @@ import importlib.util
 import json
 import pathlib
 import re
+import yaml
 import subprocess
 import tempfile
 
@@ -905,17 +906,64 @@ CONTRACT_QUOTES = (
     # gate read green and the report stayed wrong.
     ("docs/TEST_REPORT.md", "从 AST 派生",
      r"从 AST 派生 (\d+) 条 /api 路由、(\d+) 条写操作", ("routes", "writes")),
+    # 2026-09-29: a subagent census found nine more present-tense figures with no owner. They were first given
+    # a parallel matcher in `test_reference_doc_figures.py`, which a second review proved wrong in three ways
+    # -- it globbed every `docs/*.md`, so a soft-wrapped *history* sentence (`docs/FINAL_RELEASE_STATUS.md:1390`)
+    # would read as a live claim; three of its four route figures duplicated these rows; and its unanchored
+    # nouns accused unrelated sentences. The shape that does not have those defects is this one: a marker that
+    # must select exactly one line, and one derivation per figure.
+    ("docs/RELEASE_CHECKLIST.md", "审批流程稳定",
+     r"（(\d+) 条 /api 路由、(\d+) 条写操作", ("routes", "writes")),
+    ("docs/RELEASE_CHECKLIST.md", "审批流程稳定",
+     r"只有 (\d+) 条写路由不带角色检查", ("unguarded_writes",)),
+    ("docs/CODE_WALKTHROUGH.md", "healthcheck/`service_completed_successfully`",
+     r"（\+(\d+) 个覆层）", ("compose_overlays",)),
+    ("docs/CODE_WALKTHROUGH.md", "跨租户外键 + Payout 不可变",
+     r"(\d+) 个迁移", ("migrations",)),
+    ("docs/CODE_WALKTHROUGH.md", "跨租户外键 + Payout 不可变",
+     r"db/migrations/001…(\d+)\.sql", ("migration_last",)),
+    ("docs/CODE_WALKTHROUGH.md", "JSON Schema：顶层",
+     r"顶层 (\d+) 个", ("schemas_top",)),
+    ("docs/CODE_WALKTHROUGH.md", "JSON Schema：顶层",
+     r"`design-reference/` (\d+) 个旧版", ("schemas_legacy",)),
+    ("docs/CODE_WALKTHROUGH.md", "默认/商业/Provider 契约/Payment 契约",
+     r"(\d+) 个测试模块", ("acceptance_suites",)),
+    ("docs/CODE_WALKTHROUGH.md", "compose-acceptance`（真实起 Docker",
+     r"(\d+) 个 job", ("ci_jobs",)),
+    ("docs/CODE_WALKTHROUGH.md", "信息架构其实不差",
+     r"(\d+) 条 /api 路由", ("routes",)),
+    ("docs/CODE_WALKTHROUGH.md", "前端体验层面",
+     r"(\d+) 条 /api 路由", ("routes",)),
+    ("docs/TEST_REPORT.md", "三类注入对照",
+     r"(\d+) 条判决函数单测", ("gate_cases",)),
 )
 
 
 def contract_figures():
     matrix = json.loads(MATRIX.read_text(encoding="utf-8"))["routes"]
     document = json.loads(OPENAPI.read_text(encoding="utf-8"))
-    return {"routes": len(matrix),
-            "writes": sum(1 for r in matrix if r.get("writes")),
-            "step_up": sum(1 for r in matrix if r.get("step_up")),
-            "openapi_paths": len(document.get("paths", {})),
-            "security_schemes": sorted((document.get("components", {}) or {}).get("securitySchemes", {}) or {})}
+    migrations = sorted(int(p.name[:3]) for p in (ROOT / "db/migrations").glob("[0-9]" * 3 + "*.sql"))
+    top = sorted((ROOT / "shared/contracts").glob("*.schema.json"))
+    legacy = sorted((ROOT / "shared/contracts/design-reference").glob("*.schema.json"))
+    figures = {"routes": len(matrix),
+               "writes": sum(1 for r in matrix if r.get("writes")),
+               "step_up": sum(1 for r in matrix if r.get("step_up")),
+               "unguarded_writes": sum(1 for r in matrix if r.get("writes")
+                                       and r.get("authority") == "app-level-only"),
+               "openapi_paths": len(document.get("paths", {})),
+               "migrations": len(migrations),
+               "migration_last": max(migrations) if migrations else 0,
+               "schemas_top": len(top),
+               "schemas_legacy": len(legacy),
+               "compose_overlays": len(sorted(ROOT.glob("docker-compose.*.yml"))),
+               "acceptance_suites": len(sorted((ROOT / "services/acceptance").rglob("test_*.py"))),
+               "ci_jobs": len(yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(
+                   encoding="utf-8"))["jobs"]),
+               "gate_cases": sum(1 for line in (ROOT / "tests/unit/test_browser_a11y_gate.py").read_text(
+                   encoding="utf-8").splitlines() if line.startswith("def test_")),
+               "security_schemes": sorted((document.get("components", {}) or {}).get("securitySchemes", {}) or {})}
+    return figures
+
 
 
 def contract_problems(root, figures):
@@ -950,26 +998,36 @@ def test_figures_quoted_from_the_tracked_contracts_match_those_contracts():
 
 
 def test_a_stale_contract_figure_is_named():
-    """Plant one wrong digit in a real line and the clause has to point at that face and name the truth."""
+    """Plant one wrong digit in every registered row and the clause has to name that row's truth.
+
+    This used to tamper CONTRACT_QUOTES[0] alone, which left the other 15 rows asserting nothing about their
+    own teeth: a row whose pattern silently stopped matching, or whose marker landed on the wrong sentence,
+    would have read as "the figures agree".
+    """
     figures = contract_figures()
-    rel, marker, pattern, keys = CONTRACT_QUOTES[0]
-    text = (ROOT / rel).read_text(encoding="utf-8")
-    lines = text.splitlines(keepends=True)
-    index = next(i for i, line in enumerate(lines) if marker in line)
-    found = re.search(pattern, lines[index])
-    stale = str(int(found.group(1)) + 7)
-    tampered = lines[:index] + [lines[index][:found.start(1)] + stale + lines[index][found.end(1):]] + \
-                 lines[index + 1:]
-    with tempfile.TemporaryDirectory() as tmp:
-        root = pathlib.Path(tmp)
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (root / rel).write_text("".join(tampered), encoding="utf-8")
-        for source in (MATRIX, OPENAPI):
-            (root / source.relative_to(ROOT)).parent.mkdir(parents=True, exist_ok=True)
-            (root / source.relative_to(ROOT)).write_bytes(source.read_bytes())
-        problems = contract_problems(root, figures)
-    assert any(rel in p and f"routes={stale}" in p for p in problems), (
-        f"the clause did not name the planted stale figure: {problems}")
+    faces = sorted({rel for rel, _m, _p, _k in CONTRACT_QUOTES})
+    for number, (rel, marker, pattern, keys) in enumerate(CONTRACT_QUOTES):
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        lines = text.splitlines(keepends=True)
+        index = next(i for i, line in enumerate(lines) if marker in line)
+        found = re.search(pattern, lines[index])
+        assert found, f"row {number} ({rel}, {marker!r}): its pattern matches nothing on its own line"
+        stale = str(int(found.group(1)) + 7)
+        tampered = (lines[:index] + [lines[index][:found.start(1)] + stale + lines[index][found.end(1):]]
+                    + lines[index + 1:])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            sources = faces + [str(MATRIX.relative_to(ROOT)), str(OPENAPI.relative_to(ROOT))]
+            for source in sources:
+                target = root / source
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((ROOT / source).read_bytes())
+            # the copied face has to be replaced by the tampered one *after* the copy, or the arm reads the
+            # pristine line back and reports "the figure agrees" about a plant it never installed.
+            (root / rel).write_text("".join(tampered), encoding="utf-8")
+            problems = contract_problems(root, figures)
+        named = [p for p in problems if rel in p and f"{keys[0]}={stale}" in p]
+        assert named, f"row {number} ({rel}, {marker!r}) did not name the planted stale figure: {problems}"
 
 
 def test_the_contract_quoting_census_is_not_vacuous():
@@ -1367,3 +1425,95 @@ def test_a_renamed_step_in_the_table_fires_the_order_clause():
         face.write_text(text.replace(needle, "| 22 | browser-leg-renamed |"), encoding="utf-8")
         problems, counted = table_order_problems(face, rows)
     assert counted == 23 and any("does not match the run's rows" in p for p in problems), problems
+
+
+# ----------------------------------------------------------------------------------- browser-leg quotes
+# The state lists a certified leg recorded, quoted in prose. Resolved through the pairing rule
+# (`stamp_release_faces.browser_pair`), never "newest directory", because quoting a different leg's counts is
+# exactly what this table has to be able to see.
+LEG_QUOTES = (
+    ("docs/TEST_REPORT.md", "走查覆盖的面板状态分四组各自计数", r"`team_states` (\d+) 个", ("team_states",)),
+    ("docs/TEST_REPORT.md", "走查覆盖的面板状态分四组各自计数", r"`privacy_states` (\d+) 个", ("privacy_states",)),
+    ("docs/TEST_REPORT.md", "走查覆盖的面板状态分四组各自计数", r"`second_factor_states` (\d+) 个", ("second_factor_states",)),
+    ("docs/TEST_REPORT.md", "走查覆盖的面板状态分四组各自计数", r"`roster_states` (\d+) 个", ("roster_states",)),
+    ("docs/RELEASE_CHECKLIST.md", "个记录是两条走查带来的",
+     r"另有 (\d+) 个记录是两条走查带来的 (\d+) 个状态", ("walk_records", "walk_states")),
+)
+
+
+def leg_figures(report):
+    """The lengths the certified leg itself recorded, plus the two counts prose derives from them."""
+    team = len(report["team_states"])
+    privacy = len(report["privacy_states"])
+    return {"team_states": team,
+            "privacy_states": privacy,
+            "roster_states": len(report["roster_states"]),
+            "second_factor_states": len(report["second_factor_states"]),
+            "walk_states": team + privacy,
+            "walk_records": (team + privacy) * len({s.get("viewport") for s in report["scans"]})}
+
+
+def certified_leg_report():
+    reader = reader_module()
+    certified = authority(archived_runs())["stamp"]
+    for run in reader.runs():
+        if run["stamp"] == certified:
+            paired = reader.browser_pair(run)
+            assert paired is not None, f"acceptance-{certified} pairs to no browser leg"
+            return json.loads(paired.read_text(encoding="utf-8"))
+    raise AssertionError(f"acceptance-{certified} is not in the reader's run list")
+
+
+def leg_problems(root, figures, rows=LEG_QUOTES):
+    problems = []
+    for rel, marker, pattern, keys in rows:
+        path = root / rel
+        if not path.exists():
+            problems.append(f"{rel} is missing, so its quoted leg figures cannot be checked")
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        hits = [i for i, line in enumerate(lines) if marker in line]
+        if len(hits) != 1:
+            problems.append(f"{rel}: marker {marker!r} selects {len(hits)} lines, expected 1")
+            continue
+        found = list(re.finditer(pattern, lines[hits[0]]))
+        if len(found) != 1:
+            problems.append(f"{rel}: {pattern!r} matched {len(found)} times, expected 1")
+            continue
+        for value, key in zip(found[0].groups(), keys):
+            if int(value) != figures[key]:
+                problems.append(f"{rel}: says {key}={value}, the certified leg recorded {figures[key]}")
+    return problems
+
+
+def test_the_browser_leg_state_counts_match_the_certified_report():
+    figures = leg_figures(certified_leg_report())
+    problems = leg_problems(ROOT, figures)
+    assert not problems, " | ".join(problems)
+    assert figures["team_states"] and figures["walk_records"], (
+        f"the certified leg recorded no states at all: {figures}")
+
+
+def test_a_stale_leg_figure_is_named():
+    """Per-row plant, so no row of this table can be silently blind."""
+    report = certified_leg_report()
+    figures = leg_figures(report)
+    faces = sorted({rel for rel, _m, _p, _k in LEG_QUOTES})
+    for number, (rel, marker, pattern, keys) in enumerate(LEG_QUOTES):
+        lines = (ROOT / rel).read_text(encoding="utf-8").splitlines(keepends=True)
+        index = next(i for i, line in enumerate(lines) if marker in line)
+        found = re.search(pattern, lines[index])
+        assert found, f"row {number} ({rel}, {marker!r}): its pattern matches nothing on its own line"
+        stale = str(int(found.group(1)) + 3)
+        tampered = (lines[:index] + [lines[index][:found.start(1)] + stale + lines[index][found.end(1):]]
+                    + lines[index + 1:])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            for face in faces:
+                target = root / face
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((ROOT / face).read_bytes())
+            (root / rel).write_text("".join(tampered), encoding="utf-8")
+            problems = leg_problems(root, figures)
+        named = [p for p in problems if rel in p and f"{keys[0]}={stale}" in p]
+        assert named, f"row {number} ({rel}, {marker!r}) did not name the planted stale figure: {problems}"
