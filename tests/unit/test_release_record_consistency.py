@@ -1442,15 +1442,22 @@ LEG_QUOTES = (
 
 
 def leg_figures(report):
-    """The lengths the certified leg itself recorded, plus the two counts prose derives from them."""
+    """The lengths the certified leg itself recorded, plus the two counts prose derives from them.
+
+    `walk_records` is counted off the scans the leg actually produced rather than multiplied out: the product
+    form keeps reading 32 even if a leg walks both panels in one viewport only, which is the difference
+    between a measured figure and an assumed one.
+    """
     team = len(report["team_states"])
     privacy = len(report["privacy_states"])
+    walked = set(report["team_states"]) | set(report["privacy_states"])
+    records = sum(1 for scan in report["scans"] if scan.get("label") in walked)
     return {"team_states": team,
             "privacy_states": privacy,
             "roster_states": len(report["roster_states"]),
             "second_factor_states": len(report["second_factor_states"]),
             "walk_states": team + privacy,
-            "walk_records": (team + privacy) * len({s.get("viewport") for s in report["scans"]})}
+            "walk_records": records}
 
 
 def certified_leg_report():
