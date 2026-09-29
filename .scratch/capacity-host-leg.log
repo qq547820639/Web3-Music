@@ -1,0 +1,5 @@
+capstart=2026-09-28T22:29:06Z
+tracked=253 listed=253 missing=0 stale=0 mismatched=2
+the manifest does not describe this tree; run ./scripts/source-manifest.sh write
+CAP_RC=1
+capend=2026-09-28T22:29:07Z

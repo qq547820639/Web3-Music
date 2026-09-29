@@ -1,0 +1,20 @@
+disk_free_kb=11476316 min_free_kb=4194304 probe_image=postgres:16-alpine
+
+================================================================================
+STEP 1: static-verify
+TIMESTAMP: 2026-09-28T11:05:02Z
+================================================================================
+
+---- static-verify 输出（完整日志：release-evidence/acceptance-20260928T110502Z/step-1-static-verify.log） ----
+tracked=248 listed=248 missing=0 stale=0 mismatched=2
+the manifest does not describe this tree; run ./scripts/source-manifest.sh write
+
+STEP 1 RESULT: FAIL
+该步骤失败，日志在 release-evidence/acceptance-20260928T110502Z/step-1-static-verify.log（证据目录 release-evidence/acceptance-20260928T110502Z）
+
+================================================================================
+收集验收证据
+================================================================================
+已归档 compose 日志: release-evidence/acceptance-20260928T110502Z/compose-logs.txt
+已归档商业覆层日志: release-evidence/acceptance-20260928T110502Z/commercial-compose-logs.txt
+证据目录: release-evidence/acceptance-20260928T110502Z

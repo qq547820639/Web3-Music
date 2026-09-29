@@ -1,0 +1,132 @@
+tracked=254 listed=254 missing=0 stale=0 mismatched=0
+authority matrix agrees with the code: 100 routes, 54 writes
+Compose, Kubernetes YAML, JSON, JSON Schema and OpenAPI contracts valid
+architecture contracts valid
+  OK   the rendered line round-trips (metrics lease-contention credits=160.0 jobs=8 workers=2)
+  OK   a value with a comma or space survives quoting                                         
+  OK   keys are sorted, so the same readings render byte-identically                          
+  OK   bool renders as 1/0 rather than Python's True/False                                    
+  OK   an empty reading set is refused, not written as a bare prefix                          
+  OK   a step name that would break the table is refused                                      
+  OK   a producer line is not read as a summary line                                          
+  OK   absent is not zero: no line parses to nothing rather than to 0                         
+metrics self-test: 8 arms, failures: none
+  OK   the honest pair reports nothing                                                                                                                            
+  OK   a refusal the gate missed is named                                                                                                                         
+  OK   one event short on the gate side is named                                                                                                                  
+  OK   an injected route that reached the api is named                                                                                                            
+  OK   lines that do not parse are refused, not read as zero                                                                                                      
+  OK   an empty window is the same refusal                                                                                                                        
+  OK   both docker line shapes parse (read 3 of 4 lines, 2 refusals)                                                                                              
+  OK   the 200 is counted too, because the request axis needs every line ({('GET', '/api/auth/me'): 1, ('POST', '/api/account/erasure'): 1, ('GET', '/api/x'): 1})
+  OK   the surplus names the timestamp the gate missed                                                                                                            
+  OK   an even pair produces no surplus timestamps                                                                                                                
+  OK   sub-second stamps survive the parser, so same-second events stay countable                                                                                 
+  OK   a shortfall the gate cannot explain stays red                                                                                                              
+  OK   a shortfall with no reading on the gate's side stays red too                                                                                               
+  OK   a shortfall the gate named a page still waiting on THAT endpoint for is excused                                                                            
+  OK   a named page waiting on some OTHER endpoint does not excuse the shortfall, and neither does an entry written in the old string shape                       
+  OK   the outstanding keys are read as data, not as a string blob                                                                                                
+  OK   the shortfall list is what the note prints, as data                                                                                                        
+  OK   the two 4xx lines compare the same class, with the injected 500 on its own line                                                                            
+  OK   a real 500 in the window cannot inflate the figure the faces quote as 4xx                                                                                  
+  OK   a fully accounted endpoint raises nothing on the request axis                                                                                              
+  OK   one request line the gate never issued is named, with both counts                                                                                          
+  OK   the health check's lines are not the gate's to account for                                                                                                 
+  OK   the endpoint the gate fulfills itself is exempt on this axis too                                                                                           
+  OK   an endpoint the gate issued nothing for is still named, not skipped                                                                                        
+  OK   the axis is written when the report carried it and left out when it did not                                                                                
+self-test: 25 arms, failures: none
+  OK   a clean port answering this contract, on a port this project publishes, passes   
+  OK   two claimants on one port are named and refused                                  
+  OK   no listener at all is refused too                                                
+  OK   a listener reading that could not be taken is refused, not passed                
+  OK   a foreign service is caught by its own endpoint set                              
+  OK   extra endpoints on the serving side do not fire this gate                        
+  OK   a body that is not an OpenAPI document is refused as no reading                  
+  OK   the real contract is read from the tracked file, not typed in                    
+  OK   a port this project does not publish is refused even when it answers our contract
+  OK   the project's own published port satisfies the third axis, and no reading refuses
+self-test: 10 arms, failures: none
+metric refusal_census_selftest_arms=25
+........................................................................ [ 15%]
+........................................................................ [ 30%]
+........................................................................ [ 45%]
+........................................................................ [ 60%]
+.........................F............F.........F..F.................... [ 75%]
+........................................................................ [ 90%]
+................................................                         [100%]
+=================================== FAILURES ===================================
+__________________ test_the_docs_agree_with_the_archived_runs __________________
+
+    def test_the_docs_agree_with_the_archived_runs():
+        runs = archived_runs()
+        offenders = {path.name: problems for path in FACES
+                     if (problems := problems_for(path, runs))}
+>       assert not offenders, "the release record disagrees with its own evidence: " + \
+            " | ".join(f"{name}: {p}" for name, problems in offenders.items() for p in problems)
+E       AssertionError: the release record disagrees with its own evidence: RELEASE_CHECKLIST.md: RELEASE_CHECKLIST.md: says 32 prior FAIL=0 runs, the archive has 33 | RELEASE_CHECKLIST.md: RELEASE_CHECKLIST.md: lists 32 commits, expected 33 | RELEASE_CHECKLIST.md: RELEASE_CHECKLIST.md: says 27 judged reds, the archive has 28 | RELEASE_CHECKLIST.md: RELEASE_CHECKLIST.md: per-day red split {'260925': 7, '260926': 8, '260927': 5, '260928': 7} != {'260925': 7, '260926': 8, '260927': 5, '260928': 8} | RELEASE_CHECKLIST.md: RELEASE_CHECKLIST.md: row counts 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23/23/23/23/23/23/23 != 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23/2/23/23/23/23/23/23 | TEST_REPORT.md: TEST_REPORT.md: says 32 prior FAIL=0 runs, the archive has 33 | TEST_REPORT.md: TEST_REPORT.md: lists 32 commits, expected 33 | TEST_REPORT.md: TEST_REPORT.md: says 27 judged reds, the archive has 28 | TEST_REPORT.md: TEST_REPORT.md: per-day red split {'260925': 7, '260926': 8, '260927': 5, '260928': 7} != {'260925': 7, '260926': 8, '260927': 5, '260928': 8} | TEST_REPORT.md: TEST_REPORT.md: row counts 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23/23/23/23/23/23/23 != 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23/2/23/23/23/23/23/23 | CHANGELOG_COST500.md: CHANGELOG_COST500.md: says 32 prior FAIL=0 runs, the archive has 33 | CHANGELOG_COST500.md: CHANGELOG_COST500.md: lists 32 commits, expected 33 | CHANGELOG_COST500.md: CHANGELOG_COST500.md: says 27 judged reds, the archive has 28 | CHANGELOG_COST500.md: CHANGELOG_COST500.md: per-day red split {'260925': 7, '260926': 8, '260927': 5, '260928': 7} != {'260925': 7, '260926': 8, '260927': 5, '260928': 8} | FINAL_RELEASE_STATUS.md: FINAL_RELEASE_STATUS.md: says 32 prior FAIL=0 runs, the archive has 33 | FINAL_RELEASE_STATUS.md: FINAL_RELEASE_STATUS.md: lists 32 commits, expected 33 | FINAL_RELEASE_STATUS.md: FINAL_RELEASE_STATUS.md: says 27 judged reds, the archive has 28 | FINAL_RELEASE_STATUS.md: FINAL_RELEASE_STATUS.md: per-day red split {'260925': 7, '260926': 8, '260927': 5, '260928': 7} != {'260925': 7, '260926': 8, '260927': 5, '260928': 8} | FINAL_RELEASE_STATUS.md: FINAL_RELEASE_STATUS.md: row counts 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23/23/23/23/23/23/23 != 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23/2/23/23/23/23/23/23
+E       assert not {'CHANGELOG_COST500.md': ['CHANGELOG_COST500.md: says 32 prior FAIL=0 runs, the archive has 33', 'CHANGELOG_COST500.md.../23/23/23/23/23 != 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23/2/23/23/23/23/23/23']}
+
+tests/unit/test_release_record_consistency.py:253: AssertionError
+__________ test_every_tracked_summary_is_a_verdict_the_chain_finished __________
+
+    def test_every_tracked_summary_is_a_verdict_the_chain_finished():
+        """No record may enter the archive without the line that says the pipeline ran to its end.
+    
+        `fails == 0` is not "green": a chain killed between rows leaves a SUMMARY whose rows all passed and whose
+        last step simply does not exist. That record would be newer than the real authority, and the faces select
+        the authority by stamp, so the whole release record would start quoting a two-row half-run.
+        """
+        aborted = [r["stamp"] for r in archived_runs() if not r["ended"]]
+>       assert not aborted, (f"{aborted} have no `finished_at=` line, so nothing proves the chain reached its end; "
+                             "either re-run to completion or keep the record off the tracked archive")
+E       AssertionError: ['20260928T184002Z'] have no `finished_at=` line, so nothing proves the chain reached its end; either re-run to completion or keep the record off the tracked archive
+E       assert not ['20260928T184002Z']
+
+tests/unit/test_release_record_consistency.py:471: AssertionError
+________________ test_the_rows_clause_fires_on_the_fourth_face _________________
+
+    def test_the_rows_clause_fires_on_the_fourth_face():
+        """The per-run row list is its own clause in `problems_for`, so it gets its own red side."""
+        runs = archived_runs()
+>       assert problems_for(STATUS, runs) == []
+E       AssertionError: assert ['FINAL_RELEA.../23/23/23/23'] == []
+E         
+E         Left contains 5 more items, first extra item: 'FINAL_RELEASE_STATUS.md: says 32 prior FAIL=0 runs, the archive has 33'
+E         Use -v to get more diff
+
+tests/unit/test_release_record_consistency.py:640: AssertionError
+_____________ test_the_repeat_figure_clause_fires_on_a_stale_count _____________
+
+    def test_the_repeat_figure_clause_fires_on_a_stale_count():
+        """「同样 W 行绿了 M 次」 is the figure a reader takes as the size of the reproducible set.
+    
+        It read 12 while seven archived runs were 20 rows wide -- the same kind of drift as a stale commit
+        list, in the one clause of the sentence that was never recomputed when the archive grew.
+    
+        Both arms take their numbers from the archive the guard is reading, so widening the pipeline moves
+        the control with the documents instead of breaking it: the red arm is the stated width with a count
+        the archive cannot support, the quiet arm is a different width with the count the archive does give.
+        """
+        runs = archived_runs()
+>       assert problems_for(CHECKLIST, runs) == []
+E       AssertionError: assert ['RELEASE_CHE.../23/23/23/23'] == []
+E         
+E         Left contains 5 more items, first extra item: 'RELEASE_CHECKLIST.md: says 32 prior FAIL=0 runs, the archive has 33'
+E         Use -v to get more diff
+
+tests/unit/test_release_record_consistency.py:686: AssertionError
+=============================== warnings summary ===============================
+../../../../Users/panhao/.venvs/w3m-e2e/lib/python3.12/site-packages/starlette/testclient.py:51
+  /Users/panhao/.venvs/w3m-e2e/lib/python3.12/site-packages/starlette/testclient.py:51: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_release_record_consistency.py::test_the_docs_agree_with_the_archived_runs
+FAILED tests/unit/test_release_record_consistency.py::test_every_tracked_summary_is_a_verdict_the_chain_finished
+FAILED tests/unit/test_release_record_consistency.py::test_the_rows_clause_fires_on_the_fourth_face
+FAILED tests/unit/test_release_record_consistency.py::test_the_repeat_figure_clause_fires_on_a_stale_count
+4 failed, 476 passed, 1 warning in 17.32s
+metric unit_passed=476

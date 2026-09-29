@@ -1,0 +1,373 @@
+capstart=2026-09-28T21:41:21Z
+tracked=250 listed=250 missing=0 stale=0 mismatched=0
+authority matrix agrees with the code: 100 routes, 54 writes
+Compose, Kubernetes YAML, JSON, JSON Schema and OpenAPI contracts valid
+architecture contracts valid
+  OK   the rendered line round-trips (metrics lease-contention credits=160.0 jobs=8 workers=2)
+  OK   a value with a comma or space survives quoting                                         
+  OK   keys are sorted, so the same readings render byte-identically                          
+  OK   bool renders as 1/0 rather than Python's True/False                                    
+  OK   an empty reading set is refused, not written as a bare prefix                          
+  OK   a step name that would break the table is refused                                      
+  OK   a producer line is not read as a summary line                                          
+  OK   absent is not zero: no line parses to nothing rather than to 0                         
+metrics self-test: 8 arms, failures: none
+  OK   the honest pair reports nothing                                                                                                                            
+  OK   a refusal the gate missed is named                                                                                                                         
+  OK   one event short on the gate side is named                                                                                                                  
+  OK   an injected route that reached the api is named                                                                                                            
+  OK   lines that do not parse are refused, not read as zero                                                                                                      
+  OK   an empty window is the same refusal                                                                                                                        
+  OK   both docker line shapes parse (read 3 of 4 lines, 2 refusals)                                                                                              
+  OK   the 200 is counted too, because the request axis needs every line ({('GET', '/api/auth/me'): 1, ('POST', '/api/account/erasure'): 1, ('GET', '/api/x'): 1})
+  OK   the surplus names the timestamp the gate missed                                                                                                            
+  OK   an even pair produces no surplus timestamps                                                                                                                
+  OK   sub-second stamps survive the parser, so same-second events stay countable                                                                                 
+  OK   a shortfall the gate cannot explain stays red                                                                                                              
+  OK   a shortfall with no reading on the gate's side stays red too                                                                                               
+  OK   a shortfall the gate named an unsettled page for is excused, not tolerated                                                                                 
+  OK   the shortfall list is what the note prints, as data                                                                                                        
+  OK   the two 4xx lines compare the same class, with the injected 500 on its own line                                                                            
+  OK   a real 500 in the window cannot inflate the figure the faces quote as 4xx                                                                                  
+  OK   a fully accounted endpoint raises nothing on the request axis                                                                                              
+  OK   one request line the gate never issued is named, with both counts                                                                                          
+  OK   the health check's lines are not the gate's to account for                                                                                                 
+  OK   the endpoint the gate fulfills itself is exempt on this axis too                                                                                           
+  OK   an endpoint the gate issued nothing for is still named, not skipped                                                                                        
+  OK   the axis is written when the report carried it and left out when it did not                                                                                
+self-test: 23 arms, failures: none
+metric refusal_census_selftest_arms=23
+........................................................................ [ 15%]
+........................................................................ [ 30%]
+........................................................................ [ 46%]
+........................................................................ [ 61%]
+........................................................................ [ 77%]
+........................................................................ [ 92%]
+...................................                                      [100%]
+=============================== warnings summary ===============================
+../../../../Users/panhao/.venvs/w3m-e2e/lib/python3.12/site-packages/starlette/testclient.py:51
+  /Users/panhao/.venvs/w3m-e2e/lib/python3.12/site-packages/starlette/testclient.py:51: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+467 passed, 1 warning in 14.58s
+metric unit_passed=467
+time="2026-09-29T05:41:37+08:00" level=warning msg="Docker Compose requires buildx plugin to be installed"
+ Image ai-music-platform-v13-admin Building 
+ Image ai-music-platform-v13-admin Building 
+Sending build context to Docker daemon  12.28kB
+Step 1/4 : FROM nginx:1.27-alpine
+ ---> 65645c7bb6a0
+Step 2/4 : COPY nginx.conf /etc/nginx/conf.d/default.conf
+ ---> Using cache
+ ---> a51092a47db5
+Step 3/4 : COPY index.html admin.js styles.css /usr/share/nginx/html/
+ ---> Using cache
+ ---> 321f35a7f279
+Step 4/4 : LABEL com.docker.compose.image.builder=classic
+ ---> Using cache
+ ---> e4d3c5bdbe68
+Successfully built e4d3c5bdbe68
+Successfully tagged ai-music-platform-v13-admin:latest
+ Image ai-music-platform-v13-admin Built 
+ Image ai-music-platform-v13-admin Built 
+time="2026-09-29T05:41:37+08:00" level=warning msg="Docker Compose requires buildx plugin to be installed"
+ Image ai-music-platform-v13-api Building 
+ Image ai-music-platform-v13-api Building 
+Sending build context to Docker daemon  248.1kB
+Step 1/10 : FROM python:3.12-slim
+ ---> f77ac9e44ae9
+Step 2/10 : WORKDIR /app
+ ---> Using cache
+ ---> eb2f9d419b1e
+Step 3/10 : ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1     API_WORKERS=1 API_LIMIT_CONCURRENCY=512 API_KEEPALIVE_SECONDS=5
+ ---> Using cache
+ ---> decda01376a3
+Step 4/10 : COPY requirements.txt .
+ ---> Using cache
+ ---> 8956a9ee5cca
+Step 5/10 : RUN set -e; for attempt in 1 2 3 4 5; do       pip install --no-cache-dir --timeout 60 --retries 10 -r requirements.txt && exit 0;       echo "pip attempt $attempt failed, retrying"; sleep 15;     done; echo "pip install failed after 5 attempts"; exit 1
+ ---> Using cache
+ ---> cebf83ee268a
+Step 6/10 : COPY app ./app
+ ---> Using cache
+ ---> f8c6cbefa23e
+Step 7/10 : RUN mkdir -p /data/media
+ ---> Using cache
+ ---> 4525a2b976c3
+Step 8/10 : EXPOSE 8000
+ ---> Using cache
+ ---> f2fe8ab87b98
+Step 9/10 : CMD ["sh","-c","exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS} --limit-concurrency ${API_LIMIT_CONCURRENCY} --timeout-keep-alive ${API_KEEPALIVE_SECONDS} --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS:?FORWARDED_ALLOW_IPS must name the proxy peer; see .env.example}\""]
+ ---> Using cache
+ ---> 7ec8c433a117
+Step 10/10 : LABEL com.docker.compose.image.builder=classic
+ ---> Using cache
+ ---> 758b2d54e81d
+Successfully built 758b2d54e81d
+Successfully tagged ai-music-platform-v13-api:latest
+ Image ai-music-platform-v13-api Built 
+ Image ai-music-platform-v13-api Built 
+time="2026-09-29T05:41:37+08:00" level=warning msg="Docker Compose requires buildx plugin to be installed"
+ Image ai-music-platform-v13-gateway Building 
+ Image ai-music-platform-v13-gateway Building 
+Sending build context to Docker daemon  1.634kB
+Step 1/3 : FROM nginx:1.27-alpine
+ ---> 65645c7bb6a0
+Step 2/3 : COPY nginx.conf /etc/nginx/conf.d/default.conf
+ ---> Using cache
+ ---> 24f0a22572f9
+Step 3/3 : LABEL com.docker.compose.image.builder=classic
+ ---> Using cache
+ ---> b3cde5cded5c
+Successfully built b3cde5cded5c
+Successfully tagged ai-music-platform-v13-gateway:latest
+ Image ai-music-platform-v13-gateway Built 
+ Image ai-music-platform-v13-gateway Built 
+time="2026-09-29T05:41:37+08:00" level=warning msg="Docker Compose requires buildx plugin to be installed"
+ Image ai-music-platform-v13-migrate Building 
+ Image ai-music-platform-v13-migrate Building 
+Sending build context to Docker daemon  2.375kB
+Step 1/7 : FROM python:3.12-slim
+ ---> f77ac9e44ae9
+Step 2/7 : WORKDIR /app
+ ---> Using cache
+ ---> eb2f9d419b1e
+Step 3/7 : COPY requirements.txt .
+ ---> Using cache
+ ---> bea11ec82a02
+Step 4/7 : RUN set -e; for attempt in 1 2 3 4 5; do       pip install --no-cache-dir --timeout 60 --retries 10 -r requirements.txt && exit 0;       echo "pip attempt $attempt failed, retrying"; sleep 15;     done; echo "pip install failed after 5 attempts"; exit 1
+ ---> Using cache
+ ---> 9680da491711
+Step 5/7 : COPY migrate.py .
+ ---> Using cache
+ ---> b7079e31f251
+Step 6/7 : CMD ["python","migrate.py"]
+ ---> Using cache
+ ---> e00c4dea3824
+Step 7/7 : LABEL com.docker.compose.image.builder=classic
+ ---> Using cache
+ ---> ed7a487a3359
+Successfully built ed7a487a3359
+Successfully tagged ai-music-platform-v13-migrate:latest
+ Image ai-music-platform-v13-migrate Built 
+ Image ai-music-platform-v13-migrate Built 
+time="2026-09-29T05:41:37+08:00" level=warning msg="Docker Compose requires buildx plugin to be installed"
+ Image ai-music-platform-v13-payment-emulator Building 
+ Image ai-music-platform-v13-payment-emulator Building 
+Sending build context to Docker daemon   2.98kB
+Step 1/7 : FROM python:3.13-slim
+ ---> 8d9d0b8bcf65
+Step 2/7 : WORKDIR /app
+ ---> Using cache
+ ---> b9670344b704
+Step 3/7 : COPY requirements.txt .
+ ---> Using cache
+ ---> 2bb05343fa45
+Step 4/7 : RUN set -e; for attempt in 1 2 3 4 5; do       pip install --no-cache-dir --timeout 60 --retries 10 -r requirements.txt && exit 0;       echo "pip attempt $attempt failed, retrying"; sleep 15;     done; echo "pip install failed after 5 attempts"; exit 1
+ ---> Using cache
+ ---> f81b46bef668
+Step 5/7 : COPY main.py .
+ ---> Using cache
+ ---> 7406b67e79a7
+Step 6/7 : CMD ["uvicorn","main:app","--host","0.0.0.0","--port","8020"]
+ ---> Using cache
+ ---> ddeb1a211ddb
+Step 7/7 : LABEL com.docker.compose.image.builder=classic
+ ---> Using cache
+ ---> 544aa9acb011
+Successfully built 544aa9acb011
+Successfully tagged ai-music-platform-v13-payment-emulator:latest
+ Image ai-music-platform-v13-payment-emulator Built 
+ Image ai-music-platform-v13-payment-emulator Built 
+time="2026-09-29T05:41:37+08:00" level=warning msg="Docker Compose requires buildx plugin to be installed"
+ Image ai-music-platform-v13-provider-emulator Building 
+ Image ai-music-platform-v13-provider-emulator Building 
+Sending build context to Docker daemon  4.891kB
+Step 1/10 : FROM python:3.12-slim
+ ---> f77ac9e44ae9
+Step 2/10 : WORKDIR /app
+ ---> Using cache
+ ---> eb2f9d419b1e
+Step 3/10 : ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ ---> Using cache
+ ---> bde17badb3d3
+Step 4/10 : COPY requirements.txt .
+ ---> Using cache
+ ---> c8530034b372
+Step 5/10 : RUN set -e; for attempt in 1 2 3 4 5; do       pip install --no-cache-dir --timeout 60 --retries 10 -r requirements.txt && exit 0;       echo "pip attempt $attempt failed, retrying"; sleep 15;     done; echo "pip install failed after 5 attempts"; exit 1
+ ---> Using cache
+ ---> 8aab07781b9f
+Step 6/10 : COPY main.py .
+ ---> Using cache
+ ---> b06e29ca9bc2
+Step 7/10 : RUN mkdir -p /data/provider-media
+ ---> Using cache
+ ---> ce7bfcc63e47
+Step 8/10 : EXPOSE 8010
+ ---> Using cache
+ ---> 8e8c21c17c02
+Step 9/10 : CMD ["uvicorn","main:app","--host","0.0.0.0","--port","8010"]
+ ---> Using cache
+ ---> 3b5ec78a96bd
+Step 10/10 : LABEL com.docker.compose.image.builder=classic
+ ---> Using cache
+ ---> 32833ab96058
+Successfully built 32833ab96058
+Successfully tagged ai-music-platform-v13-provider-emulator:latest
+ Image ai-music-platform-v13-provider-emulator Built 
+ Image ai-music-platform-v13-provider-emulator Built 
+time="2026-09-29T05:41:38+08:00" level=warning msg="Docker Compose requires buildx plugin to be installed"
+ Image ai-music-platform-v13-web Building 
+ Image ai-music-platform-v13-web Building 
+Sending build context to Docker daemon  48.02kB
+Step 1/4 : FROM nginx:1.27-alpine
+ ---> 65645c7bb6a0
+Step 2/4 : COPY nginx.conf /etc/nginx/conf.d/default.conf
+ ---> Using cache
+ ---> a51092a47db5
+Step 3/4 : COPY index.html app.js styles.css /usr/share/nginx/html/
+ ---> Using cache
+ ---> 9bace16577d4
+Step 4/4 : LABEL com.docker.compose.image.builder=classic
+ ---> Using cache
+ ---> e46d657e2d2f
+Successfully built e46d657e2d2f
+Successfully tagged ai-music-platform-v13-web:latest
+ Image ai-music-platform-v13-web Built 
+ Image ai-music-platform-v13-web Built 
+time="2026-09-29T05:41:38+08:00" level=warning msg="Docker Compose requires buildx plugin to be installed"
+ Image ai-music-platform-v13-worker Building 
+ Image ai-music-platform-v13-worker Building 
+Sending build context to Docker daemon  21.26kB
+Step 1/9 : FROM python:3.12-slim
+ ---> f77ac9e44ae9
+Step 2/9 : WORKDIR /app
+ ---> Using cache
+ ---> eb2f9d419b1e
+Step 3/9 : ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ ---> Using cache
+ ---> bde17badb3d3
+Step 4/9 : RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null;     apt-get -o Acquire::Retries=8 -o Acquire::http::Timeout=180 -o Acquire::Languages=none update     && apt-get -o Acquire::Retries=8 -o Acquire::Languages=none install -y --no-install-recommends ffmpeg ca-certificates     && rm -rf /var/lib/apt/lists/*
+ ---> Using cache
+ ---> 6235e52fda13
+Step 5/9 : COPY requirements.txt .
+ ---> Using cache
+ ---> ac044ac673ad
+Step 6/9 : RUN set -e; for attempt in 1 2 3 4 5; do       pip install --no-cache-dir --timeout 60 --retries 10 -r requirements.txt && exit 0;       echo "pip attempt $attempt failed, retrying"; sleep 15;     done; echo "pip install failed after 5 attempts"; exit 1
+ ---> Using cache
+ ---> ebec691ebe39
+Step 7/9 : COPY . .
+ ---> Using cache
+ ---> c866eb7ee681
+Step 8/9 : CMD ["python","worker.py"]
+ ---> Using cache
+ ---> dd02b179640a
+Step 9/9 : LABEL com.docker.compose.image.builder=classic
+ ---> Using cache
+ ---> 7d5d861ab127
+Successfully built 7d5d861ab127
+Successfully tagged ai-music-platform-v13-worker:latest
+ Image ai-music-platform-v13-worker Built 
+ Image ai-music-platform-v13-worker Built 
+ Container ai-music-platform-v13-web-1 Running 
+ Container ai-music-platform-v13-provider-emulator-1 Running 
+ Container ai-music-platform-v13-minio-1 Running 
+ Container ai-music-platform-v13-admin-1 Running 
+ Container ai-music-platform-v13-payment-emulator-1 Running 
+ Container ai-music-platform-v13-redis-1 Running 
+ Container ai-music-platform-v13-postgres-1 Recreate 
+ Container ai-music-platform-v13-api-1 Recreate 
+ Container ai-music-platform-v13-worker-1 Recreate 
+ Container ai-music-platform-v13-postgres-1 Recreated 
+ Container ai-music-platform-v13-api-1 Recreated 
+ Container ai-music-platform-v13-gateway-1 Recreate 
+ Container ai-music-platform-v13-worker-1 Recreated 
+ Container ai-music-platform-v13-gateway-1 Recreated 
+ Container ai-music-platform-v13-postgres-1 Starting 
+ Container ai-music-platform-v13-postgres-1 Started 
+ Container ai-music-platform-v13-postgres-1 Waiting 
+ Container ai-music-platform-v13-postgres-1 Healthy 
+ Container ai-music-platform-v13-migrate-1 Starting 
+ Container ai-music-platform-v13-migrate-1 Started 
+ Container ai-music-platform-v13-migrate-1 Waiting 
+ Container ai-music-platform-v13-redis-1 Waiting 
+ Container ai-music-platform-v13-minio-1 Waiting 
+ Container ai-music-platform-v13-provider-emulator-1 Waiting 
+ Container ai-music-platform-v13-minio-1 Waiting 
+ Container ai-music-platform-v13-provider-emulator-1 Waiting 
+ Container ai-music-platform-v13-payment-emulator-1 Waiting 
+ Container ai-music-platform-v13-migrate-1 Waiting 
+ Container ai-music-platform-v13-redis-1 Waiting 
+ Container ai-music-platform-v13-migrate-1 Exited 
+ Container ai-music-platform-v13-redis-1 Healthy 
+ Container ai-music-platform-v13-redis-1 Healthy 
+ Container ai-music-platform-v13-minio-1 Healthy 
+ Container ai-music-platform-v13-provider-emulator-1 Healthy 
+ Container ai-music-platform-v13-provider-emulator-1 Healthy 
+ Container ai-music-platform-v13-payment-emulator-1 Healthy 
+ Container ai-music-platform-v13-migrate-1 Exited 
+ Container ai-music-platform-v13-api-1 Starting 
+ Container ai-music-platform-v13-minio-1 Healthy 
+ Container ai-music-platform-v13-worker-1 Starting 
+ Container ai-music-platform-v13-api-1 Started 
+ Container ai-music-platform-v13-api-1 Waiting 
+ Container ai-music-platform-v13-api-1 Waiting 
+ Container ai-music-platform-v13-worker-1 Started 
+ Container ai-music-platform-v13-api-1 Healthy 
+ Container ai-music-platform-v13-api-1 Healthy 
+ Container ai-music-platform-v13-admin-1 Waiting 
+ Container ai-music-platform-v13-api-1 Waiting 
+ Container ai-music-platform-v13-web-1 Waiting 
+ Container ai-music-platform-v13-api-1 Healthy 
+ Container ai-music-platform-v13-web-1 Healthy 
+ Container ai-music-platform-v13-admin-1 Healthy 
+ Container ai-music-platform-v13-gateway-1 Starting 
+ Container ai-music-platform-v13-gateway-1 Started 
+ Container ai-music-platform-v13-gateway-1 Running 
+ Container ai-music-platform-v13-postgres-1 Running 
+ Container ai-music-platform-v13-payment-emulator-1 Running 
+ Container ai-music-platform-v13-web-1 Running 
+ Container ai-music-platform-v13-minio-1 Running 
+ Container ai-music-platform-v13-provider-emulator-1 Running 
+ Container ai-music-platform-v13-admin-1 Running 
+ Container ai-music-platform-v13-redis-1 Running 
+ Container ai-music-platform-v13-api-1 Running 
+ Container ai-music-platform-v13-postgres-1 Waiting 
+ Container ai-music-platform-v13-postgres-1 Healthy 
+ Container ai-music-platform-v13-migrate-1 Starting 
+ Container ai-music-platform-v13-migrate-1 Started 
+ Container ai-music-platform-v13-provider-emulator-1 Waiting 
+ Container ai-music-platform-v13-payment-emulator-1 Waiting 
+ Container ai-music-platform-v13-migrate-1 Waiting 
+ Container ai-music-platform-v13-redis-1 Waiting 
+ Container ai-music-platform-v13-minio-1 Waiting 
+ Container ai-music-platform-v13-minio-1 Healthy 
+ Container ai-music-platform-v13-payment-emulator-1 Healthy 
+ Container ai-music-platform-v13-redis-1 Healthy 
+ Container ai-music-platform-v13-migrate-1 Exited 
+ Container ai-music-platform-v13-provider-emulator-1 Healthy 
+ Container ai-music-platform-v13-api-1 Waiting 
+ Container ai-music-platform-v13-api-1 Waiting 
+ Container ai-music-platform-v13-api-1 Healthy 
+ Container ai-music-platform-v13-api-1 Healthy 
+ Container ai-music-platform-v13-web-1 Waiting 
+ Container ai-music-platform-v13-admin-1 Waiting 
+ Container ai-music-platform-v13-api-1 Waiting 
+ Container ai-music-platform-v13-api-1 Healthy 
+ Container ai-music-platform-v13-web-1 Healthy 
+ Container ai-music-platform-v13-admin-1 Healthy 
+ Container ai-music-platform-v13-gateway-1 Waiting 
+ Container ai-music-platform-v13-gateway-1 Healthy 
+ Container ai-music-platform-v13-loadtest-run-da3df65c7bff Creating 
+ Container ai-music-platform-v13-loadtest-run-da3df65c7bff Created 
+Resonance 500-user capacity result
+target=GET http://gateway/api/projects
+users=500 requests_per_user=2 total=1000
+elapsed=11.311s throughput=88.4 req/s
+latency_ms p50=3144.6 p95=8357.5 p99=9074.5 mean=3708.7
+statuses={200: 1000} error_rate=0.000%
+gate=FAIL max_error_rate=1.0% max_p95_ms=800.0
+
+CAP_RC=2
+capend=2026-09-28T21:42:14Z

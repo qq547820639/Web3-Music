@@ -1,0 +1,27 @@
+CHAIN FINISHED
+22
+    - desktop-axe-studio: Failed to load resource: the server responded with a status of 401 (Unauthorized)
+    - desktop-axe-studio: Failed to load resource: the server responded with a status of 403 (Forbidden)
+    - desktop-boot-click: Failed to load resource: the server responded with a status of 401 (Unauthorized)
+report: release-evidence/browser-a11y-20260928T070328Z/report.json
+browser a11y + walkthrough passed
+
+STEP 22 RESULT: PASS
+
+================================================================================
+STEP 23: capacity-gate-500 (skipped)
+TIMESTAMP: 2026-09-28T07:07:49Z
+================================================================================
+提示：容量 Gate 默认跳过；如需执行请设置 CAPACITY=1（耗时较长且依赖 Provider）。
+
+================================================================================
+收集验收证据
+================================================================================
+已归档 compose 日志: release-evidence/acceptance-20260928T065139Z/compose-logs.txt
+已归档商业覆层日志: release-evidence/acceptance-20260928T065139Z/commercial-compose-logs.txt
+证据目录: release-evidence/acceptance-20260928T065139Z
+
+================================================================================
+最终结论：全部验收步骤通过 ✅
+证据目录: release-evidence/acceptance-20260928T065139Z
+================================================================================

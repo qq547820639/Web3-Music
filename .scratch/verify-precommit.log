@@ -1,0 +1,2 @@
+tracked=254 listed=254 missing=0 stale=0 mismatched=3
+the manifest does not describe this tree; run ./scripts/source-manifest.sh write

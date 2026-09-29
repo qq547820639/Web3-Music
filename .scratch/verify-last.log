@@ -1,0 +1,66 @@
+tracked=254 listed=254 missing=0 stale=0 mismatched=0
+authority matrix agrees with the code: 100 routes, 54 writes
+Compose, Kubernetes YAML, JSON, JSON Schema and OpenAPI contracts valid
+architecture contracts valid
+  OK   the rendered line round-trips (metrics lease-contention credits=160.0 jobs=8 workers=2)
+  OK   a value with a comma or space survives quoting                                         
+  OK   keys are sorted, so the same readings render byte-identically                          
+  OK   bool renders as 1/0 rather than Python's True/False                                    
+  OK   an empty reading set is refused, not written as a bare prefix                          
+  OK   a step name that would break the table is refused                                      
+  OK   a producer line is not read as a summary line                                          
+  OK   absent is not zero: no line parses to nothing rather than to 0                         
+metrics self-test: 8 arms, failures: none
+  OK   the honest pair reports nothing                                                                                                                            
+  OK   a refusal the gate missed is named                                                                                                                         
+  OK   one event short on the gate side is named                                                                                                                  
+  OK   an injected route that reached the api is named                                                                                                            
+  OK   lines that do not parse are refused, not read as zero                                                                                                      
+  OK   an empty window is the same refusal                                                                                                                        
+  OK   both docker line shapes parse (read 3 of 4 lines, 2 refusals)                                                                                              
+  OK   the 200 is counted too, because the request axis needs every line ({('GET', '/api/auth/me'): 1, ('POST', '/api/account/erasure'): 1, ('GET', '/api/x'): 1})
+  OK   the surplus names the timestamp the gate missed                                                                                                            
+  OK   an even pair produces no surplus timestamps                                                                                                                
+  OK   sub-second stamps survive the parser, so same-second events stay countable                                                                                 
+  OK   a shortfall the gate cannot explain stays red                                                                                                              
+  OK   a shortfall with no reading on the gate's side stays red too                                                                                               
+  OK   a shortfall the gate named a page still waiting on THAT endpoint for is excused                                                                            
+  OK   a named page waiting on some OTHER endpoint does not excuse the shortfall, and neither does an entry written in the old string shape                       
+  OK   the outstanding keys are read as data, not as a string blob                                                                                                
+  OK   the shortfall list is what the note prints, as data                                                                                                        
+  OK   the two 4xx lines compare the same class, with the injected 500 on its own line                                                                            
+  OK   a real 500 in the window cannot inflate the figure the faces quote as 4xx                                                                                  
+  OK   a fully accounted endpoint raises nothing on the request axis                                                                                              
+  OK   one request line the gate never issued is named, with both counts                                                                                          
+  OK   the health check's lines are not the gate's to account for                                                                                                 
+  OK   the endpoint the gate fulfills itself is exempt on this axis too                                                                                           
+  OK   an endpoint the gate issued nothing for is still named, not skipped                                                                                        
+  OK   the axis is written when the report carried it and left out when it did not                                                                                
+self-test: 25 arms, failures: none
+  OK   a clean port answering this contract, on a port this project publishes, passes   
+  OK   two claimants on one port are named and refused                                  
+  OK   no listener at all is refused too                                                
+  OK   a listener reading that could not be taken is refused, not passed                
+  OK   a foreign service is caught by its own endpoint set                              
+  OK   extra endpoints on the serving side do not fire this gate                        
+  OK   a body that is not an OpenAPI document is refused as no reading                  
+  OK   the real contract is read from the tracked file, not typed in                    
+  OK   a port this project does not publish is refused even when it answers our contract
+  OK   the project's own published port satisfies the third axis, and no reading refuses
+self-test: 10 arms, failures: none
+metric refusal_census_selftest_arms=25
+........................................................................ [ 15%]
+........................................................................ [ 30%]
+........................................................................ [ 45%]
+........................................................................ [ 60%]
+........................................................................ [ 75%]
+........................................................................ [ 90%]
+................................................                         [100%]
+=============================== warnings summary ===============================
+../../../../Users/panhao/.venvs/w3m-e2e/lib/python3.12/site-packages/starlette/testclient.py:51
+  /Users/panhao/.venvs/w3m-e2e/lib/python3.12/site-packages/starlette/testclient.py:51: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+480 passed, 1 warning in 16.64s
+metric unit_passed=480

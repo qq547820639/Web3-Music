@@ -1,0 +1,411 @@
+tracked=254 listed=254 missing=0 stale=0 mismatched=0
+authority matrix agrees with the code: 100 routes, 54 writes
+Compose, Kubernetes YAML, JSON, JSON Schema and OpenAPI contracts valid
+architecture contracts valid
+  OK   the rendered line round-trips (metrics lease-contention credits=160.0 jobs=8 workers=2)
+  OK   a value with a comma or space survives quoting                                         
+  OK   keys are sorted, so the same readings render byte-identically                          
+  OK   bool renders as 1/0 rather than Python's True/False                                    
+  OK   an empty reading set is refused, not written as a bare prefix                          
+  OK   a step name that would break the table is refused                                      
+  OK   a producer line is not read as a summary line                                          
+  OK   absent is not zero: no line parses to nothing rather than to 0                         
+metrics self-test: 8 arms, failures: none
+  OK   the honest pair reports nothing                                                                                                                            
+  OK   a refusal the gate missed is named                                                                                                                         
+  OK   one event short on the gate side is named                                                                                                                  
+  OK   an injected route that reached the api is named                                                                                                            
+  OK   lines that do not parse are refused, not read as zero                                                                                                      
+  OK   an empty window is the same refusal                                                                                                                        
+  OK   both docker line shapes parse (read 3 of 4 lines, 2 refusals)                                                                                              
+  OK   the 200 is counted too, because the request axis needs every line ({('GET', '/api/auth/me'): 1, ('POST', '/api/account/erasure'): 1, ('GET', '/api/x'): 1})
+  OK   the surplus names the timestamp the gate missed                                                                                                            
+  OK   an even pair produces no surplus timestamps                                                                                                                
+  OK   sub-second stamps survive the parser, so same-second events stay countable                                                                                 
+  OK   a shortfall the gate cannot explain stays red                                                                                                              
+  OK   a shortfall with no reading on the gate's side stays red too                                                                                               
+  OK   a shortfall the gate named a page still waiting on THAT endpoint for is excused                                                                            
+  OK   a named page waiting on some OTHER endpoint does not excuse the shortfall, and neither does an entry written in the old string shape                       
+  OK   the outstanding keys are read as data, not as a string blob                                                                                                
+  OK   the shortfall list is what the note prints, as data                                                                                                        
+  OK   the two 4xx lines compare the same class, with the injected 500 on its own line                                                                            
+  OK   a real 500 in the window cannot inflate the figure the faces quote as 4xx                                                                                  
+  OK   a fully accounted endpoint raises nothing on the request axis                                                                                              
+  OK   one request line the gate never issued is named, with both counts                                                                                          
+  OK   the health check's lines are not the gate's to account for                                                                                                 
+  OK   the endpoint the gate fulfills itself is exempt on this axis too                                                                                           
+  OK   an endpoint the gate issued nothing for is still named, not skipped                                                                                        
+  OK   the axis is written when the report carried it and left out when it did not                                                                                
+self-test: 25 arms, failures: none
+  OK   a clean port answering this contract, on a port this project publishes, passes   
+  OK   two claimants on one port are named and refused                                  
+  OK   no listener at all is refused too                                                
+  OK   a listener reading that could not be taken is refused, not passed                
+  OK   a foreign service is caught by its own endpoint set                              
+  OK   extra endpoints on the serving side do not fire this gate                        
+  OK   a body that is not an OpenAPI document is refused as no reading                  
+  OK   the real contract is read from the tracked file, not typed in                    
+  OK   a port this project does not publish is refused even when it answers our contract
+  OK   the project's own published port satisfies the third axis, and no reading refuses
+self-test: 10 arms, failures: none
+metric refusal_census_selftest_arms=25
+........................................................................ [ 15%]
+........................................................................ [ 30%]
+........................................................................ [ 45%]
+........................................................................ [ 60%]
+................F.....F................................................. [ 75%]
+........................................................................ [ 90%]
+................................................                         [100%]
+=================================== FAILURES ===================================
+_______________ test_the_table_asks_for_no_value_nobody_computes _______________
+
+    def test_the_table_asks_for_no_value_nobody_computes():
+        """Every key a template interpolates has to be produced by the reader or by `derive`.
+    
+        A key in neither place can never be filled: `compiled_cells` would refuse the round forever, and until
+        this test the only way to find that out was to try to stamp the record.
+        """
+        try:
+            tracked = list(READER.runs())
+>           read = set(READER.figures(tracked[0]))
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_release_face_cells.py:274: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run = {'commit': '701467fc13cd904ce3fa6579692dc291e58f78a9', 'cpus': '?', 'dir': PosixPath('/Volumes/Extra/CodeProj/web3_music/release-evidence/acceptance-20260925T140059Z'), 'disk': '?', ...}
+
+    def figures(run: dict) -> dict:
+        got = {k: run[k] for k in ("stamp", "commit", "rows", "pass", "skipped", "fails", "started",
+                                   "ended", "host_load", "cpus", "disk", "fresh")}
+        run_dir = EVIDENCE / f"acceptance-{run['stamp']}"
+        got["rows_by_name"] = rows_by_name(run_dir)
+        for step, probes in LOG_FIGURES.items():
+            text = step_log(run_dir, step)
+            for name, pattern in probes:
+                if text is None:
+                    got[name] = "LOG-MISSING"
+                    continue
+                m = pattern.search(text)
+                got[name] = m.group(1) if m and m.lastindex == 1 else (m.groups() if m else "NOT-FOUND")
+        for name, step in (("mfa_step", "mfa-drill"), ("media_scan_step", "media-scan-drill"),
+                           ("hold_step", "hold-drill"), ("browser_step", "browser-a11y"),
+                           ("member_step", "member-drill"), ("report_step", "report-drill"),
+                           ("regression_step", "provider-regression-100"),
+                           ("generic_step", "generic-rest-roundtrip")):
+            got[name] = got["rows_by_name"].get(step, "NOT-FOUND")
+        # The tracked readings, from the lines the chain copied out of each step's log (see `step_metrics`).
+        table = step_metrics(run_dir)
+        for (step, key), name in METRIC_FIGURES.items():
+            got[name] = table.get(step, {}).get(key, "NOT-FOUND")
+        # How many assets the restore-fidelity leg actually compared. The count moves with the demo database,
+        # so a face that quotes it has to be stamped rather than remembered: one round's "4 个资产字节一致"
+        # was still on the checklist while the archive read 2.
+        fidelity = str(got.get("restore", ""))
+        match = re.search(r"(\d+) assets", fidelity)
+        got["restore_assets"] = match.group(1) if match else "NOT-FOUND"
+        report = browser_pair(run)
+        got["browser_report"] = str(report.relative_to(ROOT)) if report else "MISSING"
+        # The report-derived keys are declared up front so a run without a paired report reads NOT-FOUND rather
+        # than losing the keys entirely: the cell table's orphan check compares one fixed key set against this
+        # dict, and keys that appear and disappear with the evidence make that check answer a different question.
+        for name in ("browser_views", "browser_scans", "browser_mobile_fit", "browser_hidden",
+                     "browser_rendered_hidden", "browser_export_bytes", "browser_violations", "browser_violations_phrase", "browser_commit",
+                     "browser_uncaught", "browser_boot_clicks", "browser_report_dir", "console_lines", "console_app_lines", "console_network_lines",
+                     "console_status_breakdown", "console_labels", "console_error_events", "refusal_lines",
+                     "refusal_events", "refusal_endpoints", "refusal_403_events", "refusal_top",
+                     "server_4xx_events", "server_endpoints", "server_request_lines", "server_401_events",
+                     "server_403_events", "server_500_events", "server_403_endpoints"):
+            got.setdefault(name, "NOT-FOUND")
+        if report:
+            data = json.loads(report.read_text(encoding="utf-8"))
+            # `views_scanned` is what the scanner prints; the earlier guess `views` was never on the object, so
+            # this cell read NOT-FOUND for a round while the faces kept quoting a view count copied by hand.
+            got["browser_views"] = data.get("views_scanned", data.get("views", "NOT-FOUND"))
+            got["browser_scans"] = data.get("axe_scans", data.get("scans", "NOT-FOUND"))
+            got["browser_mobile_fit"] = data.get("mobile_fit_measured", "NOT-FOUND")
+            got["browser_hidden"] = sum(int(s.get("hidden_marked", 0)) for s in data.get("scans", [])) \
+                if data.get("scans") else "NOT-FOUND"
+            got["browser_rendered_hidden"] = sum(len(s.get("hidden_but_rendered", [])) for s in data.get("scans", [])) \
+                if data.get("scans") else "NOT-FOUND"
+            got["browser_export_bytes"] = " / ".join(f"{e['bytes']}" for e in data.get("privacy_exports", [])) \
+                or "NOT-FOUND"
+            got["browser_boot_clicks"] = data.get("boot_window_clicks", "NOT-FOUND")
+            got["browser_report_dir"] = report.parent.name
+            got["browser_violations"] = data.get("violations_by_impact", "NOT-FOUND")
+            # The faces do not quote the dict, they quote a sentence ("三档全零"). A sentence nothing recomputes is
+            # how a record keeps saying "zero" after the leg found something, so the sentence itself is the
+            # reading: the blocking impacts by name when any is non-zero, the all-zero wording when none is, and
+            # NOT-FOUND when the report has no such field at all.
+            got["browser_violations_phrase"] = violations_phrase(got["browser_violations"])
+            got["browser_commit"] = data.get("git_commit", "NOT-FOUND")
+            got["browser_uncaught"] = data.get("uncaught_errors", "NOT-FOUND")
+            # The console lines are `sorted(set(...))` of `"<label>: <text>"`, so they are *lines*, not events:
+            # two refusals under one label collapse. The count of raw events is not in the artifact at all.
+            # Everything the record says about them has to be read off this shape, which is why the split is
+            # reported by status, by label, and by whether the text is the network layer's own sentence.
+            lines = data.get("console_errors", [])
+            got["console_lines"] = len(lines)
+            seen: dict[str, int] = {}
+            labels: dict[str, set] = {}
+            app_side = 0
+            for line in lines:
+                label, _, text = line.partition(":")
+                # The label carries the viewport as its first field (`desktop-axe-studio`), and the prose
+                # multiplies the remaining shape count by the two viewports. Counting the full label would
+                # just reproduce the line count and hide whether a shape fired twice.
+                shape = label.split("-", 1)[1] if "-" in label else label
+                status = re.search(r"status of (\d{3})", text)
+                if status:
+                    seen[status.group(1)] = seen.get(status.group(1), 0) + 1
+                    labels.setdefault(status.group(1), set()).add(shape)
+                else:
+                    app_side += 1
+            got["console_app_lines"] = app_side
+            got["console_network_lines"] = len(lines) - app_side
+            got["console_status_breakdown"] = " / ".join(f"{k} 记 {v} 行" for k, v in sorted(seen.items())) \
+                or "NOT-FOUND"
+            got["console_labels"] = "/".join(f"{k}×{len(v)}" for k, v in sorted(labels.items())) or "NOT-FOUND"
+            # The request-side census the gate now records next to the console lines. Always emitted, even for
+            # a report written before the field existed, so a cell that quotes it can refuse rather than invent.
+            got["console_error_events"] = data.get("console_error_events", "NOT-FOUND")
+            refusals = data.get("refusals")
+            got["refusal_lines"] = len(refusals) if refusals is not None else "NOT-FOUND"
+            got["refusal_events"] = data.get("refusal_events", "NOT-FOUND")
+            # Per-endpoint counts come from `refusal_counts`; the deduplicated lines can only ever say "once".
+            counts = data.get("refusal_counts")
+            got["refusal_endpoints"] = len(counts) if counts else "NOT-FOUND"
+            got["refusal_403_events"] = sum(n for tail, n in (counts or {}).items() if tail.endswith("-> 403"))
+            if counts:
+                top, hits = max(counts.items(), key=lambda kv: (kv[1], kv[0]))
+                got["refusal_top"] = f"{top} 共 {hits} 次"
+            else:
+                got["refusal_top"] = "NOT-FOUND"
+            # The second observer: `server-refusals.txt` is written by scripts/server_refusal_census.py from
+            # `docker compose logs api` over this run's own browser row window, so a face can quote what the
+            # server answered next to what the pages saw, and the two can be reconciled by the resident test.
+            census_file = report.parent / "server-refusals.txt"
+            got["server_4xx_events"] = got["server_endpoints"] = got["server_request_lines"] = "NOT-FOUND"
+            if census_file.exists():
+                census_text = census_file.read_text(encoding="utf-8", errors="replace")
+                for pattern, key in ((r"server_4xx_events: (\d+)", "server_4xx_events"),
+                                     (r"request_lines_parsed: (\d+)", "server_request_lines")):
+                    found = re.search(pattern, census_text)
+                    if found:
+                        got[key] = found.group(1)
+                got["server_endpoints"] = len(re.findall(r"^\s*\d{3} \w+\s+\S+\s+\d+$", census_text, re.M))
+                # The rows themselves carry the status, so the per-status split needs no new field in the
+                # artifact -- and the "the injected 500 never reached the server" property becomes a stamped
+                # reading (server_500_events) instead of a sentence someone hopes stays true.
+                per_status: dict[str, int] = {}
+                endpoints: dict[str, list] = {}
+                for row in re.findall(r"^\s*(\d{3}) (\w+)\s+(\S+)\s+(\d+)$", census_text, re.M):
+                    code, method, path, hits = row
+                    per_status[code] = per_status.get(code, 0) + int(hits)
+                    endpoints.setdefault(code, []).append(f"`{method} {path}` {hits}")
+                for code in ("401", "403", "500"):
+                    got[f"server_{code}_events"] = per_status.get(code, 0)
+                got["server_403_endpoints"] = "、".join(endpoints.get("403", [])) or "一次也没有"
+        # `authority matrix agrees with the code: N routes, M writes` is what the run printed, but the two
+        # numbers are the tracked contract's, and the log carrying them is not in the tree -- so a clean checkout
+        # could not re-derive that cell at all (measured: `--json` reads LOG-MISSING there and `--apply` refuses).
+        # The contract is the single source now; where the log does exist it still has to agree.
+        matrix = json.loads((ROOT / "shared/contracts/authority-matrix.json").read_text(encoding="utf-8"))["routes"]
+        derived = (len(matrix), sum(1 for route in matrix if route.get("writes")))
+        printed = (got.get("routes"), got.get("matrix_writes"))
+        if all(value is not None for value in printed):
+>           if (int(printed[0]), int(printed[1])) != derived:
+                ^^^^^^^^^^^^^^^
+E           ValueError: invalid literal for int() with base 10: 'NOT-FOUND'
+
+scripts/stamp_release_faces.py:435: ValueError
+____________ test_the_browser_report_is_paired_by_commit_and_window ____________
+
+capsys = <_pytest.capture.CaptureFixture object at 0x115077590>
+
+    def test_the_browser_report_is_paired_by_commit_and_window(capsys):
+        """The reader must find the a11y leg that belongs to the certified run, not the newest one that day.
+    
+        Directly reproduced from the defect this round fixed: with four chains on 2026-09-28 the date glob
+        handed a certified run another run's report, so the faces quoted a hidden-element census and a
+        `git_commit` from a tree the run never tested. The must-fire half is the pair being deleted: with only
+        a newer same-day report left, the answer has to be "no report", not "the closest one".
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            run, own, evidence = build_pairing_tree(root)
+            original = READER.EVIDENCE
+            READER.EVIDENCE = evidence
+            try:
+                chosen = READER.browser_pair(run)
+                assert chosen == own, (f"the pairing did not pick the leg inside the run's own window and on its "
+                                       f"own commit -- it read {chosen}, which is how a certified run ends up "
+                                       f"quoting another tree's figures")
+                own.unlink()
+                assert READER.browser_pair(run) is None, ("a same-day report from a different commit was paired "
+                                                         "to a run that never produced it")
+>               figures = READER.figures({**run, "rows": 3, "pass": 2, "skipped": 1, "fails": 0,
+                                          "started": "2026-09-28T08:44:12Z", "ended": "2026-09-28T09:00:20Z",
+                                          "host_load": "1.0 1.0 1.0", "cpus": "4", "disk": "1", "fresh": "1",
+                                          "dir": run["stamp"]})
+
+tests/unit/test_release_face_cells.py:502: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run = {'commit': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'cpus': '4', 'dir': '20260928T084412Z', 'disk': '1', ...}
+
+    def figures(run: dict) -> dict:
+        got = {k: run[k] for k in ("stamp", "commit", "rows", "pass", "skipped", "fails", "started",
+                                   "ended", "host_load", "cpus", "disk", "fresh")}
+        run_dir = EVIDENCE / f"acceptance-{run['stamp']}"
+        got["rows_by_name"] = rows_by_name(run_dir)
+        for step, probes in LOG_FIGURES.items():
+            text = step_log(run_dir, step)
+            for name, pattern in probes:
+                if text is None:
+                    got[name] = "LOG-MISSING"
+                    continue
+                m = pattern.search(text)
+                got[name] = m.group(1) if m and m.lastindex == 1 else (m.groups() if m else "NOT-FOUND")
+        for name, step in (("mfa_step", "mfa-drill"), ("media_scan_step", "media-scan-drill"),
+                           ("hold_step", "hold-drill"), ("browser_step", "browser-a11y"),
+                           ("member_step", "member-drill"), ("report_step", "report-drill"),
+                           ("regression_step", "provider-regression-100"),
+                           ("generic_step", "generic-rest-roundtrip")):
+            got[name] = got["rows_by_name"].get(step, "NOT-FOUND")
+        # The tracked readings, from the lines the chain copied out of each step's log (see `step_metrics`).
+        table = step_metrics(run_dir)
+        for (step, key), name in METRIC_FIGURES.items():
+            got[name] = table.get(step, {}).get(key, "NOT-FOUND")
+        # How many assets the restore-fidelity leg actually compared. The count moves with the demo database,
+        # so a face that quotes it has to be stamped rather than remembered: one round's "4 个资产字节一致"
+        # was still on the checklist while the archive read 2.
+        fidelity = str(got.get("restore", ""))
+        match = re.search(r"(\d+) assets", fidelity)
+        got["restore_assets"] = match.group(1) if match else "NOT-FOUND"
+        report = browser_pair(run)
+        got["browser_report"] = str(report.relative_to(ROOT)) if report else "MISSING"
+        # The report-derived keys are declared up front so a run without a paired report reads NOT-FOUND rather
+        # than losing the keys entirely: the cell table's orphan check compares one fixed key set against this
+        # dict, and keys that appear and disappear with the evidence make that check answer a different question.
+        for name in ("browser_views", "browser_scans", "browser_mobile_fit", "browser_hidden",
+                     "browser_rendered_hidden", "browser_export_bytes", "browser_violations", "browser_violations_phrase", "browser_commit",
+                     "browser_uncaught", "browser_boot_clicks", "browser_report_dir", "console_lines", "console_app_lines", "console_network_lines",
+                     "console_status_breakdown", "console_labels", "console_error_events", "refusal_lines",
+                     "refusal_events", "refusal_endpoints", "refusal_403_events", "refusal_top",
+                     "server_4xx_events", "server_endpoints", "server_request_lines", "server_401_events",
+                     "server_403_events", "server_500_events", "server_403_endpoints"):
+            got.setdefault(name, "NOT-FOUND")
+        if report:
+            data = json.loads(report.read_text(encoding="utf-8"))
+            # `views_scanned` is what the scanner prints; the earlier guess `views` was never on the object, so
+            # this cell read NOT-FOUND for a round while the faces kept quoting a view count copied by hand.
+            got["browser_views"] = data.get("views_scanned", data.get("views", "NOT-FOUND"))
+            got["browser_scans"] = data.get("axe_scans", data.get("scans", "NOT-FOUND"))
+            got["browser_mobile_fit"] = data.get("mobile_fit_measured", "NOT-FOUND")
+            got["browser_hidden"] = sum(int(s.get("hidden_marked", 0)) for s in data.get("scans", [])) \
+                if data.get("scans") else "NOT-FOUND"
+            got["browser_rendered_hidden"] = sum(len(s.get("hidden_but_rendered", [])) for s in data.get("scans", [])) \
+                if data.get("scans") else "NOT-FOUND"
+            got["browser_export_bytes"] = " / ".join(f"{e['bytes']}" for e in data.get("privacy_exports", [])) \
+                or "NOT-FOUND"
+            got["browser_boot_clicks"] = data.get("boot_window_clicks", "NOT-FOUND")
+            got["browser_report_dir"] = report.parent.name
+            got["browser_violations"] = data.get("violations_by_impact", "NOT-FOUND")
+            # The faces do not quote the dict, they quote a sentence ("三档全零"). A sentence nothing recomputes is
+            # how a record keeps saying "zero" after the leg found something, so the sentence itself is the
+            # reading: the blocking impacts by name when any is non-zero, the all-zero wording when none is, and
+            # NOT-FOUND when the report has no such field at all.
+            got["browser_violations_phrase"] = violations_phrase(got["browser_violations"])
+            got["browser_commit"] = data.get("git_commit", "NOT-FOUND")
+            got["browser_uncaught"] = data.get("uncaught_errors", "NOT-FOUND")
+            # The console lines are `sorted(set(...))` of `"<label>: <text>"`, so they are *lines*, not events:
+            # two refusals under one label collapse. The count of raw events is not in the artifact at all.
+            # Everything the record says about them has to be read off this shape, which is why the split is
+            # reported by status, by label, and by whether the text is the network layer's own sentence.
+            lines = data.get("console_errors", [])
+            got["console_lines"] = len(lines)
+            seen: dict[str, int] = {}
+            labels: dict[str, set] = {}
+            app_side = 0
+            for line in lines:
+                label, _, text = line.partition(":")
+                # The label carries the viewport as its first field (`desktop-axe-studio`), and the prose
+                # multiplies the remaining shape count by the two viewports. Counting the full label would
+                # just reproduce the line count and hide whether a shape fired twice.
+                shape = label.split("-", 1)[1] if "-" in label else label
+                status = re.search(r"status of (\d{3})", text)
+                if status:
+                    seen[status.group(1)] = seen.get(status.group(1), 0) + 1
+                    labels.setdefault(status.group(1), set()).add(shape)
+                else:
+                    app_side += 1
+            got["console_app_lines"] = app_side
+            got["console_network_lines"] = len(lines) - app_side
+            got["console_status_breakdown"] = " / ".join(f"{k} 记 {v} 行" for k, v in sorted(seen.items())) \
+                or "NOT-FOUND"
+            got["console_labels"] = "/".join(f"{k}×{len(v)}" for k, v in sorted(labels.items())) or "NOT-FOUND"
+            # The request-side census the gate now records next to the console lines. Always emitted, even for
+            # a report written before the field existed, so a cell that quotes it can refuse rather than invent.
+            got["console_error_events"] = data.get("console_error_events", "NOT-FOUND")
+            refusals = data.get("refusals")
+            got["refusal_lines"] = len(refusals) if refusals is not None else "NOT-FOUND"
+            got["refusal_events"] = data.get("refusal_events", "NOT-FOUND")
+            # Per-endpoint counts come from `refusal_counts`; the deduplicated lines can only ever say "once".
+            counts = data.get("refusal_counts")
+            got["refusal_endpoints"] = len(counts) if counts else "NOT-FOUND"
+            got["refusal_403_events"] = sum(n for tail, n in (counts or {}).items() if tail.endswith("-> 403"))
+            if counts:
+                top, hits = max(counts.items(), key=lambda kv: (kv[1], kv[0]))
+                got["refusal_top"] = f"{top} 共 {hits} 次"
+            else:
+                got["refusal_top"] = "NOT-FOUND"
+            # The second observer: `server-refusals.txt` is written by scripts/server_refusal_census.py from
+            # `docker compose logs api` over this run's own browser row window, so a face can quote what the
+            # server answered next to what the pages saw, and the two can be reconciled by the resident test.
+            census_file = report.parent / "server-refusals.txt"
+            got["server_4xx_events"] = got["server_endpoints"] = got["server_request_lines"] = "NOT-FOUND"
+            if census_file.exists():
+                census_text = census_file.read_text(encoding="utf-8", errors="replace")
+                for pattern, key in ((r"server_4xx_events: (\d+)", "server_4xx_events"),
+                                     (r"request_lines_parsed: (\d+)", "server_request_lines")):
+                    found = re.search(pattern, census_text)
+                    if found:
+                        got[key] = found.group(1)
+                got["server_endpoints"] = len(re.findall(r"^\s*\d{3} \w+\s+\S+\s+\d+$", census_text, re.M))
+                # The rows themselves carry the status, so the per-status split needs no new field in the
+                # artifact -- and the "the injected 500 never reached the server" property becomes a stamped
+                # reading (server_500_events) instead of a sentence someone hopes stays true.
+                per_status: dict[str, int] = {}
+                endpoints: dict[str, list] = {}
+                for row in re.findall(r"^\s*(\d{3}) (\w+)\s+(\S+)\s+(\d+)$", census_text, re.M):
+                    code, method, path, hits = row
+                    per_status[code] = per_status.get(code, 0) + int(hits)
+                    endpoints.setdefault(code, []).append(f"`{method} {path}` {hits}")
+                for code in ("401", "403", "500"):
+                    got[f"server_{code}_events"] = per_status.get(code, 0)
+                got["server_403_endpoints"] = "、".join(endpoints.get("403", [])) or "一次也没有"
+        # `authority matrix agrees with the code: N routes, M writes` is what the run printed, but the two
+        # numbers are the tracked contract's, and the log carrying them is not in the tree -- so a clean checkout
+        # could not re-derive that cell at all (measured: `--json` reads LOG-MISSING there and `--apply` refuses).
+        # The contract is the single source now; where the log does exist it still has to agree.
+        matrix = json.loads((ROOT / "shared/contracts/authority-matrix.json").read_text(encoding="utf-8"))["routes"]
+        derived = (len(matrix), sum(1 for route in matrix if route.get("writes")))
+        printed = (got.get("routes"), got.get("matrix_writes"))
+        if all(value is not None for value in printed):
+>           if (int(printed[0]), int(printed[1])) != derived:
+                ^^^^^^^^^^^^^^^
+E           ValueError: invalid literal for int() with base 10: 'LOG-MISSING'
+
+scripts/stamp_release_faces.py:435: ValueError
+=============================== warnings summary ===============================
+../../../../Users/panhao/.venvs/w3m-e2e/lib/python3.12/site-packages/starlette/testclient.py:51
+  /Users/panhao/.venvs/w3m-e2e/lib/python3.12/site-packages/starlette/testclient.py:51: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/test_release_face_cells.py::test_the_table_asks_for_no_value_nobody_computes
+FAILED tests/unit/test_release_face_cells.py::test_the_browser_report_is_paired_by_commit_and_window
+2 failed, 478 passed, 1 warning in 16.70s
+metric unit_passed=478
