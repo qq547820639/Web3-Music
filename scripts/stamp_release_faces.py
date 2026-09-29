@@ -142,7 +142,9 @@ def summarize(text: str, directory: pathlib.Path) -> dict:
         "pass": sum(1 for _, r in rows if r == "PASS"),
         "skipped": sum(1 for _, r in rows if r == "SKIPPED"),
         "fails": sum(1 for _, r in rows if r == "FAIL"),
+
         "started": (re.search(r"started_at=(\S+)", text) or [None, "?"])[1],
+        "chain_finished": bool(re.search(r"^finished_at=", text, re.M)),
         "ended": last_ended(text, rows[-1][0] if rows else None),
         "host_load": (re.search(r'host_load="([^"]*)"', text) or [None, None])[1],
         "cpus": (re.search(r"docker_cpus=(\d+)", text) or [None, "?"])[1],
@@ -449,14 +451,15 @@ def main():
     all_runs = list(runs())
     if not all_runs:
         raise SystemExit("no tracked acceptance evidence")
-    greens = [r for r in all_runs if r["fails"] == 0]
+    greens = [r for r in all_runs if r["fails"] == 0 and r["chain_finished"]]
     if args.run:
         chosen = next((r for r in all_runs if r["stamp"] == args.run), None)
         if chosen is None:
             raise SystemExit(f"{args.run} is not a tracked run; tracked: {[r['stamp'] for r in all_runs]}")
     else:
         if not greens:
-            raise SystemExit("no all-green run in the archive -- there is nothing to stamp")
+            raise SystemExit("no all-green run in the archive recorded a `finished_at=` line -- an aborted "
+                         "chain is not a verdict, and there is nothing to stamp")
         chosen = max(greens, key=lambda r: r["stamp"])
 
     got = figures(chosen)
