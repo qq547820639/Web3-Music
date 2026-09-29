@@ -578,3 +578,28 @@ def test_a_step_reading_round_trips_from_producer_to_reader(tmp_path):
     written = set(READER.rows_by_name(ROOT / "release-evidence" / f"acceptance-{newest['stamp']}"))
     unknown = sorted({step for step, _key in READER.METRIC_FIGURES} - written)
     assert not unknown, f"METRIC_FIGURES names steps the certified run never wrote: {unknown}"
+
+
+def test_two_qualifying_legs_are_refused_not_guessed():
+    """An ambiguous pairing now refuses instead of taking the newest.
+
+    The review's unreproduced suspicion, now built: two legs on the certified run's own commit with
+    `generated_at` inside that run's window used to be settled by `candidates[-1]`, so a face could cite one
+    leg while the stamped figures came from the other. Both must be named in the refusal, and removing one
+    must make the remaining leg resolve -- otherwise this is a blanket failure, not a tie-break refusal.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        run, own, evidence = build_pairing_tree(root)
+        twin = write_report(evidence, "20260928T085800Z", "a" * 40, "2026-09-28T09:00:20Z")
+        original = READER.EVIDENCE
+        READER.EVIDENCE = evidence
+        try:
+            with pytest.raises(SystemExit) as raised:
+                READER.browser_pair(run)
+            message = str(raised.value)
+            assert "20260928T085800Z" in message and "20260928T085606Z" in message, message
+            twin.unlink()
+            assert READER.browser_pair(run) == own, "after the tie is gone the pairing must still resolve"
+        finally:
+            READER.EVIDENCE = original
