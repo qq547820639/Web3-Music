@@ -222,3 +222,7 @@ docker compose down --remove-orphans
 ```
 
 > 不要用 `down -v` 清理，除非你确定要删除 Postgres/MinIO 数据卷（`-v` 会清空本地验收数据）。
+
+## 行 23 的读数为什么故意不做成盖章格
+
+自 `bed2070` 起，容量腿会像其它步骤一样打印一行自己的协议读数（`metrics capacity-gate-500 users=… p50_ms=… p95_ms=… p99_ms=… throughput_rps=… error_rate_pct=… acceptance_rc=…`），并由 `run_step` 逐行抄进该运行的 `SUMMARY.txt`，因此这些数是**入库可复算**的。它们刻意没有接到 `release_face_cells` 的格上，理由是一条机制限制而不是偷懒：`scripts/stamp_release_faces.py` 的派生只对着「最新一条全绿运行」取值，而一台满足不了 `docker-compose.capacity500.yml` 资源请求的宿主上，全绿运行的行 23 必然是 `SKIPPED`（没有该行就没有该读数），一旦给这些键上格，每一轮都会撞上 NOT-FOUND 哨兵并拒整轮重打。所以行 23 的读数留在**点名其运行、并引用其入库工件**的散文里（`docs/COST_OPTIMIZED_500_CONCURRENCY.md` 的 2026-09-29 小节与 `docs/FINAL_RELEASE_STATUS.md` 的当日各节）。要让它可以上格，先得给读者加第二条配对方——「最新一条真正执行过行 23 的运行」，而不是把判据放宽或把 SKIPPED 折算成零。
