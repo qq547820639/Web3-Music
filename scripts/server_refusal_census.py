@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import datetime
 import importlib.util
 import json
 import pathlib
@@ -240,8 +241,68 @@ def shortfall(server: collections.Counter, seen: collections.Counter) -> list[tu
     return [(t, n, seen.get(t, 0)) for t, n in sorted(server.items()) if seen.get(t, 0) < n]
 
 
+TAIL_TOLERANCE_S = 0.5
+
+
+def _stamp(text: str):
+    """A docker/report timestamp as a comparable datetime, or None when it does not parse.
+
+    Both shapes exist in the wild: the api logs nine fractional digits, the report's own stamps carry
+    three or none, and every one of them ends in Z.
+    """
+    body = text.strip()
+    if body.endswith("Z"):
+        body = body[:-1]
+    head, _, frac = body.partition(".")
+    try:
+        moment = datetime.datetime.strptime(head, "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return None
+    if frac:
+        moment = moment.replace(microsecond=int((frac + "000000")[:6]))
+    return moment
+
+
+def observation_horizon(report: pathlib.Path) -> str | None:
+    """The instant the gate stopped being able to record a refusal, as the report itself states it."""
+    return json.loads(report.read_text(encoding="utf-8")).get("gate_last_refusal_at")
+
+
+def tail_of(short_triples: list, surplus: dict, horizon: str | None) -> tuple[list, list]:
+    """Split a shortfall into events the gate could still have seen and events it provably could not.
+
+    After `gate_last_refusal_at` the gate's pages are gone: an answer delivered there has no observer on
+    the browser side, which is the same shape the `unsettled` reading excuses -- except this one is proven
+    by a timestamp the report itself carries, so it does not depend on a page having confessed to being
+    unsettled. Measured across the sixteen tracked census artifacts the window outlives the gate's last
+    observation by 2 to 9 seconds (median 6), and the live demonstration on `browser-a11y-20260929T120005Z`
+    reproduced the historical signature exactly: one refusal answered in that tail read "the server
+    answered 29x GET /api/auth/me -> 401 but the gate recorded 28" with nothing else changed.
+
+    The tolerance is not slack, it is a measured quantity: the same event's two stamps sat -32..+143 ms
+    apart across one run (noted where `surplus_times` prints them), so anything within half a second of
+    the horizon counts as inside. An unparsable stamp counts as inside too, and so does everything when
+    the report predates `gate_last_refusal_at` -- the conservative direction keeps a shortfall judged
+    rather than excused.
+    """
+    limit = None
+    if horizon:
+        limit = _stamp(horizon)
+        if limit is not None:
+            limit += datetime.timedelta(seconds=TAIL_TOLERANCE_S)
+    judged, tail = [], []
+    for tuple_, n, got in short_triples:
+        stamps = surplus.get(tuple_) or []
+        parsed = [_stamp(s) for s in stamps]
+        if limit is None or not parsed or any(m is None or m <= limit for m in parsed):
+            judged.append((tuple_, n, got))
+        else:
+            tail.append((tuple_, n, got, stamps))
+    return judged, tail
+
+
 def reconcile(server: collections.Counter, seen: collections.Counter, parsed: int, raw: int,
-              unsettled: list | None = None) -> list[str]:
+              unsettled: list | None = None, excuse_tail: frozenset = frozenset()) -> list[str]:
     """Server ⊆ browser, with one required exception: what the gate fulfills never reaches the server.
 
     Counts are compared as data, not as rendered strings. A page can see a refusal the server never
@@ -261,6 +322,8 @@ def reconcile(server: collections.Counter, seen: collections.Counter, parsed: in
                 "means the parser saw nothing, not that the server answered no refusals"]
     waiting = outstanding_keys(unsettled)
     for tuple_, n, got in shortfall(server, seen):
+        if tuple_ in excuse_tail:
+            continue
         if f"{tuple_[0]} {tuple_[1]}" in waiting:
             # Named and pointable: some page was still waiting on exactly this endpoint when the gate
             # closed it, so the api's answer had no page left to hand it to. Any other shortfall is a
@@ -420,6 +483,30 @@ def self_test() -> int:
     arms.append(("the axis is written when the report carried it and left out when it did not",
                  "gate_issued_events: 14" in axis_text and "gate_aborted_events: 2" in axis_text
                  and "gate_issued_events" not in text and "gate_aborted_events" not in text))
+    # The observation horizon: a shortfall the gate provably could not see is reported, not judged.
+    late = "2026-09-28T08:56:30.100Z"
+    short_one = collections.Counter(seen)
+    short_one[("GET", "/api/auth/me", 401)] = 27
+    late_only = {("GET", "/api/auth/me", 401): ["2026-09-28T08:56:31.500Z"]}
+    judged, tail = tail_of(shortfall(server, short_one), late_only, late)
+    arms.append(("a shortfall whose every stamp is after the gate's own horizon is tail, not red",
+                 judged == [] and len(tail) == 1))
+    mixed = {("GET", "/api/auth/me", 401): ["2026-09-28T08:56:20.000Z", "2026-09-28T08:56:29.900Z"]}
+    judged, tail = tail_of(shortfall(server, short_one), mixed, late)
+    arms.append(("one stamp inside the horizon keeps the shortfall judged", len(judged) == 1 and tail == []))
+    judged, tail = tail_of(shortfall(server, short_one), late_only, None)
+    arms.append(("a report without the horizon keeps everything judged", len(judged) == 1 and tail == []))
+    judged, tail = tail_of(shortfall(server, short_one),
+                           {("GET", "/api/auth/me", 401): ["not-a-stamp"]}, late)
+    arms.append(("an unparsable stamp is inside, not excused", len(judged) == 1 and tail == []))
+    nanos = {("GET", "/api/auth/me", 401): ["2026-09-28T08:56:30.600123456Z"]}
+    judged, tail = tail_of(shortfall(server, short_one), nanos, late)
+    arms.append(("an event half a second past the horizon is still tail", judged == [] and len(tail) == 1))
+    arms.append(("reconcile honours the named tail set",
+                 reconcile(server, short_one, 40, 60,
+                           excuse_tail=frozenset({("GET", "/api/auth/me", 401)})) == []))
+    arms.append(("and the excuse is named: without it the same pair is red",
+                 any("28x GET /api/auth/me" in p for p in reconcile(server, short_one, 40, 60))))
     width = max(len(name) for name, _ in arms)
     bad = 0
     for name, ok in arms:
@@ -466,7 +553,11 @@ def main():
     server, parsed, every = count(lines)
     seen = browser_census(report)
     unsettled = unsettled_at_close(report)
-    problems = reconcile(server, seen, parsed, len(lines), unsettled)
+    surplus = surplus_times(lines, server, seen)
+    horizon = observation_horizon(report)
+    judged_short, tail = tail_of(shortfall(server, seen), surplus, horizon)
+    problems = reconcile(server, seen, parsed, len(lines), unsettled,
+                         excuse_tail=frozenset(t for t, _, _, _ in tail))
     if degraded(report):
         problems.insert(0, f"{report.parent.name}/report.json has no `refusal_counts`, so the gate's side "
                            "of the comparison is empty by construction -- re-run the browser leg to get a "
@@ -479,7 +570,7 @@ def main():
     if issued is not None:
         problems += request_axis(server, every, issued)
     aborted = aborted_events(report)
-    short = shortfall(server, seen)
+    short = judged_short
     waiting = outstanding_keys(unsettled)
     excused = [f"{n - got}x {m} {pth} -> {code}" for (m, pth, code), n, got in short
                if f"{m} {pth}" in waiting]
@@ -497,7 +588,7 @@ def main():
         for line in aborted:
             print(f"# the gate recorded a request that got no answer back: {line}", file=sys.stderr)
         first, last = report_span(report)
-        for key, when in sorted(surplus_times(lines, server, seen).items()):
+        for key, when in sorted(surplus.items()):
             # The newest N stamps of the disputed tuple, not an attribution: which of them went unmatched is
             # what the request axis answers, and clock order alone cannot say it on this host (the two
             # observers' stamps disagree by -32..+143 ms across one run, measured 2026-09-28).
@@ -506,6 +597,13 @@ def main():
                   f"refusals run {first} .. {last}", file=sys.stderr)
     text = render(run, lo, hi, server, seen, parsed, len(lines), provenance, issued=issued,
                   aborted=len(aborted) if issued is not None else None)
+    for tuple_, n, got, stamps in tail:
+        note = (f"# tail beyond the gate's own horizon: the server answered {n - got}x "
+                f"{tuple_[0]} {tuple_[1]} -> {tuple_[2]} at {', '.join(stamps)}, after its last "
+                f"recorded refusal {horizon} -- no page was left to hand the answer to; reported, "
+                "not judged")
+        print(note, file=sys.stderr)
+        text += note + "\n"
     print(text, end="")
     print(f"artifact would go to: {report.parent / 'server-refusals.txt'}")
     for problem in problems:
