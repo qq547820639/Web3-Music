@@ -28,6 +28,7 @@ import uuid
 
 import httpx
 import metric_line as metrics
+from window_rules import MIN_TRAFFIC_SPAN, refusals_count_down
 
 BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000") + "/api"
 STAMP = time.strftime("%m%dT%H%M%SZ", time.gmtime())
@@ -359,18 +360,33 @@ def main() -> int:
               f"first refusal at attempt {first_429}, statuses: {codes}")
         keys = {"per-address": per_key, "global": global_key}
         before = {n: (redis_cli("GET", k), int(redis_cli("TTL", k) or -2)) for n, k in keys.items()}
-        for _ in range(3):
-            file(notice(flood_mail, asset))
+        # The refusals are spaced instead of fired back to back. With three quick filings the two TTL
+        # samples sat 0.94 s to 1.84 s apart on this machine (`.scratch/probe_report_decay.py`, four runs;
+        # the two `docker compose exec` round trips alone cost 0.20-0.46 s each), and a Redis second only
+        # rolls about once per second: the old strict decrease could therefore read equal on a limiter that
+        # had done nothing wrong -- and it read equal on a *re-arming* limiter too, which is the case the
+        # check exists for. Flaky and toothless in the same regime, so the traffic now has to fill the
+        # interval the verdict consumes.
+        waits, stamps = [], []
+        while True:
+            refused = file(notice(flood_mail, asset))
+            stated = refused.headers.get("Retry-After", "")
+            waits.append(int(stated) if refused.status_code == 429 and stated.isdigit() else None)
+            stamps.append(time.monotonic())
+            span = stamps[-1] - stamps[0]
+            if span >= MIN_TRAFFIC_SPAN:
+                break
+            time.sleep(MIN_TRAFFIC_SPAN / 3.0)
         after = {n: (redis_cli("GET", k), int(redis_cli("TTL", k) or -2)) for n, k in keys.items()}
         check("a refusal spends none of the window it reports",
               all(before[n][0] == after[n][0] for n in keys),
               f"counters {before} then {after}")
-        refused = file(notice(flood_mail, asset))
-        retry = refused.headers.get("Retry-After", "")
-        check("the refusal says how long, and the window is counting down rather than being re-armed",
-              refused.status_code == 429 and retry.isdigit() and 0 < int(retry) <= 60
-              and after["per-address"][1] > 0 and after["per-address"][1] < before["per-address"][1],
-              f"Retry-After {retry!r}, windows before {before} after {after}")
+        check(f"the window counted down across {len(waits)} refusals and {span:.1f}s of traffic and never "
+              "re-armed",
+              refusals_count_down(waits, span, before["per-address"][1], after["per-address"][1]),
+              f"Retry-After {waits[:3]} … {waits[-3:]} over {span:.1f}s against the per-address window "
+              f"{before['per-address'][1]} then {after['per-address'][1]}; global "
+              f"{before['global'][1]} then {after['global'][1]}")
     finally:
         mine = f"reporter_email ILIKE lower('%-{STAMP}@example.local')"
         residue = sql(f"SELECT count(*) FROM rights_reports WHERE {mine}")

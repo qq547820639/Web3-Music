@@ -155,7 +155,7 @@ POINTER_ROSTER = (
     ("docs/COST_OPTIMIZED_500_CONCURRENCY.md", "services/api/app/main.py", 162, "def _login_key"),
     ("docs/COST_OPTIMIZED_500_CONCURRENCY.md", "services/gateway/nginx.conf", 43, "X-Forwarded-For"),
     ("docs/COST_OPTIMIZED_500_CONCURRENCY.md", "services/gateway/nginx.conf", 61, "X-Forwarded-For"),
-    ("docs/RIGHTS_POLICY.md", "scripts/report_drill.py", 407, "DELETE FROM media_assets"),
+    ("docs/RIGHTS_POLICY.md", "scripts/report_drill.py", 423, "DELETE FROM media_assets"),
     ("docs/RIGHTS_POLICY.md", "scripts/hold_drill.py", 494, "DELETE FROM media_assets"),
     ("docs/RIGHTS_POLICY.md", "services/api/app/domain/rights.py", 43, "def allowed"),
     ("docs/ITERATION_CHANGES_PHASE3.md", "services/admin/admin.js", 129, "showModal"),

@@ -1655,8 +1655,9 @@ TTL 42 then 29 after 2.2s of refusals`；该步自记环境行 `failed_step_env:
 第一回红在主机速率上，第二回红在重建后的量具自己身上。
 
 **下一轮的地图（本轮只登记，不动它们）。** 同一形状「固定预算内的条数/时长进判决」在常驻面还有几处，已逐行读过两处：
-`scripts/report_drill.py:369-373`（三次递交后 `after < before` 的严格不等式，无时钟恒等式；暴露面在快主机端——
-两次取样落在同一个 Redis 秒内，至今未红）、清单第二项也量完并把读数接上了（同日第三次提交）。`scripts/browser_a11y.py:135` 的 `wait_painted(gap_ms=250, tries=12)` 只要
+`scripts/report_drill.py:360-373` 的洪泛块（三次快递交后要求第二次 TTL 严格变小，无时钟恒等式）——这一位**已经在掷硬币**，只是还没轮到它红、**清单第三项也量完并改掉了（同日第四次提交）。** `scripts/report_drill.py` 的洪泛块把两次 TTL 取样之间的三次快递交换成「递交直到被判决的区间自己满 2.0 秒」，判决改用与两步验证演练同一把尺子：把判据抽到 `scripts/window_rules.py`（`MIN_TRAFFIC_SPAN`、`refusals_count_down`、`traffic_floor_met`），`mfa_drill` 与 `report_drill` 各自 import 它——两条演练共用一条判决，才不会出现两把同名不同刻度的尺子。为什么要抽：用 `.scratch/probe_report_decay.py`（工作文件，不在在册证据里）给真演练的 `redis_cli` 计时后连跑四次，两次取样的间隔实测 0.94~1.84 s，其中单单两次 `docker compose exec` 就各花 0.20~0.46 s；Redis 一秒才走一格，间隔不足一秒时「严格变小」既可能读不到（正确的限流器判红），也可能在**每次重报满窗的限流器**身上同样读不到（它复位后剩余仍是 59）——又抖又没牙，正落在同一个区间里。现在活臂：`the window counted down across 4 refusals and 2.1s of traffic and never re-armed`，整条演练 50/50、退码 0，检查条数没变（`checks_total=50`，行 15 的在册读数不受影响）。**代价**：这次改动挪动了 `report_drill.py` 的行号，两处按行号钉的在册判据随之外移——`tests/unit/test_legal_hold_surface.py:131` 的 `scripts/report_drill.py:273`→274（新增的 import 顶了一行），`tests/unit/test_reference_doc_figures.py:158` 与 `docs/RIGHTS_POLICY.md:78` 的 `:407`→423（先证明是位移：`git show HEAD:scripts/report_drill.py \| grep -n 'DELETE FROM media_assets'` 在旧树是 407，新树 423，同一行文本）。仍未实测的是：这个假阴/假阳区间在多快的主机上会真的翻车——本机最快一次间隔 0.94 s，已经低于一个 Redis 秒。
+
+清单第二项也量完并把读数接上了（同日第三次提交）。`scripts/browser_a11y.py:135` 的 `wait_painted(gap_ms=250, tries=12)` 只要
 3 秒内看到两次相同的绘制签名，`:491` 把它记成 `settle`，`:171` 再落进 `failures`——这正是行 22 那条腿。已量过它**开火的次数**：
 56 份在册浏览器产物里 5242 次带 `settle` 的扫描全部读 `stable`、`timeout` 零次，但那个布尔量不出**余量**：`timeout` 在
 「页面 2.9 秒才停笔」与「页面根本还在动」两种情况下写法相同。现在 `painted_wait` 除了判决还回报用了几个采样点与花了多少毫秒

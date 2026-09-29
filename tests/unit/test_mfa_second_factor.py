@@ -157,6 +157,24 @@ def test_the_traffic_loop_exits_on_the_interval_the_verdict_judges_not_on_a_seco
     assert drill.MIN_TRAFFIC_SPAN == 2.0 and drill.MIN_TRAFFIC_REQUESTS == 5
 
 
+def test_the_window_ruler_has_one_owner():
+    """The two drills that judge a rate-limit window must hold the same function object.
+
+    `scripts/window_rules.py` owns `MIN_TRAFFIC_SPAN` and the two predicates; `mfa_drill` re-exports them and
+    `report_drill` imports them. A copy-paste in either drill would give two rulers under one name -- which is
+    how `report_drill`'s flood block and the throttling check drifted into different definitions of "the window
+    counted down" this month -- so the identity is pinned rather than assumed.
+    """
+    drill = _mfa_drill()
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import report_drill  # noqa: PLC0415
+    import window_rules  # noqa: PLC0415
+    assert drill.refusals_count_down is window_rules.refusals_count_down
+    assert drill.traffic_floor_met is window_rules.traffic_floor_met
+    assert report_drill.refusals_count_down is window_rules.refusals_count_down
+    assert report_drill.MIN_TRAFFIC_SPAN == window_rules.MIN_TRAFFIC_SPAN == drill.MIN_TRAFFIC_SPAN == 2.0
+
+
 def test_seal_round_trips(keyed):
     secret = keyed.new_secret()
     assert keyed.unseal(keyed.seal(secret)) == secret

@@ -128,7 +128,7 @@ BASELINE_SCRIPT_TOUCHES = frozenset({
     # operator tools started emitting their own readings, which is a shift of the same needle, not a new
     # reader. A new *reader* would belong to the application bucket and need a drill assertion.
     ("scripts/reconcile_market.py", 87),
-    ("scripts/report_drill.py", 273),
+    ("scripts/report_drill.py", 274),
     ("scripts/reservation_race.py", 110),
 })
 
