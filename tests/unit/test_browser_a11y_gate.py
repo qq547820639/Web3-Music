@@ -8,6 +8,7 @@ so "browser a11y + walkthrough passed" means something.
 import json
 import pathlib
 import sys
+import time
 
 import pytest
 
@@ -15,7 +16,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from browser_a11y import (contrast_ratio, csp_failures, danger_pair, gate_failures,  # noqa: E402
-                       hidden_failures, mobile_fit_failures, unsettled_entries)
+                       hidden_failures, mobile_fit_failures, painted_wait, unsettled_entries,
+                       wait_painted)
 
 CSP_OK = "default-src 'self'; script-src 'self'; base-uri 'none'"
 ORIGINS = ["http://localhost:4173", "http://localhost:4174"]
@@ -60,6 +62,46 @@ def test_scan_that_returned_nothing_is_not_a_pass():
 
 def test_scan_during_paint_is_not_a_pass():
     assert gate_failures([scan(settle="timeout")])
+
+
+class PaintProbe:
+    """A page whose repaint signature sequence is scripted; `wait_for_timeout` really waits.
+
+    Only `painted_wait`'s own two calls are needed, so the producer of `settle_samples` / `settle_ms`
+    is exercised here instead of by a hand-written scan dict.
+    """
+
+    def __init__(self, signatures, gap_ms=20):
+        self.signatures = list(signatures)
+        self.gap_ms = gap_ms
+
+    def wait_for_timeout(self, ms):
+        time.sleep(ms / 1000.0)
+
+    def evaluate(self, script):
+        if not self.signatures:
+            raise AssertionError("painted_wait sampled past the end of the scripted sequence")
+        return self.signatures.pop(0)
+
+
+def test_paint_waiting_reports_how_much_budget_the_stability_took():
+    """The gate refuses a scan taken mid-paint; it could not say how close to the budget it was.
+
+    `settle: timeout` read the same whether the page settled at 2.9 s of the 3 s budget or never did,
+    and 5242 tracked scans had never printed either number. These readings are what make a future
+    timeout attributable rather than an accusation against the host.
+    """
+    settled = painted_wait(PaintProbe(["a", "b", "b", "c"]))
+    assert settled.settled is True, settled
+    assert settled.samples == 3, settled                       # two waits, then the match
+    assert 40 <= settled.elapsed_ms < 900, settled             # 2 x 20 ms of scripted waiting
+    # A page that keeps changing spends the whole budget and reports it, rather than a bare False.
+    starved = painted_wait(PaintProbe(["a", "b", "c", "d"], gap_ms=5), tries=4)
+    assert starved.settled is False and starved.samples == 4 and starved.elapsed_ms >= 15, starved
+    # The wrapper every other call site still uses stays a boolean: a namedtuple is truthy whether or
+    # not the page settled, so a return-type leak would silently invert the self-test arms.
+    assert wait_painted(PaintProbe(["a", "a"])) is True
+    assert wait_painted(PaintProbe(["a", "b", "a", "b"], gap_ms=1), tries=4) is False
 
 
 def test_as_deployed_entries_are_not_judged_by_axe():

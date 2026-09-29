@@ -132,15 +132,32 @@ HOST_ISSUED: collections.Counter = collections.Counter()
 HOST_TIMELINE: list[dict] = []
 
 
-def wait_painted(page, gap_ms: int = 250, tries: int = 12) -> bool:
+PaintWait = collections.namedtuple("PaintWait", "settled samples elapsed_ms")
+
+
+def painted_wait(page, gap_ms: int = 250, tries: int = 12) -> PaintWait:
+    """Whether the page stopped repainting, and how much of the budget that took.
+
+    The boolean alone could not tell a loaded host from a page that never settles: the budget is
+    12 samples x 250 ms, so `settle: "timeout"` reads identically when the last accepted change landed at
+    2.9 s and when the page is still animating at 3 s. Measured over the tracked archive before this
+    existed: 5242 settle-bearing scans across 56 legs, every one "stable", zero timeouts -- so the margin
+    inside the budget was never read, only assumed. These two numbers are what turn a future timeout into
+    a measurement instead of an accusation.
+    """
     previous = None
-    for _ in range(tries):
+    started = time.monotonic()
+    for sample in range(1, tries + 1):
         page.wait_for_timeout(gap_ms)
         current = page.evaluate(PAINT_SIG_JS)
         if previous is not None and current == previous:
-            return True
+            return PaintWait(True, sample, int((time.monotonic() - started) * 1000))
         previous = current
-    return False
+    return PaintWait(False, tries, int((time.monotonic() - started) * 1000))
+
+
+def wait_painted(page, gap_ms: int = 250, tries: int = 12) -> bool:
+    return painted_wait(page, gap_ms, tries).settled
 
 
 def axe_source() -> str:
@@ -471,7 +488,8 @@ class Auditor:
             label = f"{label} (as-deployed)"
         if require:
             page.wait_for_selector(require, timeout=20000)
-        settle = "stable" if wait_painted(page) else "timeout"
+        paint = painted_wait(page)
+        settle = "stable" if paint.settled else "timeout"
         violations: list[dict] = []
         audited = False
         if self.run_axe:
@@ -519,6 +537,8 @@ class Auditor:
                 "axe": self.run_axe,
                 "audited": audited,
                 "settle": settle,
+                "settle_samples": paint.samples,
+                "settle_ms": paint.elapsed_ms,
                 "violations": violations,
                 "scroll_width": metrics["scroll"],
                 "client_width": metrics["client"],

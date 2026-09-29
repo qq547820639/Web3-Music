@@ -1656,9 +1656,16 @@ TTL 42 then 29 after 2.2s of refusals`；该步自记环境行 `failed_step_env:
 
 **下一轮的地图（本轮只登记，不动它们）。** 同一形状「固定预算内的条数/时长进判决」在常驻面还有几处，已逐行读过两处：
 `scripts/report_drill.py:369-373`（三次递交后 `after < before` 的严格不等式，无时钟恒等式；暴露面在快主机端——
-两次取样落在同一个 Redis 秒内，至今未红）、`scripts/browser_a11y.py:135` 的 `wait_painted(gap_ms=250, tries=12)`
-（3 秒内要看到两次相同的绘制签名，`:474` 把它记成 `settle`，`:171` 再落进 `failures`；这正是行 22 那条腿。已量过它的面：
-56 份在册浏览器产物里 5242 次带 `settle` 的扫描全部读 `stable`（含本次这条腿的 118 次；另有 36 次扫描不带该字段），`timeout` 零次——所以这是**潜在**位、不是已观测位）。`scripts/reconcile_market.py:161-167` 的「睡 2 秒后数一次」也仍在清单上，未复核。
+两次取样落在同一个 Redis 秒内，至今未红）、清单第二项也量完并把读数接上了（同日第三次提交）。`scripts/browser_a11y.py:135` 的 `wait_painted(gap_ms=250, tries=12)` 只要
+3 秒内看到两次相同的绘制签名，`:491` 把它记成 `settle`，`:171` 再落进 `failures`——这正是行 22 那条腿。已量过它**开火的次数**：
+56 份在册浏览器产物里 5242 次带 `settle` 的扫描全部读 `stable`、`timeout` 零次，但那个布尔量不出**余量**：`timeout` 在
+「页面 2.9 秒才停笔」与「页面根本还在动」两种情况下写法相同。现在 `painted_wait` 除了判决还回报用了几个采样点与花了多少毫秒
+（`:133-157`，`settle_samples` / `settle_ms` 进 `scans`，`:540-541`），常驻侧由
+`tests/unit/test_browser_a11y_gate.py`（18 条，两条既有计数 `docs/TEST_REPORT.md:134`、`docs/RELEASE_CHECKLIST.md:44` 已随文件同步）
+用一台 scripted page 量具证明采样器确实按脚本停笔、按预算耗尽，并且 `wait_painted` 仍是布尔（具名元组恒真，漏一层就会把
+`:870` 那条自检臂的反转悄悄吞掉）。真生产者路径取证：一次独立浏览器腿 `browser-a11y-20260929T112925Z`（未入库——它不属于任何
+认证链，census 产物也就没跟着产）跑完 118 次扫描，两把新钥匙**一次都不缺**，读数 min 509 / 中位 519 / p95 607 / max 782 ms，
+采样点直方图 116 次用了 2 点、2 次用了 3 点；对 3000 ms 的预算，最坏余量 2218 ms（3.8 倍）。所以这一位仍是**潜在**、且余量已量化，下次真出 `timeout` 时先看得见是多少毫秒、几点停的。。`scripts/reconcile_market.py:161-167` 的「睡 2 秒后数一次」也仍在清单上，未复核。
 
 **清单第一项已量完并改掉（同日第二次提交）。** `tests/unit/test_provider_emulator.py` 那条 `assert elapsed < 1.0` 不是潜在的，是已经在掷硬币：用 `.scratch/probe_replay_margin.py`（工作文件，不在在册证据里）对同一个模块重放十次，空闲机上读数 0.211~1.047 s，其中一次**已经越过 1.0 s 而代码没有任何毛病**（同一个 job id、池子没有被重新提交、`created_at` 未动）；八进程满载再十次读数 0.003~0.902 s。方差是夹具自己造出来的——八段 0.5 s 的合成在生成池里跑，而 `create_job` 是 `async def`，GIL 让正确的重放也要等最多一秒。判据换成两根因果尺子：①写盘线程与应答线程不得有交集（`synthesis_on_the_serving_thread`，空集与「一次都没写」都各有空转臂）；②重放必须在结果尚未发布时就答复（答完再读 `results_json` 必须仍为 NULL），这条专门抓「处理器等池子」那种形状。耗时只打印，不判决。变异臂（`.scratch/mutation_replay_inline.py`，把 `return resolve(existing)` 改成先 `publish(...)` 再答）实测两条都开火：`wrote_on_serving_thread=True`、`results_json_published_after_replay=True`，重放本身拖到 2.1 s。**注意这把尺子量的对象**：Provider 模拟器（`services/provider-emulator/main.py`，自标 development only; not Suno），不是生产网关。**未实测**：空闲那一次 1.047 s 的越界是否已在某次真实链里红过——历史 492 条常驻用例全绿，说明它至今只是运气。
 
