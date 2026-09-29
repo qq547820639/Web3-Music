@@ -164,12 +164,26 @@ def run_from_disk(stamp: str) -> dict:
     return summarize(path.read_text(encoding="utf-8", errors="replace"), path.parent)
 
 
+def summary_paths():
+    """The archive roster: tracked files where git answers, the on-disk tree where it does not.
+
+    The mutation battery and clean-checkout attestations both import this code into copies that have no
+    `.git`, where `git ls-files` exits 128 and the leg's own figures became unreadable. The two modes are
+    not interchangeable -- a working tree holds judged-red runs that the archive deliberately excludes --
+    so the mode is reported on the function and never silently assumed by a caller.
+    """
+    probe = subprocess.run(["git", "-C", str(ROOT), "ls-files", "release-evidence/acceptance-*/SUMMARY.txt"],
+                           capture_output=True, text=True)
+    if probe.returncode == 0:
+        summary_paths.mode = "git"
+        return sorted(ROOT / relative for relative in probe.stdout.split())
+    summary_paths.mode = "disk"
+    return sorted((ROOT / "release-evidence").glob("acceptance-*/SUMMARY.txt"))
+
+
 def runs():
-    """Every tracked SUMMARY, oldest first, with its own verdict tally."""
-    out = subprocess.run(["git", "-C", str(ROOT), "ls-files", "release-evidence/acceptance-*/SUMMARY.txt"],
-                         capture_output=True, text=True, check=True).stdout.split()
-    for relative in sorted(out):
-        path = ROOT / relative
+    """Every archived SUMMARY, oldest first, with its own verdict tally."""
+    for path in summary_paths():
         yield summarize(path.read_text(encoding="utf-8", errors="replace"), path.parent)
 
 

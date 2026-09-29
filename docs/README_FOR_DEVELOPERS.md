@@ -121,7 +121,7 @@ Worker 恢复演练：
   session 时间、环境元数据、逐用例耗时与结果写成 JSON，供下游自动消费；其页面对"把数字写进人读的文档"
   没有任何机制。本仓已经在用它的一条坑：`environment` 字段在 pytest-metadata ≥3 下恒为空对象，
   所以它连元数据都不可靠。**结论：只用它做机读侧，不做文书侧**。
-- 留下的自研部分共 1242 行 Python——`scripts/stamp_release_faces.py`（433 行）、`scripts/release_face_cells.py`（707 行）与 `scripts/metric_line.py`（127 行）——只做三件事：从在册件读数（`stamp_release_faces.figures()`）、
+- 留下的自研部分共 1242 行 Python——`scripts/stamp_release_faces.py`（447 行）、`scripts/release_face_cells.py`（707 行）与 `scripts/metric_line.py`（127 行）——只做三件事：从在册件读数（`stamp_release_faces.figures()`）、
   按格改写（`release_face_cells.apply()`，任一格解析不到就整体不落盘）、以及把"格要的数没人算"与
   "算出来的数没人引用"两个方向都钉成常驻用例（`tests/unit/test_release_face_cells.py`）。
   替换任一现成方案都要先把"取不到读数即整轮拒写"这条判决语义重新实现一遍——这是本仓文书唯一不能退化的性质。

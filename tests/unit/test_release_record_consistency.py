@@ -47,12 +47,17 @@ def ended_of(text):
 
 
 def archived_runs():
-    """Every tracked acceptance SUMMARY, oldest first, each reduced to (stamp, commit, rows, fails)."""
-    listed = subprocess.run(["git", "-C", str(ROOT), "ls-files", "release-evidence/acceptance-*/SUMMARY.txt"],
-                            capture_output=True, text=True, check=True).stdout.split()
+    """Every archived acceptance SUMMARY, oldest first, each reduced to (stamp, commit, rows, fails).
+
+    The roster comes from the reader's own `summary_paths()` rather than a second `git ls-files` here: two
+    owners of one roster is the shape this record keeps re-finding, and the reader is the code that also has
+    to work in a git-less copy (the battery's tree exports and clean-checkout attestations have no `.git`,
+    where `git ls-files` exits 128).
+    """
     runs = []
-    for relative in sorted(listed):
-        text = (ROOT / relative).read_text(encoding="utf-8", errors="replace")
+    for path in reader_module().summary_paths():
+        relative = path.relative_to(ROOT)
+        text = path.read_text(encoding="utf-8", errors="replace")
         rows = STEP_ROW.findall(text)
         commit = COMMIT.search(text)
         host = re.search(r'host_load="([^"]*)"', text)
