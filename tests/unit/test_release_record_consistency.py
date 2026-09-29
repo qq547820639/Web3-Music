@@ -941,6 +941,8 @@ CONTRACT_QUOTES = (
      r"(\d+) 条 /api 路由", ("routes",)),
     ("docs/TEST_REPORT.md", "三类注入对照",
      r"(\d+) 条判决函数单测", ("gate_cases",)),
+    ("docs/TEST_REPORT.md", "权限矩阵（新增量具）",
+     r"(\d+) 条无角色检查的写路由", ("unguarded_writes",)),
 )
 
 
@@ -987,6 +989,10 @@ def contract_problems(root, figures):
         if len(found) != 1:
             problems.append(f"{rel}: {pattern!r} matched {len(found)} times, expected 1")
             continue
+        if len(found[0].groups()) != len(keys):
+            problems.append(f"{rel}: {marker!r} captures {len(found[0].groups())} values for {len(keys)} "
+                            f"keys {keys} -- zip would silently drop the tail")
+            continue
         for value, key in zip(found[0].groups(), keys):
             if int(value) != figures[key]:
                 problems.append(f"{rel}: says {key}={value}, the tracked artifact says {figures[key]}")
@@ -1017,22 +1023,27 @@ def test_a_stale_contract_figure_is_named():
         index = next(i for i, line in enumerate(lines) if marker in line)
         found = re.search(pattern, lines[index])
         assert found, f"row {number} ({rel}, {marker!r}): its pattern matches nothing on its own line"
-        stale = str(int(found.group(1)) + 7)
-        tampered = (lines[:index] + [lines[index][:found.start(1)] + stale + lines[index][found.end(1):]]
-                    + lines[index + 1:])
-        with tempfile.TemporaryDirectory() as tmp:
-            root = pathlib.Path(tmp)
-            sources = faces + [str(MATRIX.relative_to(ROOT)), str(OPENAPI.relative_to(ROOT))]
-            for source in sources:
-                target = root / source
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes((ROOT / source).read_bytes())
-            # the copied face has to be replaced by the tampered one *after* the copy, or the arm reads the
-            # pristine line back and reports "the figure agrees" about a plant it never installed.
-            (root / rel).write_text("".join(tampered), encoding="utf-8")
-            problems = contract_problems(root, figures)
-        named = [p for p in problems if rel in p and f"{keys[0]}={stale}" in p]
-        assert named, f"row {number} ({rel}, {marker!r}) did not name the planted stale figure: {problems}"
+        # every captured position gets planted in turn: a table whose tail keys are never exercised is the
+        # same silent-gap defect the row count was pinned for.
+        for position, key in enumerate(keys, start=1):
+            stale = str(int(found.group(position)) + 7)
+            tampered = (lines[:index]
+                        + [lines[index][:found.start(position)] + stale + lines[index][found.end(position):]]
+                        + lines[index + 1:])
+            with tempfile.TemporaryDirectory() as tmp:
+                root = pathlib.Path(tmp)
+                sources = faces + [str(MATRIX.relative_to(ROOT)), str(OPENAPI.relative_to(ROOT))]
+                for source in sources:
+                    target = root / source
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes((ROOT / source).read_bytes())
+                # the copied face has to be replaced by the tampered one *after* the copy, or the arm reads
+                # the pristine line back and reports "the figure agrees" about a plant it never installed.
+                (root / rel).write_text("".join(tampered), encoding="utf-8")
+                problems = contract_problems(root, figures)
+            named = [q for q in problems if rel in q and f"{key}={stale}" in q]
+            assert named, (f"row {number} ({rel}, {marker!r}) key {key!r} at group {position}: the planted "
+                           f"figure was not named: {problems}")
 
 
 def test_the_contract_quoting_census_is_not_vacuous():
@@ -1491,6 +1502,10 @@ def leg_problems(root, figures, rows=LEG_QUOTES):
         found = list(re.finditer(pattern, lines[hits[0]]))
         if len(found) != 1:
             problems.append(f"{rel}: {pattern!r} matched {len(found)} times, expected 1")
+            continue
+        if len(found[0].groups()) != len(keys):
+            problems.append(f"{rel}: {marker!r} captures {len(found[0].groups())} values for {len(keys)} "
+                            f"keys {keys} -- zip would silently drop the tail")
             continue
         for value, key in zip(found[0].groups(), keys):
             if int(value) != figures[key]:
