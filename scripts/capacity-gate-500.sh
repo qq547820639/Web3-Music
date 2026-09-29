@@ -78,6 +78,19 @@ fi
 # `| tee "$log"` line above, and the step log of acceptance-20260929T032931Z row 23 never prints the evidence
 # marker below -- the gate could only ever report one of its two halves.
 accept_rc=0
+# The suite's precondition is the seeded ledger: migration 001:515-524 grants every workspace exactly 1000
+# credits, one full suite run spends 40 (measured: available 960 after a single run), and `POST /jobs` raises
+# short. Reaching this leg after 22 chain rows means the drills have already spent the grant down, so the run
+# measures "did the burst break domain correctness" only if the database is renewed first -- otherwise it
+# measures how much budget the earlier rows left. down -v + up -d + health wait, then the same run.
+docker compose $FILES --profile '*' down -v >/dev/null 2>&1 || true
+docker compose $FILES up -d >>"$log" 2>&1
+for probe in $(seq 1 60); do
+  h=$(docker compose $FILES ps --format '{{.Health}}' 2>/dev/null | grep -c healthy)
+  [ "${h:-0}" -ge 8 ] && break
+  sleep 5
+done
+echo "regression database: renewed (down -v + up -d, ${h:-0} containers healthy after ${probe} probes)"
 docker compose $FILES --profile test run --rm acceptance | tee -a "$log" || accept_rc=$?
 
 # This step's own readings, in the protocol `run_step` copies into SUMMARY.txt keyed by the step name. Read
