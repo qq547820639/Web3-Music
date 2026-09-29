@@ -1554,3 +1554,102 @@ def test_a_stale_leg_figure_is_named():
             problems = leg_problems(root, figures)
         named = [p for p in problems if rel in p and f"{keys[0]}={stale}" in p]
         assert named, f"row {number} ({rel}, {marker!r}) did not name the planted stale figure: {problems}"
+
+
+CITED_RUN = re.compile(r"acceptance-(\d{8}T\d{6}Z)")
+CITED_LEG = re.compile(r"browser-a11y-(\d{8}T\d{6}Z)")
+# The exemption a face may claim for an evidence directory it did not put in the archive. It is deliberately
+# a phrase on the citing LINE: a postmortem is allowed to describe a run whose SUMMARY was never collected --
+# an aborted chain cannot be collected, by `test_every_tracked_summary_is_a_verdict_the_chain_finished` -- but
+# only if the reader of that sentence is told on the spot that the bytes are not on the tree.
+UNTRACKED_ACK = re.compile(r"未入库|未入册|not tracked|not in the tracked archive")
+
+
+def evidence_roots(root=ROOT):
+    """(tracked runs, tracked legs, runs on disk, legs on disk) -- the two modes the reader distinguishes.
+
+    Tracked comes from `git ls-files`; a tree without git (a temporary copy, a tarball) has no tracked set at
+    all, which is why the fire control passes its own sets instead of calling this. Disk presence is reported
+    separately because "not collected" and "does not exist" must not read identically.
+    """
+    probe = subprocess.run(["git", "-C", str(root), "ls-files", "release-evidence"],
+                           capture_output=True, text=True)
+    listed = probe.stdout.split() if probe.returncode == 0 else []
+    evidence = root / "release-evidence"
+    disk_runs = {p.parent.name.removeprefix("acceptance-") for p in evidence.glob("acceptance-*/SUMMARY.txt")}
+    disk_legs = {p.parent.name.removeprefix("browser-a11y-") for p in evidence.glob("browser-a11y-*/report.json")}
+    runs = {m.group(1) for p in listed if (m := CITED_RUN.search(p))}
+    legs = {m.group(1) for p in listed if (m := CITED_LEG.search(p))}
+    return runs, legs, disk_runs, disk_legs
+
+
+def citation_roster_problems(texts, tracked_runs, tracked_legs, disk_runs, disk_legs):
+    """Every run or a11y leg a release face names must be collectable by a reader of the archive.
+
+    A run whose SUMMARY is on this host but untracked makes the sentence unverifiable everywhere else; a
+    stamp that exists nowhere is a worse defect than that, so it is judged even when the line claims the
+    exemption. Scope is the physical line, which is also the exemption's scope -- the marker is only worth
+    what it covers.
+    """
+    problems, runs_read, legs_read = [], 0, 0
+    for rel, text in sorted(texts.items()):
+        for number, line in enumerate(text.splitlines(), start=1):
+            acknowledged = bool(UNTRACKED_ACK.search(line))
+            for stamp in dict.fromkeys(CITED_RUN.findall(line)):
+                runs_read += 1
+                if stamp in tracked_runs:
+                    continue
+                if stamp not in disk_runs:
+                    problems.append(f"{rel}:{number} cites acceptance-{stamp}, which is neither in the "
+                                    "tracked archive nor on disk -- there is nothing to collect")
+                elif not acknowledged:
+                    problems.append(f"{rel}:{number} cites acceptance-{stamp} whose SUMMARY.txt is not "
+                                    "tracked; the line has to say so (未入库) or the file has to be committed")
+            for stamp in dict.fromkeys(CITED_LEG.findall(line)):
+                legs_read += 1
+                if stamp in tracked_legs:
+                    continue
+                if stamp not in disk_legs:
+                    problems.append(f"{rel}:{number} cites browser-a11y-{stamp}, which is neither in the "
+                                    "tracked archive nor on disk -- there is nothing to collect")
+                elif not acknowledged:
+                    problems.append(f"{rel}:{number} cites browser-a11y-{stamp} whose report is not "
+                                    "tracked; the line has to say so (未入库) or the file has to be committed")
+    return problems, runs_read, legs_read
+
+
+def test_every_run_and_leg_cited_by_a_face_is_tracked_or_declared_untracked():
+    tracked_runs, tracked_legs, disk_runs, disk_legs = evidence_roots()
+    texts = {p.relative_to(ROOT).as_posix(): p.read_text(encoding="utf-8")
+             for p in (CHECKLIST, REPORT, CHANGELOG, STATUS, RUNBOOK, ROOT / "docs/CODE_WALKTHROUGH.md")
+             if p.exists()}
+    problems, runs_read, legs_read = citation_roster_problems(texts, tracked_runs, tracked_legs,
+                                                              disk_runs, disk_legs)
+    assert not problems, " | ".join(problems)
+    # Coverage floors: the rule reads citations out of prose, so a pattern that stopped matching would show
+    # up as a clean sweep rather than as a failure. Both floors sit below the measured count on purpose.
+    assert runs_read >= 45, f"the clause read {runs_read} run citations across the six faces"
+    assert legs_read >= 25, f"the clause read {legs_read} a11y-leg citations across the six faces"
+
+
+def test_the_citation_roster_fires_on_a_run_that_was_never_collected(tmp_path):
+    tracked_runs, tracked_legs = {"20260101T000000Z"}, {"20260102T000000Z"}
+    disk_runs, disk_legs = {"20260103T000000Z"}, {"20260104T000000Z"}
+    faces = {"docs/d.md": (
+        "Authoritative run `acceptance-20260101T000000Z`, leg `browser-a11y-20260102T000000Z`.\n"
+        "A red run `acceptance-20260103T000000Z` and its leg `browser-a11y-20260104T000000Z` are on disk.\n")}
+    problems, runs_read, legs_read = citation_roster_problems(faces, tracked_runs, tracked_legs,
+                                                              disk_runs, disk_legs)
+    assert runs_read == 2 and legs_read == 2, (runs_read, legs_read)
+    assert len(problems) == 2, problems
+    assert any("acceptance-20260103T000000Z" in p and "not tracked" in p for p in problems), problems
+    assert any("browser-a11y-20260104T000000Z" in p for p in problems), problems
+    declared = {"docs/d.md": faces["docs/d.md"].replace("A red run", "未入库：A red run")}
+    quiet, _, _ = citation_roster_problems(declared, tracked_runs, tracked_legs, disk_runs, disk_legs)
+    assert quiet == [], quiet
+    # A stamp with no bytes anywhere stays red even under the exemption: the marker describes a collection
+    # decision, it cannot manufacture an artifact.
+    ghost = {"docs/d.md": "Kept as a finding: `acceptance-20260105T000000Z`（未入库）.\n"}
+    fired, _, _ = citation_roster_problems(ghost, tracked_runs, tracked_legs, disk_runs, disk_legs)
+    assert len(fired) == 1 and "nor on disk" in fired[0], fired
+    del tmp_path
