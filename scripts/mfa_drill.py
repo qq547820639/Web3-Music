@@ -140,6 +140,41 @@ def retry_matches_window(retry_after, ttl: int, elapsed: float, slack: float = 1
     return 0 < stated <= 60 and 0 <= stated - ttl <= elapsed + slack
 
 
+def refusals_count_down(waits: list, span: float, ttl_before: int, ttl_after: int,
+                        min_span: float = 2.0) -> bool:
+    """Whether the waits the api itself stated describe one window running down under the traffic.
+
+    Every sample is a `Retry-After` header read off a refusal the api answered, so the two ends of the
+    comparison are computed server-side at answer time and carried on the same transport: no `docker exec`
+    round trip sits between them. That matters because the reading the check used to make -- the store's TTL
+    sampled before and after the traffic -- is taken across two exec round trips whose own latency this drill
+    does not control, and on a busy host it is those seconds, not the limiter, that set the answer. The store
+    is still consulted, but only for the one thing its read latency cannot fake: a key with a fixed deadline
+    never reads higher later on, so `ttl_after > ttl_before` is a re-arm or a replaced window wherever the
+    host sits.
+
+    A limiter that re-arms on a refusal cannot pass: it restates the full window on every knock, so the
+    sequence never spends anything. A window that expired and was replaced mid-traffic cannot pass either,
+    because the traffic stops being refused and the non-429 answer enters `waits` as `None`.
+
+    The floors are durations, not rates. The check this replaces required five refused requests inside a
+    two-second budget, which is a throughput criterion wearing a behaviour test: the same limiter code read
+    14 to 169 refused requests in that budget across nineteen chain transcripts (working files under
+    `.scratch/`, quoted with their figures in `docs/FINAL_RELEASE_STATUS.md`), and
+    `acceptance-20260929T080910Z` (host load 50.45 against 10 cpus) read 3 and reddened. Here a slower host
+    just knocks for longer.
+    """
+    if len(waits) < 2 or span < min_span:
+        return False
+    if not all(isinstance(w, int) and 0 < w <= 60 for w in waits):
+        return False
+    if any(before < after for before, after in zip(waits, waits[1:])):
+        return False
+    if not 0 < ttl_after <= ttl_before <= 60:
+        return False
+    return waits[0] - waits[-1] >= 1
+
+
 def container_file(service: str, path: str) -> str:
     out = subprocess.run(["docker", "compose", "exec", "-T", service, "cat", path],
                          capture_output=True, text=True)
@@ -484,24 +519,36 @@ def main() -> int:
               f"Retry-After {retry_after!r} against TTL {ttl} {gap:.1f}s after the answer")
         # Decay has to be measured *while* the door is being knocked on: a nap after the last refusal lets
         # even a refreshing limiter count down, and that is how the first version of this check read green
-        # against the pre-fix script. So the traffic runs until two seconds of wall time have gone by, the
-        # number of refused requests it fit in is reported, and the window is required to have spent about
-        # that much of itself -- which a limiter that re-arms on every refusal cannot do.
+        # against the pre-fix script. So the traffic runs until it has filled a duration floor and a request
+        # floor -- both satisfiable by waiting on a slow host, which is what makes them preconditions rather
+        # than verdicts -- and what is judged is the sequence of waits the api stated across that traffic.
         ttl_before = ttl
-        knocked, started = 0, time.monotonic()
-        while time.monotonic() - started < 2.0:
-            httpx.post(BASE + "/auth/login", json={"email": WINDOW_PROBE, "password": "again"}, timeout=40)
+        knocked, waits, stamps = 0, [], []
+        traffic_started = None
+        while True:
+            sent_at = time.monotonic()
+            refusal = httpx.post(BASE + "/auth/login", json={"email": WINDOW_PROBE, "password": "again"},
+                                 timeout=40)
+            if traffic_started is None:
+                traffic_started = sent_at
             knocked += 1
-        elapsed = time.monotonic() - started
+            stated = refusal.headers.get("Retry-After", "")
+            waits.append(int(stated) if refusal.status_code == 429 and stated.isdigit() else None)
+            stamps.append(time.monotonic())
+            if stamps[-1] - traffic_started >= 2.0 and knocked >= 5:
+                break
+        elapsed = stamps[-1] - traffic_started
+        span = stamps[-1] - stamps[0]
         after = redis_cli("GET", login_key)
         ttl_after = int(redis_cli("TTL", login_key) or -2)
         check("a refusal spends none of the window it reports",
               filled == after == str(per_minute),
               f"counter read {filled!r} then {after!r} against a limit of {per_minute}")
-        check(f"the window kept counting down through {knocked} refused requests in {elapsed:.1f}s "
-              "instead of restarting",
-              knocked >= 5 and 0 < ttl_after <= ttl_before - 1,
-              f"TTL {ttl_before} then {ttl_after} after {elapsed:.1f}s of refusals")
+        check(f"the window counted down across {knocked} requests and {span:.1f}s of traffic and never "
+              "re-armed",
+              refusals_count_down(waits, span, ttl_before, ttl_after),
+              f"Retry-After {waits[:3]} … {waits[-3:]} over {span:.1f}s ({elapsed:.1f}s of traffic) against "
+              f"store TTL {ttl_before} then {ttl_after}")
         time.sleep(max(ttl_after, 1) + 2)
         reopened = sign_in(WINDOW_PROBE)
         check("when the window passes the account signs in, so this is throttling and not a lockout",

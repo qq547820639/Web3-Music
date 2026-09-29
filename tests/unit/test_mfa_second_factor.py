@@ -92,6 +92,43 @@ def test_the_refusal_wait_is_compared_to_the_window_within_the_time_that_passed(
     # Same three numbers, opposite verdicts: only the measured interval changed.
     assert drill.retry_matches_window("40", 30, 9.5) is True
     assert drill.retry_matches_window("40", 30, 1.5) is False
+
+
+def test_the_window_is_judged_by_the_waits_stated_under_traffic_not_by_a_request_rate():
+    """`acceptance-20260929T080910Z` reddened a correct limiter for want of five refusals in two seconds.
+
+    The check demanded `knocked >= 5` inside a 2.0 s budget, so it measured the machine: the same code read
+    14 to 169 refused requests in that budget across the nineteen chain transcripts this machine kept under
+    `.scratch/` (working files, not in the tracked archive), and `acceptance-20260929T080910Z` -- host load
+    50.45 against 10 cpus, 2.2 s of traffic fitting three requests -- read 3. The floors
+    are now durations and request counts the loop waits out, so a slower host costs time rather than a
+    verdict, and the thing judged is the sequence of `Retry-After` values the api stated while the door was
+    being knocked on, which a re-arming limiter cannot produce.
+    """
+    drill = _mfa_drill()
+    # One window spending itself while traffic runs: the stated waits fall, and fall with the clock.
+    assert drill.refusals_count_down([42, 41, 40, 39, 38], 2.4, 42, 38) is True
+    # A limiter that re-arms on every refusal restates the whole window. Same span, nothing spent.
+    assert drill.refusals_count_down([60, 60, 60, 60, 60], 2.4, 60, 60) is False
+    # A wait that grows mid-flight is a re-arm too, even when the last sample lands lower than the first.
+    assert drill.refusals_count_down([42, 41, 60, 59, 58], 2.4, 42, 58) is False
+    # The store reads higher later on: a fixed deadline cannot do that, whatever the exec latency was.
+    assert drill.refusals_count_down([42, 41, 40, 39, 38], 2.4, 42, 45) is False
+    # The key is gone (-2): the window expired or was deleted, so no decay reading exists to judge.
+    assert drill.refusals_count_down([42, 41, 40, 39, 38], 2.4, 42, -2) is False
+    # A request that stopped being a refusal enters as None: the traffic no longer overlapped a full window.
+    assert drill.refusals_count_down([42, 41, None, 39, 38], 2.4, 42, 38) is False
+    # Vacuity arms: two samples, and the traffic has to have run long enough to see a second roll off.
+    assert drill.refusals_count_down([42], 2.4, 42, 41) is False
+    assert drill.refusals_count_down([42, 41], 0.4, 42, 41) is False
+    # Out-of-range stated waits are not windows.
+    assert drill.refusals_count_down([0, 0, 0], 3.0, 42, 40) is False
+    assert drill.refusals_count_down([61, 60, 60], 3.0, 61, 60) is False
+    # Same sequence and same store, opposite verdicts: only the measured interval changed.
+    assert drill.refusals_count_down([42, 40], 2.0, 42, 40) is True
+    assert drill.refusals_count_down([42, 40], 1.9, 42, 40) is False
+
+
 def test_seal_round_trips(keyed):
     secret = keyed.new_secret()
     assert keyed.unseal(keyed.seal(secret)) == secret
