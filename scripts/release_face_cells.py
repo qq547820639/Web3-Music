@@ -334,6 +334,8 @@ CELLS = [
     ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
      r"([\d.]+) req/s", "{capacity_throughput_rps} req/s"),
     ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
+     r"（共 (\d+) 个请求）", "（共 {capacity_total_requests} 个请求）"),
+    ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
      r"复跑退码 `(\d)`", "复跑退码 `{capacity_acceptance_rc}`"),
 ]
 

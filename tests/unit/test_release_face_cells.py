@@ -322,9 +322,6 @@ DATED_ONLY_FIGURES = {
 AWAITING_ARCHIVE = {
     "census_selftest_arms": "produced only by a run whose step 1 already ran the cross-check self-test, so "
                             "every earlier archive entry reads NOT-FOUND and a cell would refuse every round",
-    # The paired capacity run predates scripts/capacity_metrics.py, which is what added this reading; the next
-    # CAPACITY=1 chain produces it, and the cell may be written only once some tracked run has stated it.
-    "capacity_total_requests": "no tracked run whose row 23 executed has published it yet",
 }
 
 
