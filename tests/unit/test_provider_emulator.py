@@ -1,6 +1,7 @@
 import importlib.util
 import os
 import struct
+import threading
 import time
 import wave
 from pathlib import Path
@@ -75,16 +76,72 @@ def fake_writer(delay: float):
     return write
 
 
+def synthesis_on_the_serving_thread(writes, services) -> bool:
+    """Whether any clip was written by a thread that also answered a request.
+
+    The claim the emulator makes in its own comment is positional, not temporal: `build_results` is
+    "only ever called off the request path". A span cannot test that -- the pool's own work delays a
+    correct replay by up to a second on this fixture (see the case below for the measured band) -- but
+    thread identity states it exactly: if the bytes were written by a thread that served a request,
+    some client waited for synthesis.
+    """
+    return bool(set(writes) & set(services))
+
+
+def test_the_serving_thread_rule_fires_on_both_polarities():
+    """The rule above must be able to catch the defect, not just to be quiet when nothing is wrong."""
+    pool, request = 111, 222
+    # Clips generated on the pool while a different thread answered: compliant.
+    assert synthesis_on_the_serving_thread([pool, pool, pool], [request]) is False
+    # No writes at all (the replay was answered from the stored row): compliant, and not the shape
+    # the earlier span assertion could tell apart from a job that simply finished fast.
+    assert synthesis_on_the_serving_thread([], [request]) is False
+    # One clip written by the thread that served a request: the defect, and it fires whatever the clock
+    # says -- at zero milliseconds, on a machine doing nothing else.
+    assert synthesis_on_the_serving_thread([request], [request]) is True
+    assert synthesis_on_the_serving_thread([pool, request], [request]) is True
+    # A serving thread is only evidence when there was one; an empty service list means the spy never
+    # ran, which the calling case refuses rather than passes.
+    assert synthesis_on_the_serving_thread([pool], []) is False
+
+
 def test_no_client_waits_for_clip_synthesis(tmp_path):
-    """Re-submitting an aged job must cost the same as submitting a fresh one.
+    """Re-submitting an aged job must do no synthesis work itself and must not wait for any.
 
     The regression this pins: `create_job` is an async def, and the idempotency-replay branch
     generated every missing clip inline. Measured on the running stack, replaying an eight-candidate
     job cost 9.98s and an unrelated GET /health queued behind it cost 9.95s -- one client's poll
     stopped the whole emulator. The acceptance suite's 20s read timeout blew on exactly that request.
+
+    What used to catch it here was `elapsed < 1.0` -- a span, which this fixture itself makes noisy:
+    the eight clips cost 0.5s each and run on the generator pool while the replay is being answered,
+    and the GIL makes the correct replay wait for the thread that is holding it. Measured with
+    `.scratch/probe_replay_margin.py` against this same module (working file, not in the tracked
+    archive): ten repeats on an idle machine read 0.211s to 1.047s, one of them already past the
+    bound with nothing wrong (same job id, no pool submit, `created_at` unmoved); ten repeats under
+    eight spinning processes read 0.003s to 0.902s. A criterion whose noise band reaches its threshold
+    is a coin flip, and it is a coin flip that reddens row 1 of the chain. The two claims below are
+    causal instead: the thread that answered the replay never ran a synthesis, and the replay was
+    answered while the job still had no published results -- so a handler that synthesises or waits is
+    caught at zero milliseconds. The span is reported, never judged.
     """
     module = load_module(tmp_path)
-    module.write_wav = fake_writer(0.5)
+    written_on = []
+    real_write = fake_writer(0.5)
+
+    def writer(path, seed, bpm, ordinal):
+        written_on.append(threading.get_ident())
+        return real_write(path, seed, bpm, ordinal)
+
+    module.write_wav = writer
+    served_on = []
+    real_resolve = module.resolve
+
+    def spy_resolve(row):
+        served_on.append(threading.get_ident())
+        return real_resolve(row)
+
+    module.resolve = spy_resolve
     client = TestClient(module.app)
     payload = {"title": "Replay", "lyrics": "line", "styles": "piano", "bpm": 72,
                "candidate_count": 8, "scenario": "success"}
@@ -98,10 +155,25 @@ def test_no_client_waits_for_clip_synthesis(tmp_path):
     elapsed = time.perf_counter() - started
     assert replay.status_code == 202
     assert replay.json()["id"] == job_id, "the replay must be the same job, not a second one"
-    assert elapsed < 1.0, (
-        f"an idempotent replay waited {elapsed:.2f}s on 8 clips at 0.5s each; "
-        "clip synthesis has moved back onto the request path"
+    assert served_on, "the replay never reached resolve(), so the thread evidence is missing"
+    assert written_on, (
+        "no clip was written at all, so the serving-thread rule had nothing to look at -- the fixture's "
+        "generation never ran")
+    assert not synthesis_on_the_serving_thread(written_on, served_on), (
+        f"clip bytes were written on the thread that answered the replay ({elapsed:.3f}s, jobs "
+        f"{len(written_on)} writes, serving thread {sorted(set(served_on))}) -- synthesis is back "
+        "on the request path"
     )
+    # The other half: the replay must have been answered *before* the pool finished, or it waited.
+    assert replay.json()["status"] != "completed", (
+        f"the replay returned a finished job after {elapsed:.3f}s of eight 0.5s clips that had only "
+        "2.2s of head start, so the handler waited for generation instead of answering from the row"
+    )
+    with module.db() as conn:
+        row = conn.execute("SELECT created_at, results_json FROM jobs WHERE id=?", (job_id,)).fetchone()
+    assert row["results_json"] is None, (
+        "results were already published when the replay answered, so this replay proves nothing about "
+        "waiting -- the fixture's own generation window has moved")
     result = wait_for_terminal(client, job_id)
     assert sum(x["status"] == "completed" for x in result["results"]) == 8
     for clip in result["results"]:

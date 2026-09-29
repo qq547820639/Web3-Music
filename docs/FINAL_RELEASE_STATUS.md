@@ -1658,8 +1658,9 @@ TTL 42 then 29 after 2.2s of refusals`；该步自记环境行 `failed_step_env:
 `scripts/report_drill.py:369-373`（三次递交后 `after < before` 的严格不等式，无时钟恒等式；暴露面在快主机端——
 两次取样落在同一个 Redis 秒内，至今未红）、`scripts/browser_a11y.py:135` 的 `wait_painted(gap_ms=250, tries=12)`
 （3 秒内要看到两次相同的绘制签名，`:474` 把它记成 `settle`，`:171` 再落进 `failures`；这正是行 22 那条腿。已量过它的面：
-56 份在册浏览器产物里 5242 次带 `settle` 的扫描全部读 `stable`（含本次这条腿的 118 次；另有 36 次扫描不带该字段），`timeout` 零次——所以这是**潜在**位、不是已观测位）。此外 `tests/unit/test_provider_emulator.py:101` 的 `assert elapsed < 1.0` 与
-`scripts/reconcile_market.py:161-167` 的「睡 2 秒后数一次」也同族，均未复核。**这些不是本轮的结论，是一份待量的清单。**
+56 份在册浏览器产物里 5242 次带 `settle` 的扫描全部读 `stable`（含本次这条腿的 118 次；另有 36 次扫描不带该字段），`timeout` 零次——所以这是**潜在**位、不是已观测位）。`scripts/reconcile_market.py:161-167` 的「睡 2 秒后数一次」也仍在清单上，未复核。
+
+**清单第一项已量完并改掉（同日第二次提交）。** `tests/unit/test_provider_emulator.py` 那条 `assert elapsed < 1.0` 不是潜在的，是已经在掷硬币：用 `.scratch/probe_replay_margin.py`（工作文件，不在在册证据里）对同一个模块重放十次，空闲机上读数 0.211~1.047 s，其中一次**已经越过 1.0 s 而代码没有任何毛病**（同一个 job id、池子没有被重新提交、`created_at` 未动）；八进程满载再十次读数 0.003~0.902 s。方差是夹具自己造出来的——八段 0.5 s 的合成在生成池里跑，而 `create_job` 是 `async def`，GIL 让正确的重放也要等最多一秒。判据换成两根因果尺子：①写盘线程与应答线程不得有交集（`synthesis_on_the_serving_thread`，空集与「一次都没写」都各有空转臂）；②重放必须在结果尚未发布时就答复（答完再读 `results_json` 必须仍为 NULL），这条专门抓「处理器等池子」那种形状。耗时只打印，不判决。变异臂（`.scratch/mutation_replay_inline.py`，把 `return resolve(existing)` 改成先 `publish(...)` 再答）实测两条都开火：`wrote_on_serving_thread=True`、`results_json_published_after_replay=True`，重放本身拖到 2.1 s。**注意这把尺子量的对象**：Provider 模拟器（`services/provider-emulator/main.py`，自标 development only; not Suno），不是生产网关。**未实测**：空闲那一次 1.047 s 的越界是否已在某次真实链里红过——历史 492 条常驻用例全绿，说明它至今只是运气。
 
 **行 22 的对照样本，本轮拿到了。** 本轮权威运行 `acceptance-20260929T102046Z` 的浏览器腿 `browser-a11y-20260929T103747Z` 两侧 4xx 计数一致（50 对 50），该链收尾自记 `host_load="12.23 14.11 14.03" host_cpus=10 docker_cpus=4`。那条被两次 fail-fast 挡住的腿这次跑完：产物两侧一致——
 `server_4xx_events: 50` 对 `gate_4xx_events: 50`（`gate_5xx_events: 2` 是注入的 `route.fulfill` 500，判据本来就豁免；
