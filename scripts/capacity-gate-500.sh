@@ -80,9 +80,10 @@ fi
 accept_rc=0
 # The suite's precondition is the seeded ledger: migration 001:515-524 grants every workspace exactly 1000
 # credits, one full suite run spends 40 (measured: available 960 after a single run), and `POST /jobs` raises
-# short. Reaching this leg after 22 chain rows means the drills have already spent the grant down, so the run
-# measures "did the burst break domain correctness" only if the database is renewed first -- otherwise it
-# measures how much budget the earlier rows left. down -v + up -d + health wait, then the same run.
+# 402 with `available=…, required=…` when the balance is short of the quote. Reaching this leg after 22 chain
+# rows means the drills have already spent the grant down, so the run measures "did the burst break domain
+# correctness" only if the database is renewed first -- otherwise it measures how much budget the earlier rows
+# left. down -v + up -d + health wait, then the same run.
 docker compose $FILES --profile '*' down -v >/dev/null 2>&1 || true
 docker compose $FILES up -d >>"$log" 2>&1
 for probe in $(seq 1 60); do
@@ -93,25 +94,12 @@ done
 echo "regression database: renewed (down -v + up -d, ${h:-0} containers healthy after ${probe} probes)"
 docker compose $FILES --profile test run --rm acceptance | tee -a "$log" || accept_rc=$?
 
-# This step's own readings, in the protocol `run_step` copies into SUMMARY.txt keyed by the step name. Read
-# from the log the tool just wrote; if a reading is missing the line is refused rather than filled with 0,
-# because a zero would be stamped as a measurement. `|| true` on each extraction: an empty grep under pipefail
-# would abort the assignment (the same trap that silenced step 2 in 20260928T184002Z).
-p50=$(grep -oE 'p50=[0-9.]+' "$log" | tail -1 | cut -d= -f2 || true)
-p95=$(grep -oE 'p95=[0-9.]+' "$log" | tail -1 | cut -d= -f2 || true)
-p99=$(grep -oE 'p99=[0-9.]+' "$log" | tail -1 | cut -d= -f2 || true)
-rps=$(grep -oE 'throughput=[0-9.]+' "$log" | tail -1 | cut -d= -f2 || true)
-# `(^|[^_])` is load-bearing: the bare pattern also matches the threshold on the verdict line
-# (`max_error_rate=1.0%`), which would publish a limit as a measurement. Measured on the first arm after this
-# change, which read `error_rate_pct=1.0` while the tool had printed `error_rate=0.000%`.
-err=$(grep -oE '[^_]error_rate=[0-9.]+' "$log" | tail -1 | sed 's/^[^e]*error_rate=//' || true)
-if [ -n "$p50" ] && [ -n "$p95" ]; then
-  printf 'metric users=%s requests_per_user=%s p50_ms=%s p95_ms=%s p99_ms=%s throughput_rps=%s error_rate_pct=%s acceptance_rc=%s\n' \
-    "${CAPACITY_USERS:-500}" "${CAPACITY_REQUESTS_PER_USER:-2}" "$p50" "$p95" "${p99:-unset}" \
-    "${rps:-unset}" "${err:-unset}" "$accept_rc"
-else
-  echo "metric unavailable: the load tool printed no latency line (log $log)"
-fi
+# This step's own readings, rendered by scripts/capacity_metrics.py so the parsing carries a resident test
+# (tests/unit/test_capacity_metrics.py, fixture: a real arm transcript). The renderer names what is missing
+# instead of filling a zero, and never publishes a threshold as a measurement -- the inline version it replaces
+# read `error_rate_pct=1.0` from `max_error_rate=1.0%` while the tool had printed `error_rate=0.000%`.
+python scripts/capacity_metrics.py "$log" "$accept_rc" \
+  || echo "metric unavailable: the renderer exited non-zero (log $log)"
 
 echo "capacity evidence: $log"
 
