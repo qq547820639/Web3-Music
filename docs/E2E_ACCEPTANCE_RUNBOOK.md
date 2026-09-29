@@ -173,7 +173,7 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 门禁 | 判定标准 | Go | No-Go |
 |---|---|---|---|
 | 静态校验 | `static-verify.sh` 退出码 0 | ✅ | ❌ |
-| 单元测试 | `pytest -q tests/unit` 全过。用例数由 `pytest -q tests/unit --collect-only -q` 现读（本轮实测 478 个收集实例，含参数化展开），门禁判的是退出码 0、且数量不得比上一轮少 | ✅ | ❌ |
+| 单元测试 | `pytest -q tests/unit` 全过。用例数由 `pytest -q tests/unit --collect-only -q` 现读（本轮实测 482 个收集实例，含参数化展开），门禁判的是退出码 0、且数量不得比上一轮少 | ✅ | ❌ |
 | 默认 E2E | `acceptance`（步骤 4）全过 | ✅ | ❌ |
 | 契约测试 | `contract-test.sh` 全过 | ✅ | ❌ |
 | 故障恢复 | `chaos-worker-recovery.sh` verify 通过 | ✅ | ❌ |

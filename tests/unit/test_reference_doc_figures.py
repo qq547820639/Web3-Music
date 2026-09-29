@@ -115,6 +115,11 @@ def _unguarded_writes(root):
     return sum(1 for r in routes if r["writes"] and r["authority"] == "app-level-only")
 
 
+def _step_up_writes(root):
+    routes = json.loads((root / MATRIX_CONTRACT).read_text(encoding="utf-8"))["routes"]
+    return sum(1 for r in routes if r["writes"] and r["step_up"])
+
+
 def _routes(root):
     return len(json.loads((root / MATRIX_CONTRACT).read_text(encoding="utf-8"))["routes"])
 
@@ -153,6 +158,7 @@ WALKTHROUGH = "docs/CODE_WALKTHROUGH.md"
 
 FAMILIES = (
     ("unguarded write routes", CHECKLIST, re.compile(r"只有 (\d+) 条写路由不带角色检查"), _unguarded_writes),
+    ("step-up write routes", CHECKLIST, re.compile(r"实测 (\d+) 条写路由带它"), _step_up_writes),
     ("compose overlays", WALKTHROUGH, re.compile(r"（\+(\d+) 个覆层）"), _compose_overlays),
     ("migrations", WALKTHROUGH, re.compile(r"(\d+) 个迁移"), _migrations),
     ("json schemas", WALKTHROUGH, re.compile(r"顶层 (\d+) 个"), _schemas),
