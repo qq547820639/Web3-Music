@@ -1653,3 +1653,69 @@ def test_the_citation_roster_fires_on_a_run_that_was_never_collected(tmp_path):
     fired, _, _ = citation_roster_problems(ghost, tracked_runs, tracked_legs, disk_runs, disk_legs)
     assert len(fired) == 1 and "nor on disk" in fired[0], fired
     del tmp_path
+
+
+# Protocol keys that belong to one step must never be published under another step's name.
+INNER_OWNED_KEYS = ("unit_passed", "refusal_census_selftest_arms")
+METRIC_ROW = re.compile(r"^metrics (\S+) (.*)$")
+GUARD_TOKEN = "inner-step"
+
+
+def metric_attribution_problems(runs):
+    """(stamp, guard_state, summary_text) -> lines that re-key another step's reading onto this step.
+
+    `guard_state` is "guarded" when the run's own tree keeps nested verifiers silent (the token lives in
+    scripts/capacity-gate-500.sh), "pre-fix" when that tree demonstrably lacks it, and "unreadable" when the run's
+    commit cannot be opened at all. Only "pre-fix" is exempt: its SUMMARY is history, and a rule that reddens on it
+    demands a rewrite of evidence rather than a change in behaviour. "unreadable" is reported instead of skipped --
+    an exemption that cannot be attributed is an invisible exemption.
+    """
+    problems = []
+    for stamp, guard_state, text in runs:
+        if guard_state == "pre-fix":
+            continue
+        if guard_state == "unreadable":
+            problems.append(f"acceptance-{stamp}: its own commit cannot be read, so whether this run is allowed "
+                            "to publish another step's keys cannot be decided")
+            continue
+        for line in text.splitlines():
+            row = METRIC_ROW.match(line)
+            if not row or row.group(1) == "static-verify":
+                continue
+            for key in re.findall(r"(\w+)=", row.group(2)):
+                if key in INNER_OWNED_KEYS:
+                    problems.append(f"acceptance-{stamp}: {line.strip()!r} publishes static-verify's "
+                                    f"{key!r} under step {row.group(1)!r}")
+    return problems
+
+
+def test_a_step_never_publishes_another_step_its_own_reading():
+    reader = reader_module()
+    runs = []
+    for path in reader.summary_paths():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        commit = (re.search(r"git_commit=(\w+)", text) or [None, ""])[1]
+        shown = subprocess.run(["git", "-C", str(ROOT), "show", f"{commit}:scripts/capacity-gate-500.sh"],
+                               capture_output=True, text=True)
+        state = ("unreadable" if shown.returncode != 0
+                 else "guarded" if GUARD_TOKEN in shown.stdout else "pre-fix")
+        runs.append((path.parent.name.removeprefix("acceptance-"), state, text))
+    problems = metric_attribution_problems(runs)
+    assert not problems, " | ".join(problems)
+    states = {state for _, state, _ in runs}
+    assert "guarded" in states, ("no tracked run's tree carries the guard, so this rule judged nothing and reads "
+                                 "green by default")
+    assert "pre-fix" in states, ("the exemption arm has no member left to cover; fold it into the rule or prove "
+                                 "the must-fire control still stands alone")
+
+
+def test_the_metric_attribution_rule_fires_only_where_it_should():
+    violation = "metrics capacity-gate-500 unit_passed=483\n"
+    compliant = ("metrics capacity-gate-500 p95_ms=10958.8 acceptance_rc=0\n"
+                 "metrics static-verify unit_passed=483\n")
+    fired = metric_attribution_problems([("20260101T000000Z", "guarded", violation)])
+    assert len(fired) == 1 and "unit_passed" in fired[0] and "capacity-gate-500" in fired[0], fired
+    assert metric_attribution_problems([("20260101T000000Z", "guarded", compliant)]) == [], "own keys stay silent"
+    assert metric_attribution_problems([("20251231T230000Z", "pre-fix", violation)]) == [], "pre-fix runs are exempt"
+    blind = metric_attribution_problems([("20251231T230000Z", "unreadable", compliant)])
+    assert len(blind) == 1 and "cannot be read" in blind[0], blind
