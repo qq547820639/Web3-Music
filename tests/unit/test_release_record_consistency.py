@@ -1052,8 +1052,18 @@ def test_the_contract_quoting_census_is_not_vacuous():
     faces = sorted({rel for rel, _m, _p, _k in CONTRACT_QUOTES})
     absent = [rel for rel in faces if not (ROOT / rel).exists()]
     assert not absent, f"the table quotes faces that are not in the tree: {absent}"
-    assert len(CONTRACT_QUOTES) >= 4, (f"only {len(CONTRACT_QUOTES)} contract quotes are registered; the "
-                                       "prose carries more copies than the clause checks")
+    published = set(contract_figures()) - {"security_schemes", "migration_gap"}
+    quoted = {key for _rel, _m, _p, keys in CONTRACT_QUOTES for key in keys}
+    unquoted = sorted(published - quoted)
+    assert not unquoted, (f"the reader publishes {unquoted} but no row quotes them, so a stale copy of "
+                          "those figures in prose would read green")
+    assert len(CONTRACT_QUOTES) >= 18, (f"only {len(CONTRACT_QUOTES)} contract quotes are registered; the "
+                                        "prose carries more copies than the clause checks")
+    per_face = {}
+    for rel, _m, _p, keys in CONTRACT_QUOTES:
+        per_face[rel] = per_face.get(rel, 0) + len(keys)
+    assert all(count >= 2 for count in per_face.values()) and len(per_face) >= 3, (
+        f"a face stopped being quoted twice over, so the table is thinner than it reads: {per_face}")
     assert figures["security_schemes"], (
         "the tracked OpenAPI contract carries no securitySchemes, so the walkthrough's sentence about them "
         "needs to be re-read rather than left asserting the opposite of what the artifact holds")

@@ -262,8 +262,15 @@ def browser_pair(run: dict) -> pathlib.Path | None:
     low, high = parts[-2], parts[-1]
     span = (dt.datetime.strptime(low, "%Y-%m-%dT%H:%M:%SZ"),
             dt.datetime.strptime(high, "%Y-%m-%dT%H:%M:%SZ") + dt.timedelta(minutes=5))
+    tracked = tracked_evidence()
     candidates = []
     for report in sorted(EVIDENCE.glob("browser-a11y-*/report.json")):
+        # a leg that is not in the index cannot be credited to a run: it has no owner, and the review
+        # measured that a hand-made untracked report on the same commit inside the window pairs fine.
+        # Reports outside this root are fixtures, not archive, so the index says nothing about them.
+        if (tracked is not None and report.is_relative_to(ROOT)
+                and str(report.relative_to(ROOT)) not in tracked):
+            continue
         try:
             data = json.loads(report.read_text(encoding="utf-8"))
             made = dt.datetime.strptime(str(data.get("generated_at")), "%Y-%m-%dT%H:%M:%SZ")
@@ -271,7 +278,19 @@ def browser_pair(run: dict) -> pathlib.Path | None:
             continue
         if str(data.get("git_commit", "")) == run["commit"] and span[0] <= made <= span[1]:
             candidates.append(report)
-    return candidates[-1] if candidates else None
+    if len(candidates) > 1:
+        raise SystemExit(f"two tracked legs pair to acceptance-{run['stamp']}: "
+                         f"{[c.parent.name for c in candidates]}; refusing to guess the newest")
+    return candidates[0] if candidates else None
+
+
+def tracked_evidence():
+    """The evidence files the index knows, or None where there is no index to ask."""
+    probe = subprocess.run(["git", "-C", str(ROOT), "ls-files", "release-evidence"],
+                           capture_output=True, text=True)
+    if probe.returncode != 0:
+        return None
+    return set(probe.stdout.split())
 
 
 def figures(run: dict) -> dict:
