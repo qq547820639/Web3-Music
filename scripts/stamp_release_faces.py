@@ -242,6 +242,58 @@ def step_metrics(run_dir: pathlib.Path) -> dict:
     return out
 
 
+CAPACITY_STEP = "capacity-gate-500"
+# The capacity leg's own readings, published under names that say so. These are paired to a different run than
+# every other figure on purpose: the leg only runs under CAPACITY=1, and an all-green authority always has its
+# row 23 `SKIPPED`, so pairing to the newest all-green run would make the family unstampable forever. The face
+# quoting them has to name the run they came from in the same sentence -- attributing one tree's tail to another
+# tree is the exact error this whole archive exists to prevent. See docs/E2E_ACCEPTANCE_RUNBOOK.md's row-23 note.
+CAPACITY_FIGURES = {"p50_ms": "capacity_p50_ms", "p95_ms": "capacity_p95_ms", "p99_ms": "capacity_p99_ms",
+                    "throughput_rps": "capacity_throughput_rps", "total_requests": "capacity_total_requests",
+                    "error_rate_pct": "capacity_error_rate_pct", "acceptance_rc": "capacity_acceptance_rc"}
+
+
+def capacity_verdict_of(run_dir: pathlib.Path) -> str:
+    """What the run's own `capacity-gate-500` row says it did, read from the row line."""
+    try:
+        text = (run_dir / "SUMMARY.txt").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        parts = [field.strip() for field in line.split("|")]
+        if len(parts) >= 2 and parts[0] == CAPACITY_STEP:
+            return parts[1]
+    return ""
+
+
+def capacity_pair(all_runs):
+    """The newest tracked run whose row 23 actually executed and stated its readings, or (None, {}, marker).
+
+    A row that was skipped publishes no `metrics` line, so the presence of a latency reading is the evidence that
+    the leg ran; the verdict is read from the row itself rather than inferred from the metrics.
+    """
+    for run in sorted(all_runs, key=lambda r: r["stamp"], reverse=True):
+        got = step_metrics(run["dir"]).get(CAPACITY_STEP) or {}
+        if got.get("p95_ms") not in (None, "", "unset"):
+            return run, got, capacity_verdict_of(run["dir"]) or "no row line"
+    return None, {}, "row 23 never executed with readings"
+
+
+def capacity_figures(all_runs) -> dict:
+    """The leg's numbers as face figures. Keys are always present: no pairing reads NOT-FOUND, never a zero."""
+    names = (*CAPACITY_FIGURES.values(), "capacity_run", "capacity_short", "capacity_verdict")
+    out = dict.fromkeys(names, "NOT-FOUND")
+    run, got, verdict = capacity_pair(all_runs)
+    if run is None:
+        return out
+    out["capacity_run"] = run["stamp"]
+    out["capacity_short"] = str(run["commit"])[:7]
+    out["capacity_verdict"] = verdict
+    for key, name in CAPACITY_FIGURES.items():
+        out[name] = str(got.get(key, "NOT-FOUND"))
+    return out
+
+
 def browser_pair(run: dict) -> pathlib.Path | None:
     """The a11y report that belongs to this acceptance run, judged by the run's own row window.
 
@@ -463,6 +515,9 @@ def main():
         chosen = max(greens, key=lambda r: r["stamp"])
 
     got = figures(chosen)
+    # A second pairing: the capacity leg's readings come from the newest run that executed row 23, because the
+    # authority can never be that run (an all-green chain has the row SKIPPED by definition).
+    got.update(capacity_figures(all_runs))
     if args.json:
         print(json.dumps(got, indent=2, default=str))
         return 0

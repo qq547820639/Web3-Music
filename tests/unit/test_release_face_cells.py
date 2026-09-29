@@ -271,7 +271,9 @@ def test_the_table_asks_for_no_value_nobody_computes():
     """
     try:
         tracked = list(READER.runs())
-        read = set(READER.figures(tracked[0]))
+        # Two producers: the authority's own figures, and the capacity family paired to the newest run that
+        # executed row 23. A key neither one emits can never be filled.
+        read = set(READER.figures(tracked[0])) | set(READER.capacity_figures(tracked))
     except (SystemExit, IndexError, OSError) as exc:
         pytest.skip(f"the reader has no tracked evidence to name its figure keys against: {exc}")
     orphans = sorted(RFC.required_keys() - read - set(RFC.DERIVED))
@@ -320,14 +322,20 @@ DATED_ONLY_FIGURES = {
 AWAITING_ARCHIVE = {
     "census_selftest_arms": "produced only by a run whose step 1 already ran the cross-check self-test, so "
                             "every earlier archive entry reads NOT-FOUND and a cell would refuse every round",
+    # The paired capacity run predates scripts/capacity_metrics.py, which is what added this reading; the next
+    # CAPACITY=1 chain produces it, and the cell may be written only once some tracked run has stated it.
+    "capacity_total_requests": "no tracked run whose row 23 executed has published it yet",
 }
 
 
 def test_every_published_reading_is_quoted_or_accounted_for():
     """No live reading may be published-and-ignored without one of the four stated reasons."""
     try:
-        run = max((r for r in READER.runs() if r["fails"] == 0), key=lambda r: r["stamp"])
-        published = set(READER.figures(run))
+        runs = list(READER.runs())
+        run = max((r for r in runs if r["fails"] == 0), key=lambda r: r["stamp"])
+        # The capacity family is published through a second pairing, so it has to be in the denominator here --
+        # reading only figures(authority) would leave those keys unowned and this test silently green.
+        published = set(READER.figures(run)) | set(READER.capacity_figures(runs))
     except (SystemExit, IndexError, OSError) as exc:
         pytest.skip(f"no all-green tracked run to publish figures: {exc}")
     quoted = RFC.required_keys()

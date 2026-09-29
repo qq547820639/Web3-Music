@@ -223,6 +223,8 @@ docker compose down --remove-orphans
 
 > 不要用 `down -v` 清理，除非你确定要删除 Postgres/MinIO 数据卷（`-v` 会清空本地验收数据）。
 
-## 行 23 的读数为什么故意不做成盖章格
+## 行 23 的读数配到的是哪一次运行
 
-自 `bed2070` 起，容量腿会像其它步骤一样打印一行自己的协议读数（`metrics capacity-gate-500 users=… p50_ms=… p95_ms=… p99_ms=… throughput_rps=… error_rate_pct=… acceptance_rc=…`），并由 `run_step` 逐行抄进该运行的 `SUMMARY.txt`，因此这些数是**入库可复算**的。它们刻意没有接到 `release_face_cells` 的格上，理由是一条机制限制而不是偷懒：`scripts/stamp_release_faces.py` 的派生只对着「最新一条全绿运行」取值，而一台满足不了 `docker-compose.capacity500.yml` 资源请求的宿主上，全绿运行的行 23 必然是 `SKIPPED`（没有该行就没有该读数），一旦给这些键上格，每一轮都会撞上 NOT-FOUND 哨兵并拒整轮重打。所以行 23 的读数留在**点名其运行、并引用其入库工件**的散文里（`docs/COST_OPTIMIZED_500_CONCURRENCY.md` 的 2026-09-29 小节与 `docs/FINAL_RELEASE_STATUS.md` 的当日各节）。要让它可以上格，先得给读者加第二条配对方——「最新一条真正执行过行 23 的运行」，而不是把判据放宽或把 SKIPPED 折算成零。
+自 `bed2070` 起，容量腿像其它步骤一样打印自己的读数行（`metric users=… requests_per_user=… total_requests=… p50_ms=… p95_ms=… p99_ms=… throughput_rps=… error_rate_pct=… acceptance_passed=… acceptance_rc=…`），由 `run_step` 抄进该运行的 `SUMMARY.txt`，所以这些数是入库可复算的。这些格不配权威轮：`stamp_release_faces.figures()` 只对着「最新一条全绿运行」派生，而本机上一切全绿轮的该行按开关必为 `SKIPPED`（800ms 判据在这台 4 vCPU 上过不去），配权威轮就永远读到 NOT-FOUND 并拒每一轮。`capacity_pair()` 是读者的**第二条配对方**——最新一条真正执行过行 23 并报了读数的运行；认它的凭据是该运行有 `metrics capacity-gate-500 …` 行且 `p95_ms` 不是 `unset`，判决文本从该行原句读，不从计数猜。
+
+使用规矩随之确定：`docs/TEST_REPORT.md` 中标记「容量腿在链内的最近读数」那一行，必须在**同一行内**写出它引用的 `acceptance-<时刻>` 与 `commit <短号>`，两处都由格自己填；把这几个数搬进权威轮的句子，就是拿另一棵树的尾巴冒充这一棵树。若哪天行 23 进了全绿轮，`capacity_verdict` 随那一行变成 `PASS`，配对方与句子都不必改。`capacity_total_requests` 目前没有格：配上的那次运行早于加该读数的 `scripts/capacity_metrics.py`，它记在 `test_release_face_cells.AWAITING_ARCHIVE` 的账上，等下一次 `CAPACITY=1` 的链来销。

@@ -314,6 +314,27 @@ CELLS = [
      "{unit_files} 个文件、`pytest -q tests/unit --collect-only -q` 读出 {unit_passed} 个收集实例"),
     ("docs/E2E_ACCEPTANCE_RUNBOOK.md", "本轮实测",
      r"本轮实测 (\d+) 个收集实例", "本轮实测 {unit_passed} 个收集实例"),
+    # ---------------------------------------------------------------- docs/TEST_REPORT.md, the capacity row
+    # Nine cells, one line, paired to the newest run whose row 23 executed (see `capacity_pair`): the run's own
+    # stamp and commit sit on the same line so a reader can never mistake these for the authority's tail.
+    ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
+     r"acceptance-(\d{8}T\d{6}Z)", "acceptance-{capacity_run}"),
+    ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
+     r"commit `([0-9a-f]{7})`", "commit `{capacity_short}`"),
+    ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
+     r"该行判 `(\w+)`", "该行判 `{capacity_verdict}`"),
+    ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
+     r"error_rate=([\d.]+)%", "error_rate={capacity_error_rate_pct}%"),
+    ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
+     r"p50 ([\d.]+)ms", "p50 {capacity_p50_ms}ms"),
+    ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
+     r"p95 ([\d.]+)ms", "p95 {capacity_p95_ms}ms"),
+    ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
+     r"p99 ([\d.]+)ms", "p99 {capacity_p99_ms}ms"),
+    ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
+     r"([\d.]+) req/s", "{capacity_throughput_rps} req/s"),
+    ("docs/TEST_REPORT.md", "容量腿在链内的最近读数",
+     r"复跑退码 `(\d)`", "复跑退码 `{capacity_acceptance_rc}`"),
 ]
 
 DERIVED = ("short", "green_count", "green_list_cn", "green_list_arrow", "green_list_en", "green_rows",
@@ -672,6 +693,9 @@ def main():
                 raise SystemExit("stamp: the archive holds no all-green run to read")
             chosen = max(greens, key=lambda r: r["stamp"])
         figures = reader.figures(chosen)
+        # The capacity family is paired to a second run -- the newest one that actually executed row 23 -- because
+        # an all-green authority always has that row skipped. Its cells name that run inline.
+        figures.update(reader.capacity_figures(tracked))
     values = dict(derive(root, figures))
     conflicting = sorted(k for k in set(values) & set(figures) if values[k] != figures[k])
     if conflicting:
