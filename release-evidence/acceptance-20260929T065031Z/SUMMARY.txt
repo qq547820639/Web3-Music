@@ -1,0 +1,49 @@
+Resonance AI Music Asset Platform — E2E Acceptance
+started_at=2026-09-29T06:50:31Z
+evidence_dir=release-evidence/acceptance-20260929T065031Z
+host=Mac
+host_load="7.25 7.44 6.99" host_cpus=10 docker_cpus=4
+git_commit=81dd1a5d8d68fbee18d411c55029ac86ada1bd97
+fresh_database=1
+disk_free_kb=9390292
+
+STEP | RESULT | STARTED_AT | FINISHED_AT
+static-verify | PASS | 2026-09-29T06:50:31Z | 2026-09-29T06:51:08Z
+metrics static-verify refusal_census_selftest_arms=25
+metrics static-verify unit_passed=490
+compose-up | PASS | 2026-09-29T06:51:09Z | 2026-09-29T06:51:34Z
+acceptance | PASS | 2026-09-29T06:51:34Z | 2026-09-29T06:52:04Z
+contract-test | PASS | 2026-09-29T06:52:04Z | 2026-09-29T06:52:14Z
+chaos-worker-recovery | PASS | 2026-09-29T06:52:14Z | 2026-09-29T06:53:00Z
+lease-contention | PASS | 2026-09-29T06:53:00Z | 2026-09-29T06:53:43Z
+metrics lease-contention credits_settled=160.0 jobs=8 workers=2
+restore-fidelity-snapshot | PASS | 2026-09-29T06:53:43Z | 2026-09-29T06:53:45Z
+backup-restore | PASS | 2026-09-29T06:53:45Z | 2026-09-29T06:54:42Z
+restore-fidelity-compare | PASS | 2026-09-29T06:54:42Z | 2026-09-29T06:54:45Z
+metrics restore-fidelity-compare assets=2 workspaces=2
+acceptance-rerun | PASS | 2026-09-29T06:54:45Z | 2026-09-29T06:55:15Z
+erasure-drill | PASS | 2026-09-29T06:55:15Z | 2026-09-29T06:56:46Z
+metrics erasure-drill checks_passed=53 checks_total=53
+mfa-drill | PASS | 2026-09-29T06:56:46Z | 2026-09-29T07:03:09Z
+metrics mfa-drill checks_passed=79 checks_total=79
+member-drill | PASS | 2026-09-29T07:03:09Z | 2026-09-29T07:04:19Z
+metrics member-drill checks_passed=98 checks_total=98
+media-scan-drill | PASS | 2026-09-29T07:04:19Z | 2026-09-29T07:04:24Z
+metrics media-scan-drill checks_passed=14 checks_total=14
+report-drill | PASS | 2026-09-29T07:04:24Z | 2026-09-29T07:04:52Z
+metrics report-drill checks_passed=50 checks_total=50
+commercial-flow | PASS | 2026-09-29T07:04:52Z | 2026-09-29T07:05:35Z
+reservation-race | PASS | 2026-09-29T07:05:35Z | 2026-09-29T07:05:48Z
+market-reconciliation | PASS | 2026-09-29T07:05:48Z | 2026-09-29T07:06:05Z
+metrics market-reconciliation checks_passed=15 checks_total=15
+hold-drill | PASS | 2026-09-29T07:06:05Z | 2026-09-29T07:06:27Z
+metrics hold-drill checks_passed=48 checks_total=48
+provider-regression-100 | PASS | 2026-09-29T07:06:27Z | 2026-09-29T07:07:24Z
+metrics provider-regression-100 completed=100 credits=1000 error_rate=0.0 jobs=100 p50_s=4.1 p95_s=5.39
+generic-rest-roundtrip | PASS | 2026-09-29T07:07:24Z | 2026-09-29T07:08:13Z
+metrics generic-rest-roundtrip completed=25 credits=250 error_rate=0.0 jobs=25 p50_s=4.18 p95_s=5.17
+browser-a11y | PASS | 2026-09-29T07:08:13Z | 2026-09-29T07:12:49Z
+capacity-gate-500 | SKIPPED (CAPACITY=1 才执行) | 2026-09-29T07:12:49Z | 2026-09-29T07:12:49Z
+
+finished_at=2026-09-29T07:12:49Z
+host_load="4.59 11.24 14.94" host_cpus=10 docker_cpus=4
