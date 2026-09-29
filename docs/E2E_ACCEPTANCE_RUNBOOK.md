@@ -179,7 +179,7 @@ CAPACITY=1 ./scripts/acceptance-all.sh
 | 故障恢复 | `chaos-worker-recovery.sh` verify 通过 | ✅ | ❌ |
 | 备份/恢复 | `verify-backup.sh` 通过 + 恢复后复跑 acceptance 全过 | ✅ | ❌ |
 | 商业闭环 | `acceptance-commercial` 全过 | ✅ | ❌ |
-| 容量 Gate（可选） | 若启用：错误率 ≤ 1% 且 p95 ≤ 800ms 且随后 acceptance 全过 | ✅ | ❌ |
+| 容量 Gate（可选） | 若启用：错误率 ≤ 1% 且 p95 ≤ 800ms 且随后 acceptance 全过（自 `f8b51ad` 起，回归半段在清卷重起的库上跑；压测半段仍读本运行前 22 行写下的库） | ✅ | ❌ |
 
 **结论**：以上必选门禁（1–9）全绿 = **Go**；任一步失败 = **No-Go**，按 §7 排查后重跑。容量 Gate 为可选增强项，未启用不影响必选门禁的 Go/No-Go。
 
