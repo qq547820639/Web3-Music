@@ -129,6 +129,34 @@ def test_the_window_is_judged_by_the_waits_stated_under_traffic_not_by_a_request
     assert drill.refusals_count_down([42, 40], 1.9, 42, 40) is False
 
 
+def test_the_traffic_loop_exits_on_the_interval_the_verdict_judges_not_on_a_second_origin():
+    """The rebuilt check reddened its own first live run because two clocks measured the same two seconds.
+
+    `acceptance-20260929T095633Z` printed `the window counted down across 47 requests and 2.0s of traffic and
+    never re-armed — Retry-After [58, 58, 58] … [56, 56, 56] over 2.0s`: a window that had spent two of itself,
+    judged false. Every other conjunct is visible in that line and holds (47 samples, first wait 58, last 56,
+    store 58 then 56), so what failed was the vacuity floor -- and the floor and the printed number cannot both
+    be true, because the message rounds to one decimal while the judged value has to be under 2.0 to fail. The
+    loop bounded traffic from the first *send*, the verdict consumed the interval between the first and last
+    *receipts*, and the difference is the first request's round trip: 47 requests fitted the budget, so ~40 ms
+    of the 2.0 s was not inside the interval. Both now read `traffic_floor_met`, which tests the same expression
+    the verdict does.
+    """
+    drill = _mfa_drill()
+    # The live shape: 2.0 s measured from the send, 1.96 s between the receipts the verdict gets.
+    assert drill.traffic_floor_met([0.04, 2.00], 47) is False
+    assert drill.refusals_count_down([58, 56], 1.96, 58, 56) is False
+    # The same run continues to knock until the judged interval itself reaches the floor, and then reads green.
+    assert drill.traffic_floor_met([0.04, 2.04], 47) is True
+    assert drill.refusals_count_down([58, 56], 2.00, 58, 56) is True
+    # The request floor is a precondition too: a fast host exits on count as well as on span.
+    assert drill.traffic_floor_met([0.0, 3.0], 4) is False
+    assert drill.traffic_floor_met([0.0], 47) is False
+    assert drill.traffic_floor_met([], 0) is False
+    # One constant governs both ends, so neither can drift under the other again.
+    assert drill.MIN_TRAFFIC_SPAN == 2.0 and drill.MIN_TRAFFIC_REQUESTS == 5
+
+
 def test_seal_round_trips(keyed):
     secret = keyed.new_secret()
     assert keyed.unseal(keyed.seal(secret)) == secret

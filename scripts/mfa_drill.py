@@ -140,8 +140,26 @@ def retry_matches_window(retry_after, ttl: int, elapsed: float, slack: float = 1
     return 0 < stated <= 60 and 0 <= stated - ttl <= elapsed + slack
 
 
+MIN_TRAFFIC_SPAN = 2.0
+MIN_TRAFFIC_REQUESTS = 5
+
+
+def traffic_floor_met(stamps: list, knocked: int, min_span: float = MIN_TRAFFIC_SPAN,
+                      min_requests: int = MIN_TRAFFIC_REQUESTS) -> bool:
+    """The traffic loop's exit condition, stated on the same quantity the verdict then judges.
+
+    Both ends of the span are *response receipts*: the first request's own round trip is not inside the
+    interval whose decay is read, so a floor applied to a budget measured from the issue instant can be
+    satisfied while the judged interval is still short. That is how this check reddened its own first live
+    run (`acceptance-20260929T095633Z`: 47 refused requests, `Retry-After [58, 58, 58] … [56, 56, 56]`,
+    a window that had spent two of itself) -- the loop stopped at 2.0 s from the first send, the span the
+    verdict received was 1.96 s, and `span >= 2.0` was false. One origin, two uses.
+    """
+    return knocked >= min_requests and len(stamps) >= 2 and stamps[-1] - stamps[0] >= min_span
+
+
 def refusals_count_down(waits: list, span: float, ttl_before: int, ttl_after: int,
-                        min_span: float = 2.0) -> bool:
+                        min_span: float = MIN_TRAFFIC_SPAN) -> bool:
     """Whether the waits the api itself stated describe one window running down under the traffic.
 
     Every sample is a `Retry-After` header read off a refusal the api answered, so the two ends of the
@@ -524,21 +542,21 @@ def main() -> int:
         # than verdicts -- and what is judged is the sequence of waits the api stated across that traffic.
         ttl_before = ttl
         knocked, waits, stamps = 0, [], []
-        traffic_started = None
+        first_sent_at = None
         while True:
             sent_at = time.monotonic()
             refusal = httpx.post(BASE + "/auth/login", json={"email": WINDOW_PROBE, "password": "again"},
                                  timeout=40)
-            if traffic_started is None:
-                traffic_started = sent_at
+            if first_sent_at is None:
+                first_sent_at = sent_at
             knocked += 1
             stated = refusal.headers.get("Retry-After", "")
             waits.append(int(stated) if refusal.status_code == 429 and stated.isdigit() else None)
             stamps.append(time.monotonic())
-            if stamps[-1] - traffic_started >= 2.0 and knocked >= 5:
+            if traffic_floor_met(stamps, knocked):
                 break
-        elapsed = stamps[-1] - traffic_started
         span = stamps[-1] - stamps[0]
+        elapsed = stamps[-1] - first_sent_at
         after = redis_cli("GET", login_key)
         ttl_after = int(redis_cli("TTL", login_key) or -2)
         check("a refusal spends none of the window it reports",

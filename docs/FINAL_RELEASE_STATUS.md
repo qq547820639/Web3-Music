@@ -9,7 +9,7 @@ was actually executed.
 
 ## Executed on a real Compose stack
 
-Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `81dd1a5`, 2026-09-29T06:50:31Z → 2026-09-29T07:12:49Z, evidence in `release-evidence/acceptance-20260929T065031Z/`, started under `host_load="7.25 7.44 6.99"` on a Docker VM 4 vCPU with `disk_free_kb=9390292` recorded beside it, with 37 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `aa3605b`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818`, `ef88d14`, `3dbd175`, `1dbf99e`, `fb6ff39`, `a841628`, `d98e650`, `c9e3cbd`, `c007b21`, `c469bf3`, `e75dcc6`, `e699e60`, `01147cf`, `8f69a1e`, `fa64cef`, `09be2ab`, `16e2660`, `83f19ad`, `680a0ea` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23/23/23/23/23/23/23/23/23/23/23/23 rows with `FAIL=0` in every `SUMMARY.txt`), and 32 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 8, 26-09-29 = 4).
+Authoritative run: `scripts/acceptance-all.sh` on a fresh database (`FRESH=1`, which is this round's way of making the sentence mean something -- the pipeline brings the volumes down itself and records `fresh_database=1` in the header of the same file), **22 steps PASS and 1 recorded as skipped** across 23 rows, commit `81dd1a5`, 2026-09-29T06:50:31Z → 2026-09-29T07:12:49Z, evidence in `release-evidence/acceptance-20260929T065031Z/`, started under `host_load="7.25 7.44 6.99"` on a Docker VM 4 vCPU with `disk_free_kb=9390292` recorded beside it, with 37 prior green runs on this host (`82f2ffe`, `5028686`, `28deafc`, `1d8534e`, `01e61d1`, `2c3ef7f`, `96d5955`, `b79e70b`, `3da3920`, `93b4984`, `99d5847`, `1f19952`, `414752d`, `aa3605b`, `fc70d13`, `cb8b901`, `cc63bee`, `2f25fe5`, `037b818`, `ef88d14`, `3dbd175`, `1dbf99e`, `fb6ff39`, `a841628`, `d98e650`, `c9e3cbd`, `c007b21`, `c469bf3`, `e75dcc6`, `e699e60`, `01147cf`, `8f69a1e`, `fa64cef`, `09be2ab`, `16e2660`, `83f19ad`, `680a0ea` — older → newer, at 15/15/16/16/17/18/19/20/20/20/20/20/20/20/20/21/21/21/22/23/23/23/23/23/23/23/23/23/23/23/23/23/23/23/23/23/23 rows with `FAIL=0` in every `SUMMARY.txt`), and 35 judged-red SUMMARYs kept as findings (26-09-25 = 7, 26-09-26 = 8, 26-09-27 = 5, 26-09-28 = 8, 26-09-29 = 7).
 `414752d` was this file's authority until the round before last, and the reason the sentence is now machine-checked rather than maintained: the paragraph below it carried a count, a commit list, a row list and a red total that nothing compared against the archive, so the header could describe a run that was no longer the newest one for two full rounds before anyone noticed.
 The browser audit's own machine-readable record for the certified run is at `release-evidence/browser-a11y-20260929T070829Z/report.json`, stamped with the same commit `81dd1a5`: the code was committed *before* the authoritative run was started, so the `git_commit` in the record is the tree that was actually tested rather than HEAD-plus-staged-changes. Both halves of that sentence are stamped cells now, and the pairing they rest on was repaired this round: the reader used to take whatever `browser-a11y-*/report.json` was newest *on the same calendar day*, which on 2026-09-28 -- the day carried several a11y legs, each belonging to a
 different run -- six by the close of that day (`070328Z`→`065139Z`, `083139Z`→`081806Z`, `085606Z`→`084412Z`, `100927Z`→`095607Z`, `105051Z`→`103425Z`, `113020Z`→`111210Z`; each pairing is a measured row of
@@ -1603,3 +1603,54 @@ Authoritative run `acceptance-20260929T065031Z` (commit `81dd1a5`, `fresh_databa
 **The latency series, again load-coupled.** This run reads `p50 4.1s / p95 5.39s` over 100 jobs and `p50 4.18s / p95 5.17s` over 25, against 12.665/19.12 and 6.26/15.1 on the run it replaces, whose chain wrote its `finished_at=` line under a one-minute load of 11.60 while starting at 5.75. This one started at 7.25 and ended at 4.59. The cells print whichever numbers the certified run measured; the ordering between runs is a statement about the host, and the only reason either sentence can be told apart from a regression is that both readings are stamped rather than remembered.
 
 **The open census item stays open, with one more non-reproducing sample.** `acceptance-20260929T065031Z` is the eighth consecutive tracked leg whose two observers agree (49 against 49 here). The surplus event that reddened `acceptance-20260928T163801Z` and `acceptance-20260928T200930Z` has not appeared since, so the mechanism remains unidentified while the instrumentation that would localise it (`refusal_timeline`, the surplus server timestamp, the gate's own observed span) is now permanent and shipped in the tracked report.
+
+## 2026-09-29 行 12 红在主机决定的请求速率上：判据重建，而重建后的第一跑又把自己的两个原点暴露出来
+
+**第一次红（`acceptance-20260929T080910Z`，量 `053e443`，SUMMARY 已入库）。** 前 11 行全绿，停在
+`mfa-drill | FAIL | 2026-09-29T08:14:02Z | 2026-09-29T08:20:26Z`、`metrics mfa-drill checks_passed=78 checks_total=79`。
+唯一一条失败原文：`FAIL the window kept counting down through 3 refused requests in 2.2s instead of restarting —
+TTL 42 then 29 after 2.2s of refusals`；该步自记环境行 `failed_step_env: host_load="50.45 33.55 21.44" host_cpus=10 docker_cpus=4`。
+旧判据要求 `knocked >= 5` 落在 `while elapsed < 2.0` 的预算里，也就是 2.5 req/s 的网关吞吐——这是速率下限。
+把本机 `.scratch/` 下 19 份链级逐字稿（工作文件，不在在册证据里）里同一条读数排出来：
+14、25、47、49、49、65、88、101、103、106、107、111、112、114、126、138、149、164、169——两端相差 12 倍，
+两端之间没有一次代码改动。这一支红是 2.2 s 装下 3 发，折合每发 0.73 s。
+
+**第一次重建（`3b64315`）。** 判决换成「被限流器自己在响应头里报出的等待值序列」：`scripts/mfa_drill.py:161`
+`refusals_count_down(waits, span, ttl_before, ttl_after)` 要求序列不得有任何一格变大、首末至少真的花掉一秒、
+存储侧只留 `0 < ttl_after <= ttl_before`（定死期限的 key 的 TTL 永不后大于前，这条是 exec 延迟伪造不了的唯一方向）。
+流量环的两个下限（≥2.0 s、≥5 发）降级为**前提**，慢主机只多花时间。每发读数进详情串。
+
+**第二次红（`acceptance-20260929T095633Z`，量 `3b64315`，SUMMARY 已入库）——这一次红在新判据自己身上。**
+一行读数：`FAIL the window counted down across 47 requests and 2.0s of traffic and never re-armed — Retry-After
+[58, 58, 58] … [56, 56, 56] over 2.0s (2.0s of traffic) against store TTL 58 then 56`。
+这次主机不忙（47 发占满 2.0 s ≈ 23.5 req/s），限流器也确实在花费（58→56、存储 58→56）。逐项读下来，序列变长、
+钥匙消失、混进非 429 这三种可能都被这行读数本身排除，唯一能为假的只剩空转下限那格：判决用的 `span` 是**首末两次
+响应到达**之差，而环的退出条件是**首次发出**到末次到达之差，两者相差的正是第一发的往返——打印保留一位小数，
+所以 `span` 落在 [1.95, 2.0) 时消息显示 2.0 而判据判假。同一个两秒被两根原点不同的尺子量了两次。
+
+**第二次修法。** `scripts/mfa_drill.py:147` 新增 `traffic_floor_met(stamps, knocked)`，与
+`refusals_count_down` 共用同一对模块常量 `MIN_TRAFFIC_SPAN = 2.0` / `MIN_TRAFFIC_REQUESTS = 5`，
+环的退出条件（`:556`）与判决消费的是同一个表达式、同一根尺子；`elapsed`（含首发往返的那把）只留在详情串里作对照。
+`tests/unit/test_mfa_second_factor.py` 两条新用例把这两轮的读数本身钉成夹具：第一轮 3 发/2.2 s 的旧形状与
+第二轮 47 发/1.9x s 的偏移形状都必须在前提格判「继续敲」而不是判产品红，另附空转臂（少于 2 格、单点样本、
+条数不足）与两极对照（每发重报满窗判红、中途跳高判红、存储读数变大判红、钥匙 -2 判红、序列混进非 429 判红，
+以及同序列同存储只改实测间隔即判决翻转）。
+
+**仍未证实的两件事。** 其一，08:09 那一支红**不能**用新判据复判：旧检查从不打印逐发等待值，新规则对它是空输入，所以那一臂仍记作「红已归因于主机吞吐、限流器行为未被复验」。其二，重建后的判据至今没有一次活的绿臂——第二修法落库后起的那次链才有；在那之前，行 12 的判决只对上面两次已打印的读数负责。
+
+起跑也有一次被便宜的快门拦下：第二次修法写盘后我先起了一次链，行 1 的源清单门以 `tracked=263 listed=263 missing=0 stale=0 mismatched=3` 判红并在 21 行日志后收摊（`acceptance-20260929T101213Z`，其 SUMMARY 也一并入库，因为这条快门值得留下一支「未登记完的树跑不起来」的臂）——树没登记完就别跑 25 分钟，这条快门是自己救下的时间。
+
+**同一次排查带出的在册事实。** `mfa-drill` 在此前 47 支在册链腿里只有三支红，机制各不相同、都不是本条判据：
+`acceptance-20260927T065037Z`（未挂双因子的账号登录返 500，随后 JSON 解析中止）、
+`acceptance-20260928T054641Z`（网关 502 加会话数差一条）、`acceptance-20260928T192315Z`（`Retry-After '55'` 对 TTL 51，
+那一条正是 `retry_matches_window` 的来由）。本条判据是 2026-09-29 才第一次红，且两天内红了两回——第二回红在量具上。
+
+**下一轮的地图（本轮只登记，不动它们）。** 同一形状「固定预算内的条数/时长进判决」在常驻面还有几处，已逐行读过两处：
+`scripts/report_drill.py:369-373`（三次递交后 `after < before` 的严格不等式，无时钟恒等式；暴露面在快主机端——
+两次取样落在同一个 Redis 秒内，至今未红）、`scripts/browser_a11y.py:135` 的 `wait_painted(gap_ms=250, tries=12)`
+（3 秒内要看到两次相同的绘制签名，`:474` 把它记成 `settle`，`:171` 再落进 `failures`；这正是行 22 那条腿，满载时
+是否会把「页面确实稳定了」读成超时，未测）。此外 `tests/unit/test_provider_emulator.py:101` 的 `assert elapsed < 1.0` 与
+`scripts/reconcile_market.py:161-167` 的「睡 2 秒后数一次」也同族，均未复核。**这些不是本轮的结论，是一份待量的清单。**
+
+**对链的影响。** 行 12 两次 fail-fast 也是当天两轮拿不到行 22 读数的原因：没有浏览器腿就没有第二观测者的对照样本，
+census 待查项的样本数因此停在 8 支一致链腿。
