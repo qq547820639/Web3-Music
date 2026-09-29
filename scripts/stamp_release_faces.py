@@ -424,6 +424,19 @@ def figures(run: dict) -> dict:
             for code in ("401", "403", "500"):
                 got[f"server_{code}_events"] = per_status.get(code, 0)
             got["server_403_endpoints"] = "、".join(endpoints.get("403", [])) or "一次也没有"
+    # `authority matrix agrees with the code: N routes, M writes` is what the run printed, but the two
+    # numbers are the tracked contract's, and the log carrying them is not in the tree -- so a clean checkout
+    # could not re-derive that cell at all (measured: `--json` reads LOG-MISSING there and `--apply` refuses).
+    # The contract is the single source now; where the log does exist it still has to agree.
+    matrix = json.loads((ROOT / "shared/contracts/authority-matrix.json").read_text(encoding="utf-8"))["routes"]
+    derived = (len(matrix), sum(1 for route in matrix if route.get("writes")))
+    printed = (got.get("routes"), got.get("matrix_writes"))
+    if all(value is not None and str(value).isdigit() for value in printed):
+        if (int(printed[0]), int(printed[1])) != derived:
+            raise SystemExit(f"acceptance-{run['stamp']} printed routes/writes {printed}, the tracked "
+                             f"contract derives {derived}; one of the two is lying")
+    got["routes"], got["matrix_writes"] = derived
+
     return got
 
 
